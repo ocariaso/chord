@@ -11,6 +11,7 @@ export interface Job {
   duration_seconds: number | null;
   key_estimate: string | null;
   key_confidence: number | null;
+  tempo_bpm: number | null;
   created_at: string;
   updated_at: string;
   stem_names: string[];
