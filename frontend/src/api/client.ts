@@ -1,4 +1,4 @@
-export type JobStatus = "queued" | "separating" | "analyzing" | "done" | "error";
+export type JobStatus = "queued" | "fetching" | "separating" | "analyzing" | "done" | "error";
 
 export interface Job {
   id: string;
@@ -25,6 +25,19 @@ export async function createJob(file: File): Promise<Job> {
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.detail ?? `Upload failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function createJobFromUrl(url: string): Promise<Job> {
+  const res = await fetch(`${API_BASE}/jobs/from-url`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `Failed to start download (${res.status})`);
   }
   return res.json();
 }

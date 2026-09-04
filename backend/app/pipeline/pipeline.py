@@ -7,7 +7,7 @@ import soundfile as sf
 from app.core.config import settings
 from app.db.database import db_cursor, now_iso
 from app.models.schemas import JobStatus
-from app.pipeline import chords, separation
+from app.pipeline import chords, separation, source
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,12 @@ def _update_job(job_id: str, **fields) -> None:
     columns = ", ".join(f"{key} = ?" for key in fields)
     with db_cursor() as cur:
         cur.execute(f"UPDATE jobs SET {columns} WHERE id = ?", (*fields.values(), job_id))
+
+
+def _get_job_row(job_id: str):
+    with db_cursor() as cur:
+        cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        return cur.fetchone()
 
 
 def job_dir(job_id: str) -> Path:
@@ -30,6 +36,14 @@ def run_job(job_id: str) -> None:
     analysis_dir = directory / "analysis"
 
     try:
+        source_url = _get_job_row(job_id)["source_url"]
+        if source_url:
+            _update_job(job_id, status=JobStatus.FETCHING.value, progress=0.05, stage_message="Downloading audio")
+            downloaded_path, title = source.download_audio(source_url, directory)
+            if downloaded_path != original_path:
+                downloaded_path.rename(original_path)
+            _update_job(job_id, original_filename=title)
+
         _update_job(job_id, status=JobStatus.SEPARATING.value, progress=0.1, stage_message="Separating stems")
         with sf.SoundFile(original_path) as f:
             duration_seconds = len(f) / f.samplerate

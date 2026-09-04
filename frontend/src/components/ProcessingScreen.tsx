@@ -8,6 +8,7 @@ interface ProcessingScreenProps {
 
 const STAGE_LABELS: Record<string, string> = {
   queued: "Queued",
+  fetching: "Downloading audio",
   separating: "Separating stems",
   analyzing: "Analyzing",
   done: "Done",

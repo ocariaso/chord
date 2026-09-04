@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class JobStatus(str, Enum):
     QUEUED = "queued"
+    FETCHING = "fetching"
     SEPARATING = "separating"
     ANALYZING = "analyzing"
     DONE = "done"
@@ -22,6 +23,10 @@ class KeyEstimate(BaseModel):
     key: str
     mode: str
     confidence: float
+
+
+class CreateJobFromUrlRequest(BaseModel):
+    url: str
 
 
 class JobResponse(BaseModel):
