@@ -25,8 +25,22 @@ export class PlaybackEngine {
   private playing = false;
   private disposed = false;
 
+  private tempoBpm: number | null = null;
+  private metronomeEnabled = false;
+  private metronomeGain: GainNode;
+  private metronomeOscillators: OscillatorNode[] = [];
+
+  private masterGain: GainNode;
+
   constructor() {
     this.audioContext = new AudioContext();
+
+    this.masterGain = this.audioContext.createGain();
+    this.masterGain.connect(this.audioContext.destination);
+
+    this.metronomeGain = this.audioContext.createGain();
+    this.metronomeGain.gain.value = 1;
+    this.metronomeGain.connect(this.audioContext.destination);
   }
 
   async load(stems: StemInput[]): Promise<void> {
@@ -41,7 +55,7 @@ export class PlaybackEngine {
         this.volumes.set(stem.name, 1);
 
         const gainNode = this.audioContext.createGain();
-        gainNode.connect(this.audioContext.destination);
+        gainNode.connect(this.masterGain);
         this.gainNodes.set(stem.name, gainNode);
       })
     );
@@ -86,21 +100,41 @@ export class PlaybackEngine {
       this.sourceNodes.set(name, source);
     }
     this.playing = true;
+
+    if (this.metronomeEnabled) this.scheduleMetronomeClicks(startTime, this.offsetSeconds);
   }
 
   pause(): void {
     if (!this.playing) return;
     this.offsetSeconds = this.getCurrentTime();
     this.stopAllSources();
+    this.clearMetronomeSchedule();
     this.playing = false;
   }
 
   async seek(seconds: number): Promise<void> {
     const wasPlaying = this.playing;
     this.stopAllSources();
+    this.clearMetronomeSchedule();
     this.playing = false;
     this.offsetSeconds = Math.max(0, Math.min(seconds, this.duration));
     if (wasPlaying) await this.play();
+  }
+
+  setTempoBpm(bpm: number | null): void {
+    this.tempoBpm = bpm;
+  }
+
+  setMetronomeEnabled(enabled: boolean): void {
+    this.metronomeEnabled = enabled;
+    this.clearMetronomeSchedule();
+    if (enabled && this.playing) {
+      this.scheduleMetronomeClicks(this.startedAtContextTime, this.offsetSeconds);
+    }
+  }
+
+  get isMetronomeEnabled(): boolean {
+    return this.metronomeEnabled;
   }
 
   setMuted(stemName: string, muted: boolean): void {
@@ -119,6 +153,10 @@ export class PlaybackEngine {
     this.applyGains();
   }
 
+  setMasterVolume(volume: number): void {
+    this.masterGain.gain.value = volume;
+  }
+
   getStemState(stemName: string): { muted: boolean; volume: number } {
     return { muted: this.muted.has(stemName), volume: this.volumes.get(stemName) ?? 1 };
   }
@@ -126,6 +164,7 @@ export class PlaybackEngine {
   dispose(): void {
     this.disposed = true;
     this.stopAllSources();
+    this.clearMetronomeSchedule();
     if (this.audioContext.state !== "closed") void this.audioContext.close();
   }
 
@@ -146,5 +185,46 @@ export class PlaybackEngine {
       }
     }
     this.sourceNodes.clear();
+  }
+
+  /** Schedules metronome clicks from the given track offset through the end of the track. */
+  private scheduleMetronomeClicks(startTime: number, offsetSeconds: number): void {
+    if (!this.tempoBpm) return;
+    const beatInterval = 60 / this.tempoBpm;
+
+    let beatIndex = Math.ceil(offsetSeconds / beatInterval);
+    let trackTime = beatIndex * beatInterval;
+    while (trackTime < this.duration) {
+      this.scheduleClick(startTime + (trackTime - offsetSeconds));
+      beatIndex++;
+      trackTime = beatIndex * beatInterval;
+    }
+  }
+
+  private scheduleClick(when: number): void {
+    const oscillator = this.audioContext.createOscillator();
+    oscillator.frequency.value = 1000;
+
+    const envelope = this.audioContext.createGain();
+    envelope.gain.setValueAtTime(1, when);
+    envelope.gain.exponentialRampToValueAtTime(0.001, when + 0.05);
+
+    oscillator.connect(envelope);
+    envelope.connect(this.metronomeGain);
+    oscillator.start(when);
+    oscillator.stop(when + 0.05);
+
+    this.metronomeOscillators.push(oscillator);
+  }
+
+  private clearMetronomeSchedule(): void {
+    for (const oscillator of this.metronomeOscillators) {
+      try {
+        oscillator.stop();
+      } catch {
+        // already stopped
+      }
+    }
+    this.metronomeOscillators = [];
   }
 }

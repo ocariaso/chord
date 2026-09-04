@@ -27,6 +27,7 @@ def _row_to_response(row) -> JobResponse:
         duration_seconds=row["duration_seconds"],
         key_estimate=row["key_estimate"],
         key_confidence=row["key_confidence"],
+        tempo_bpm=row["tempo_bpm"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         stem_names=stem_names,

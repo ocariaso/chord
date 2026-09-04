@@ -28,6 +28,8 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [soloedStem, setSoloedStem] = useState<string | null>(null);
   const [channelStates, setChannelStates] = useState<Record<string, ChannelState>>({});
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  const [metronomeEnabled, setMetronomeEnabled] = useState(false);
+  const [masterVolume, setMasterVolume] = useState(1);
 
   async function handleDownloadAll() {
     setIsDownloadingAll(true);
@@ -43,6 +45,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
 
   useEffect(() => {
     const engine = new PlaybackEngine();
+    engine.setTempoBpm(job.tempo_bpm);
     engineRef.current = engine;
     let cancelled = false;
 
@@ -119,6 +122,17 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
     setChannelStates((prev) => ({ ...prev, [name]: { ...prev[name], volume } }));
   }
 
+  function toggleMetronome() {
+    const next = !metronomeEnabled;
+    engineRef.current?.setMetronomeEnabled(next);
+    setMetronomeEnabled(next);
+  }
+
+  function changeMasterVolume(volume: number) {
+    engineRef.current?.setMasterVolume(volume);
+    setMasterVolume(volume);
+  }
+
   if (loadError) {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-4 p-8 text-center">
@@ -137,7 +151,10 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4 p-8">
       <div className="flex items-center justify-between">
-        <h1 className="truncate text-xl font-semibold text-neutral-100">{job.original_filename}</h1>
+        <div className="min-w-0">
+          <h1 className="truncate text-xl font-semibold text-neutral-100">{job.original_filename}</h1>
+          {job.tempo_bpm != null && <p className="text-sm text-neutral-500">{job.tempo_bpm} BPM</p>}
+        </div>
         <div className="flex items-center gap-4">
           <button
             onClick={handleDownloadAll}
@@ -179,6 +196,10 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
         duration={engineRef.current?.duration ?? 0}
         onPlayPause={handlePlayPause}
         onSeek={handleSeek}
+        metronomeEnabled={metronomeEnabled}
+        onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
+        masterVolume={masterVolume}
+        onMasterVolumeChange={changeMasterVolume}
       />
     </div>
   );

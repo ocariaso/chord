@@ -7,7 +7,7 @@ import soundfile as sf
 from app.core.config import settings
 from app.db.database import db_cursor, now_iso
 from app.models.schemas import JobStatus
-from app.pipeline import chords, separation, source
+from app.pipeline import chords, separation, source, tempo
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +49,15 @@ def run_job(job_id: str) -> None:
             duration_seconds = len(f) / f.samplerate
         separation.separate(original_path, stems_dir)
 
+        _update_job(job_id, progress=0.85, stage_message="Detecting tempo")
+        tempo_bpm = tempo.detect_tempo(original_path)
+
         done_fields = dict(
             status=JobStatus.DONE.value,
             progress=1.0,
             stage_message="Done",
             duration_seconds=duration_seconds,
+            tempo_bpm=tempo_bpm,
         )
 
         if settings.enable_chord_detection:

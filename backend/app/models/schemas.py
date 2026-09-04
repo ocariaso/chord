@@ -40,6 +40,7 @@ class JobResponse(BaseModel):
     duration_seconds: float | None = None
     key_estimate: str | None = None
     key_confidence: float | None = None
+    tempo_bpm: float | None = None
     created_at: str
     updated_at: str
     stem_names: list[str] = []
