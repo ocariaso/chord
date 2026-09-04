@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type WaveSurfer from "wavesurfer.js";
-import { stemUrl, type Job } from "../api/client";
+import { downloadAllUrl, stemUrl, type Job } from "../api/client";
 import { PlaybackEngine } from "../audio/playbackEngine";
+import { downloadFile } from "../utils/download";
 import { StemChannel } from "./StemChannel";
 import { TransportBar } from "./TransportBar";
 
@@ -26,6 +27,19 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [currentTime, setCurrentTime] = useState(0);
   const [soloedStem, setSoloedStem] = useState<string | null>(null);
   const [channelStates, setChannelStates] = useState<Record<string, ChannelState>>({});
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+
+  async function handleDownloadAll() {
+    setIsDownloadingAll(true);
+    try {
+      const baseName = job.original_filename.replace(/\.mp3$/i, "");
+      await downloadFile(downloadAllUrl(job.id), `${baseName}_stems.zip`);
+    } catch {
+      // The download simply won't start; nothing else to recover here.
+    } finally {
+      setIsDownloadingAll(false);
+    }
+  }
 
   useEffect(() => {
     const engine = new PlaybackEngine();
@@ -124,9 +138,21 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
     <div className="mx-auto flex max-w-3xl flex-col gap-4 p-8">
       <div className="flex items-center justify-between">
         <h1 className="truncate text-xl font-semibold text-neutral-100">{job.original_filename}</h1>
-        <button onClick={onBack} className="text-sm text-neutral-400 hover:text-neutral-200">
-          &larr; Upload another
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleDownloadAll}
+            disabled={isDownloadingAll}
+            className="flex items-center gap-2 text-sm text-neutral-400 hover:text-neutral-200 disabled:text-neutral-500"
+          >
+            {isDownloadingAll && (
+              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-[1.5px] border-neutral-500 border-t-transparent" />
+            )}
+            {isDownloadingAll ? "Preparing zip..." : "Download all (.zip)"}
+          </button>
+          <button onClick={onBack} className="text-sm text-neutral-400 hover:text-neutral-200">
+            &larr; Upload another
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -138,6 +164,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
             muted={channelStates[name]?.muted ?? false}
             isSoloed={soloedStem === name}
             volume={channelStates[name]?.volume ?? 1}
+            downloadHref={stemUrl(job.id, name)}
             onToggleMute={() => toggleMute(name)}
             onToggleSolo={() => toggleSolo(name)}
             onVolumeChange={(v) => changeVolume(name, v)}

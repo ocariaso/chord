@@ -48,3 +48,7 @@ export function jobEventsUrl(jobId: string): string {
 export function stemUrl(jobId: string, stemName: string): string {
   return `${API_BASE}/jobs/${jobId}/stems/${stemName}.wav`;
 }
+
+export function downloadAllUrl(jobId: string): string {
+  return `${API_BASE}/jobs/${jobId}/download`;
+}
