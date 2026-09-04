@@ -1,23 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { listJobs } from "../api/client";
 
 interface UploadPanelProps {
   onFileSelected: (file: File) => void;
-  onSelectJob: (jobId: string) => void;
   isSubmitting: boolean;
   error: string | null;
 }
 
-export function UploadPanel({ onFileSelected, onSelectJob, isSubmitting, error }: UploadPanelProps) {
+export function UploadPanel({ onFileSelected, isSubmitting, error }: UploadPanelProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const { data: jobs } = useQuery({
-    queryKey: ["jobs"],
-    queryFn: listJobs,
-    refetchInterval: 5000,
-  });
 
   function handleFiles(files: FileList | null) {
     const file = files?.[0];
@@ -60,25 +51,6 @@ export function UploadPanel({ onFileSelected, onSelectJob, isSubmitting, error }
       </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
-
-      {jobs && jobs.length > 0 && (
-        <div>
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">Recent jobs</h2>
-          <ul className="flex flex-col gap-1">
-            {jobs.map((job) => (
-              <li key={job.id}>
-                <button
-                  onClick={() => onSelectJob(job.id)}
-                  className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-neutral-800"
-                >
-                  <span className="truncate text-neutral-200">{job.original_filename}</span>
-                  <span className="ml-3 shrink-0 text-neutral-500">{job.status}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
