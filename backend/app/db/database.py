@@ -17,10 +17,16 @@ CREATE TABLE IF NOT EXISTS jobs (
     key_estimate TEXT,
     key_confidence REAL,
     source_url TEXT,
+    tempo_bpm REAL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 """
+
+MIGRATED_COLUMNS = [
+    ("source_url", "TEXT"),
+    ("tempo_bpm", "REAL"),
+]
 
 
 def get_connection() -> sqlite3.Connection:
@@ -34,8 +40,9 @@ def init_db() -> None:
     try:
         conn.execute(SCHEMA)
         existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)")}
-        if "source_url" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN source_url TEXT")
+        for column, column_type in MIGRATED_COLUMNS:
+            if column not in existing_columns:
+                conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} {column_type}")
         conn.commit()
     finally:
         conn.close()
