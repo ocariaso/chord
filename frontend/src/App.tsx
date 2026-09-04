@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createJob } from "./api/client";
+import { createJob, createJobFromUrl } from "./api/client";
 import { ProcessingScreen } from "./components/ProcessingScreen";
 import { StemMixer } from "./components/StemMixer";
 import { UploadPanel } from "./components/UploadPanel";
@@ -35,6 +35,20 @@ function App() {
     }
   }
 
+  async function handleUrlSubmitted(url: string) {
+    setIsSubmitting(true);
+    setUploadError(null);
+    try {
+      const created = await createJobFromUrl(url);
+      setActiveJobId(created.id);
+      setScreen("processing");
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Failed to start download");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   function handleBack() {
     setActiveJobId(null);
     setScreen("upload");
@@ -43,7 +57,12 @@ function App() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       {screen === "upload" && (
-        <UploadPanel onFileSelected={handleFileSelected} isSubmitting={isSubmitting} error={uploadError} />
+        <UploadPanel
+          onFileSelected={handleFileSelected}
+          onUrlSubmitted={handleUrlSubmitted}
+          isSubmitting={isSubmitting}
+          error={uploadError}
+        />
       )}
       {screen === "processing" && (
         <ProcessingScreen job={job} connectionError={connectionError} onRetry={handleBack} />
