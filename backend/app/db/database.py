@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     duration_seconds REAL,
     key_estimate TEXT,
     key_confidence REAL,
+    source_url TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -32,6 +33,9 @@ def init_db() -> None:
     conn = get_connection()
     try:
         conn.execute(SCHEMA)
+        existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)")}
+        if "source_url" not in existing_columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN source_url TEXT")
         conn.commit()
     finally:
         conn.close()
