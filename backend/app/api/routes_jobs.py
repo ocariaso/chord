@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from starlette import status
 
 from app.db.database import db_cursor, now_iso
-from app.models.schemas import STEM_NAMES, JobResponse, JobStatus
+from app.models.schemas import STEM_NAMES, CreateJobFromUrlRequest, JobResponse, JobStatus
 from app.pipeline.pipeline import job_dir
 from app.pipeline.worker import enqueue
 
@@ -56,6 +56,31 @@ async def create_job(file: UploadFile) -> JobResponse:
             VALUES (?, ?, ?, 0, ?, ?)
             """,
             (job_id, file.filename, JobStatus.QUEUED.value, timestamp, timestamp),
+        )
+        cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        row = cur.fetchone()
+
+    enqueue(job_id)
+    return _row_to_response(row)
+
+
+@router.post("/from-url", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
+async def create_job_from_url(payload: CreateJobFromUrlRequest) -> JobResponse:
+    if not payload.url.strip():
+        raise HTTPException(status_code=400, detail="A URL is required")
+
+    job_id = uuid.uuid4().hex
+    directory = job_dir(job_id)
+    directory.mkdir(parents=True, exist_ok=True)
+
+    timestamp = now_iso()
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO jobs (id, original_filename, status, progress, source_url, created_at, updated_at)
+            VALUES (?, ?, ?, 0, ?, ?, ?)
+            """,
+            (job_id, payload.url, JobStatus.QUEUED.value, payload.url, timestamp, timestamp),
         )
         cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
         row = cur.fetchone()
