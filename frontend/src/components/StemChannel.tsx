@@ -1,5 +1,16 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
+import { downloadFile } from "../utils/download";
+
+function DownloadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+      <path d="M12 3v11" strokeLinecap="round" />
+      <path d="M7.5 10.5 12 15l4.5-4.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 20h14" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 interface StemChannelProps {
   name: string;
@@ -7,6 +18,7 @@ interface StemChannelProps {
   muted: boolean;
   isSoloed: boolean;
   volume: number;
+  downloadHref: string;
   onToggleMute: () => void;
   onToggleSolo: () => void;
   onVolumeChange: (volume: number) => void;
@@ -19,12 +31,25 @@ export function StemChannel({
   muted,
   isSoloed,
   volume,
+  downloadHref,
   onToggleMute,
   onToggleSolo,
   onVolumeChange,
   onWaveSurferReady,
 }: StemChannelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  async function handleDownload() {
+    setIsDownloading(true);
+    try {
+      await downloadFile(downloadHref, `${name}.wav`);
+    } catch {
+      // The download simply won't start; nothing else to recover here.
+    } finally {
+      setIsDownloading(false);
+    }
+  }
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -82,6 +107,19 @@ export function StemChannel({
         onChange={(e) => onVolumeChange(Number(e.target.value))}
         className="w-20 shrink-0 accent-purple-500"
       />
+
+      <button
+        onClick={handleDownload}
+        disabled={isDownloading}
+        title={`Download ${name}`}
+        className="flex shrink-0 items-center justify-center rounded p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 disabled:hover:bg-transparent"
+      >
+        {isDownloading ? (
+          <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-[1.5px] border-neutral-500 border-t-transparent" />
+        ) : (
+          <DownloadIcon />
+        )}
+      </button>
     </div>
   );
 }
