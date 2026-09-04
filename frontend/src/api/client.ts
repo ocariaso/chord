@@ -35,12 +35,6 @@ export async function getJob(jobId: string): Promise<Job> {
   return res.json();
 }
 
-export async function listJobs(): Promise<Job[]> {
-  const res = await fetch(`${API_BASE}/jobs`);
-  if (!res.ok) throw new Error(`Failed to fetch jobs (${res.status})`);
-  return res.json();
-}
-
 export function jobEventsUrl(jobId: string): string {
   return `${API_BASE}/jobs/${jobId}/events`;
 }

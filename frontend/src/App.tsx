@@ -35,11 +35,6 @@ function App() {
     }
   }
 
-  function handleSelectJob(jobId: string) {
-    setActiveJobId(jobId);
-    setScreen("processing");
-  }
-
   function handleBack() {
     setActiveJobId(null);
     setScreen("upload");
@@ -48,12 +43,7 @@ function App() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       {screen === "upload" && (
-        <UploadPanel
-          onFileSelected={handleFileSelected}
-          onSelectJob={handleSelectJob}
-          isSubmitting={isSubmitting}
-          error={uploadError}
-        />
+        <UploadPanel onFileSelected={handleFileSelected} isSubmitting={isSubmitting} error={uploadError} />
       )}
       {screen === "processing" && (
         <ProcessingScreen job={job} connectionError={connectionError} onRetry={handleBack} />
