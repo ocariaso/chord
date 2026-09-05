@@ -132,7 +132,7 @@ export function VocalsAmp({
           className="overflow-hidden text-ellipsis whitespace-nowrap text-center text-[13px]"
           style={{ fontFamily: "'Share Tech Mono','Courier New',monospace", color: "#5eead4", textShadow: "0 0 4px rgba(94,234,212,0.5)" }}
         >
-          ♪ almost like a melody, drifting in the summer air ♪
+          ♪ Live lyrics (upcoming feature) ♪
         </span>
       </div>
 
