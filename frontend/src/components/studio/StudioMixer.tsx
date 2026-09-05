@@ -179,8 +179,6 @@ export function StudioMixer({
               onVolumeChange={(v) => onVolumeChange(closeup.name, v)}
               duration={duration}
               onSeek={onSeek}
-              isPlaying={isPlaying}
-              onPlayPause={onPlayPause}
               currentTime={currentTime}
               originRect={closeup.rect}
               onClose={() => setCloseup(null)}
