@@ -8,7 +8,7 @@ import { PianoAmp } from "./amps/PianoAmp";
 import { VocalsAmp } from "./amps/VocalsAmp";
 import { MasterUnit } from "./MasterUnit";
 import type { AmpProps } from "./types";
-import { GRID_GAP } from "./constants";
+import { GRID_GAP, MASTER_WIDTH } from "./constants";
 
 const AMP_COMPONENTS: Record<string, (props: AmpProps) => React.JSX.Element> = {
   vocals: VocalsAmp,
@@ -94,7 +94,7 @@ export function StudioMixer({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 justify-items-center" style={{ gap: GRID_GAP }}>
+      <div className="grid grid-cols-2 justify-items-center" style={{ gap: GRID_GAP, width: MASTER_WIDTH }}>
         {orderedNames.map((name) => {
           const Amp = AMP_COMPONENTS[name] ?? OtherAmp;
           const buffer = getBuffer(name);
