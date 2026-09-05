@@ -23,7 +23,7 @@ interface MasterUnitProps {
 
 const MIN_TRANSPOSE = -11;
 const MAX_TRANSPOSE = 11;
-const UPCOMING_COLORS = ["#6a6a6e", "#4a4a4e", "#3a3a3e"];
+const UPCOMING_COLORS = ["#379e64", "#2f6b45", "#27573a", "#1f452e", "#173323"];
 
 function formatTranspose(value: number): string {
   if (value > 0) return `+${value}`;
@@ -76,7 +76,7 @@ export function MasterUnit({
   const seekPercent = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0;
 
   const upcomingStart = activeIndex >= 0 ? activeIndex + 1 : 0;
-  const upcomingChords = segments.slice(upcomingStart, upcomingStart + 3).map((s) => transposeChord(s.chord, transpose));
+  const upcomingChords = segments.slice(upcomingStart, upcomingStart + 5).map((s) => transposeChord(s.chord, transpose));
 
   const seekDrag = useSeekDrag(duration, onSeek);
 
@@ -95,76 +95,96 @@ export function MasterUnit({
       </div>
 
       <div className="flex flex-col gap-3.5 rounded-t-md px-5 py-4" style={{ backgroundColor: "#161616" }}>
-        <div className="flex items-center gap-5">
-          <div className="flex flex-1 items-baseline gap-2.5">
-            <span className="font-['Oswald'] text-[30px] font-bold tabular-nums text-white">{activeChord}</span>
+        <div className="flex items-center justify-between gap-5">
+          <div
+            className="flex items-baseline gap-2.5 rounded px-3.5 py-1.5"
+            style={{ backgroundColor: "#081a0e", boxShadow: "inset 0 2px 5px rgba(0,0,0,0.8), inset 0 0 0 1px #000" }}
+          >
+            <span
+              style={{
+                fontFamily: "'Orbitron', sans-serif",
+                fontWeight: 800,
+                fontSize: 28,
+                color: "#4ade80",
+                textShadow: "0 0 8px rgba(74,222,128,0.75), 0 0 2px rgba(74,222,128,0.9)",
+              }}
+              className="tabular-nums"
+            >
+              {activeChord}
+            </span>
             {upcomingChords.map((chord, i) => (
-              <span key={i} className="text-base tabular-nums" style={{ color: UPCOMING_COLORS[i] }}>
+              <span
+                key={i}
+                style={{ fontFamily: "'Orbitron', sans-serif", fontWeight: 600, fontSize: 14, color: UPCOMING_COLORS[i] }}
+                className="tabular-nums"
+              >
                 {chord}
               </span>
             ))}
           </div>
 
-          {keyLabel && (
-            <div className="flex items-center gap-1.5">
-              <span className="font-['Oswald'] text-[10px] text-[#9a9a9e]">Key: {transposeKeyLabel(keyLabel, transpose)}</span>
-              <span
-                title="Adjust the key if detected wrong. This will transpose the chords accordingly."
-                className="flex h-[13px] w-[13px] cursor-help items-center justify-center rounded-full border text-[9px] text-[#6a6a6e]"
-                style={{ borderColor: "#6a6a6e" }}
-              >
-                i
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-5">
+            {keyLabel && (
+              <div className="flex items-center gap-1.5">
+                <span className="font-['Oswald'] text-[10px] text-[#9a9a9e]">Key: {transposeKeyLabel(keyLabel, transpose)}</span>
+                <span
+                  title="Adjust the key if detected wrong. This will transpose the chords accordingly."
+                  className="flex h-[13px] w-[13px] cursor-help items-center justify-center rounded-full border text-[9px] text-[#6a6a6e]"
+                  style={{ borderColor: "#6a6a6e" }}
+                >
+                  i
+                </span>
+              </div>
+            )}
 
-          <div className="flex flex-col items-center gap-0.5">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setTranspose((t) => Math.max(MIN_TRANSPOSE, t - 1))}
-                disabled={transpose === MIN_TRANSPOSE}
-                className="flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold text-[#e5e5e5] shadow-[inset_0_0_0_1px_#4a4a4e] disabled:opacity-40"
-                style={{ background: "radial-gradient(circle at 35% 30%,#3a3a3e,#0d0d0d 70%)" }}
-              >
-                −
-              </button>
-              <span className="font-['Oswald'] w-3.5 text-center text-[11px] text-[#e5e5e5]">{formatTranspose(transpose)}</span>
-              <button
-                onClick={() => setTranspose((t) => Math.min(MAX_TRANSPOSE, t + 1))}
-                disabled={transpose === MAX_TRANSPOSE}
-                className="flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold text-[#e5e5e5] shadow-[inset_0_0_0_1px_#4a4a4e] disabled:opacity-40"
-                style={{ background: "radial-gradient(circle at 35% 30%,#3a3a3e,#0d0d0d 70%)" }}
-              >
-                +
-              </button>
-            </div>
-            <span className="font-['Oswald'] text-[7px] text-[#6a6a6e]">Transpose</span>
-          </div>
-
-          {onToggleMetronome && (
             <div className="flex flex-col items-center gap-0.5">
-              <button
-                onClick={onToggleMetronome}
-                title="Toggle metronome"
-                className="flex h-6.5 w-6.5 items-center justify-center rounded-full border-none"
-                style={{
-                  background: metronomeEnabled ? "radial-gradient(circle at 35% 30%, #ff6b52, #b8321f 70%)" : "radial-gradient(circle at 35% 30%, #4a4a4e, #1a1a1a 70%)",
-                  boxShadow: metronomeEnabled ? "0 0 10px rgba(255,80,50,0.7), inset 0 0 0 2px #6b1810" : "inset 0 0 0 2px #2a2a2e",
-                }}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} width="13" height="13">
-                  <path d="M12 3l7 17H5z" strokeLinejoin="round" />
-                  <path d="M12 7l3 10" strokeLinecap="round" />
-                </svg>
-              </button>
-              <span className="font-['Oswald'] text-[7px] text-[#6a6a6e]">Metro</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setTranspose((t) => Math.max(MIN_TRANSPOSE, t - 1))}
+                  disabled={transpose === MIN_TRANSPOSE}
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold text-[#e5e5e5] shadow-[inset_0_0_0_1px_#4a4a4e] disabled:opacity-40"
+                  style={{ background: "radial-gradient(circle at 35% 30%,#3a3a3e,#0d0d0d 70%)" }}
+                >
+                  −
+                </button>
+                <span className="font-['Oswald'] w-3.5 text-center text-[11px] text-[#e5e5e5]">{formatTranspose(transpose)}</span>
+                <button
+                  onClick={() => setTranspose((t) => Math.min(MAX_TRANSPOSE, t + 1))}
+                  disabled={transpose === MAX_TRANSPOSE}
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold text-[#e5e5e5] shadow-[inset_0_0_0_1px_#4a4a4e] disabled:opacity-40"
+                  style={{ background: "radial-gradient(circle at 35% 30%,#3a3a3e,#0d0d0d 70%)" }}
+                >
+                  +
+                </button>
+              </div>
+              <span className="font-['Oswald'] text-[7px] text-[#6a6a6e]">Transpose</span>
             </div>
-          )}
+
+            {onToggleMetronome && (
+              <div className="flex flex-col items-center gap-0.5">
+                <button
+                  onClick={onToggleMetronome}
+                  title="Toggle metronome"
+                  className="flex h-6.5 w-6.5 items-center justify-center rounded-full border-none"
+                  style={{
+                    background: metronomeEnabled ? "radial-gradient(circle at 35% 30%, #ff6b52, #b8321f 70%)" : "radial-gradient(circle at 35% 30%, #4a4a4e, #1a1a1a 70%)",
+                    boxShadow: metronomeEnabled ? "0 0 10px rgba(255,80,50,0.7), inset 0 0 0 2px #6b1810" : "inset 0 0 0 2px #2a2a2e",
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} width="13" height="13">
+                    <path d="M12 3l7 17H5z" strokeLinejoin="round" />
+                    <path d="M12 7l3 10" strokeLinecap="round" />
+                  </svg>
+                </button>
+                <span className="font-['Oswald'] text-[7px] text-[#6a6a6e]">Metro</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {segments.length > 0 && (
           <div
-            className="relative flex h-6 cursor-pointer touch-none overflow-hidden rounded-sm shadow-[inset_0_1px_3px_rgba(0,0,0,0.7)]"
+            className="relative flex h-6 select-none cursor-pointer touch-none overflow-hidden rounded-sm shadow-[inset_0_1px_3px_rgba(0,0,0,0.7)]"
             {...seekDrag}
           >
             {segments.map((segment, i) => (
