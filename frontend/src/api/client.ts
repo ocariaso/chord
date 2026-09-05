@@ -60,8 +60,12 @@ export function jobEventsUrl(jobId: string): string {
   return `${API_BASE}/jobs/${jobId}/events`;
 }
 
+export function cancelJobUrl(jobId: string): string {
+  return `${API_BASE}/jobs/${jobId}/cancel`;
+}
+
 export async function cancelJob(jobId: string): Promise<Job> {
-  const res = await fetch(`${API_BASE}/jobs/${jobId}/cancel`, { method: "POST" });
+  const res = await fetch(cancelJobUrl(jobId), { method: "POST" });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.detail ?? `Failed to cancel job (${res.status})`);
