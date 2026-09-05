@@ -5,6 +5,7 @@ import { PlaybackEngine } from "../audio/playbackEngine";
 import { downloadFile } from "../utils/download";
 import { ChordTimeline } from "./ChordTimeline";
 import { StemChannel } from "./StemChannel";
+import { StudioMixer } from "./studio/StudioMixer";
 import { TransportBar } from "./TransportBar";
 
 interface StemMixerProps {
@@ -15,6 +16,18 @@ interface StemMixerProps {
 interface ChannelState {
   muted: boolean;
   volume: number;
+}
+
+type ViewMode = "simple" | "studio";
+const VIEW_MODE_KEY = "chord:viewMode";
+
+function loadViewMode(): ViewMode {
+  try {
+    const stored = localStorage.getItem(VIEW_MODE_KEY);
+    return stored === "studio" ? "studio" : "simple";
+  } catch {
+    return "simple";
+  }
 }
 
 export function StemMixer({ job, onBack }: StemMixerProps) {
@@ -32,6 +45,16 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [masterVolume, setMasterVolume] = useState(1);
   const [chordSegments, setChordSegments] = useState<ChordSegment[]>([]);
+  const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
+
+  function changeViewMode(mode: ViewMode) {
+    setViewMode(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // Private browsing or storage disabled; the toggle still works for this session.
+    }
+  }
 
   async function handleDownloadAll() {
     setIsDownloadingAll(true);
@@ -169,14 +192,30 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
     return <div className="p-8 text-center text-neutral-400">Loading stems...</div>;
   }
 
+  const duration = engineRef.current?.duration ?? 0;
+
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 p-8">
+    <div className={viewMode === "studio" ? "mx-auto flex max-w-6xl flex-col gap-4 p-8" : "mx-auto flex max-w-3xl flex-col gap-4 p-8"}>
       <div className="flex items-center justify-between">
         <div className="min-w-0">
           <h1 className="truncate text-xl font-semibold text-neutral-100">{job.original_filename}</h1>
           {job.tempo_bpm != null && <p className="text-sm text-neutral-500">{job.tempo_bpm} BPM</p>}
         </div>
         <div className="flex items-center gap-4">
+          <div className="flex rounded-md bg-neutral-900 p-0.5 text-sm">
+            <button
+              onClick={() => changeViewMode("simple")}
+              className={`rounded px-3 py-1 ${viewMode === "simple" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-neutral-200"}`}
+            >
+              Simple
+            </button>
+            <button
+              onClick={() => changeViewMode("studio")}
+              className={`rounded px-3 py-1 ${viewMode === "studio" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-neutral-200"}`}
+            >
+              Studio
+            </button>
+          </div>
           <button
             onClick={handleDownloadAll}
             disabled={isDownloadingAll}
@@ -193,43 +232,70 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
         </div>
       </div>
 
-      <ChordTimeline
-        segments={chordSegments}
-        currentTime={currentTime}
-        duration={engineRef.current?.duration ?? 0}
-        keyLabel={job.key_estimate}
-        onSeek={handleSeek}
-      />
-
-      <div className="flex flex-col gap-2">
-        {job.stem_names.map((name) => (
-          <StemChannel
-            key={name}
-            name={name}
-            buffer={engineRef.current!.getBuffer(name)!}
-            muted={channelStates[name]?.muted ?? false}
-            isSoloed={soloedStems.has(name)}
-            volume={channelStates[name]?.volume ?? 1}
-            downloadHref={stemUrl(job.id, name)}
-            onToggleMute={() => toggleMute(name)}
-            onToggleSolo={() => toggleSolo(name)}
-            onVolumeChange={(v) => changeVolume(name, v)}
-            onWaveSurferReady={(stemName, instance) => waveSurfersRef.current.set(stemName, instance)}
+      {viewMode === "studio" ? (
+        <StudioMixer
+          stemNames={job.stem_names}
+          getBuffer={(name) => engineRef.current?.getBuffer(name)}
+          channelStates={channelStates}
+          soloedStems={soloedStems}
+          stemUrl={(name) => stemUrl(job.id, name)}
+          onToggleMute={toggleMute}
+          onToggleSolo={toggleSolo}
+          onVolumeChange={changeVolume}
+          onWaveSurferReady={(stemName, instance) => waveSurfersRef.current.set(stemName, instance)}
+          segments={chordSegments}
+          currentTime={currentTime}
+          duration={duration}
+          keyLabel={job.key_estimate}
+          onSeek={handleSeek}
+          isPlaying={isPlaying}
+          onPlayPause={handlePlayPause}
+          metronomeEnabled={metronomeEnabled}
+          onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
+          masterVolume={masterVolume}
+          onMasterVolumeChange={changeMasterVolume}
+        />
+      ) : (
+        <>
+          <ChordTimeline
+            segments={chordSegments}
+            currentTime={currentTime}
+            duration={duration}
+            keyLabel={job.key_estimate}
+            onSeek={handleSeek}
           />
-        ))}
-      </div>
 
-      <TransportBar
-        isPlaying={isPlaying}
-        currentTime={currentTime}
-        duration={engineRef.current?.duration ?? 0}
-        onPlayPause={handlePlayPause}
-        onSeek={handleSeek}
-        metronomeEnabled={metronomeEnabled}
-        onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
-        masterVolume={masterVolume}
-        onMasterVolumeChange={changeMasterVolume}
-      />
+          <div className="flex flex-col gap-2">
+            {job.stem_names.map((name) => (
+              <StemChannel
+                key={name}
+                name={name}
+                buffer={engineRef.current!.getBuffer(name)!}
+                muted={channelStates[name]?.muted ?? false}
+                isSoloed={soloedStems.has(name)}
+                volume={channelStates[name]?.volume ?? 1}
+                downloadHref={stemUrl(job.id, name)}
+                onToggleMute={() => toggleMute(name)}
+                onToggleSolo={() => toggleSolo(name)}
+                onVolumeChange={(v) => changeVolume(name, v)}
+                onWaveSurferReady={(stemName, instance) => waveSurfersRef.current.set(stemName, instance)}
+              />
+            ))}
+          </div>
+
+          <TransportBar
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            duration={duration}
+            onPlayPause={handlePlayPause}
+            onSeek={handleSeek}
+            metronomeEnabled={metronomeEnabled}
+            onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
+            masterVolume={masterVolume}
+            onMasterVolumeChange={changeMasterVolume}
+          />
+        </>
+      )}
     </div>
   );
 }
