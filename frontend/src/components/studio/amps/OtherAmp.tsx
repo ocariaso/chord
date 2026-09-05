@@ -85,7 +85,12 @@ export function OtherAmp({
           className="relative h-20 rounded-sm shadow-[inset_0_2px_6px_rgba(0,0,0,0.6)]"
           style={{ backgroundColor: "#3a3a3e", backgroundImage: "radial-gradient(#2a2a2e 40%, transparent 42%)", backgroundSize: "10px 10px" }}
         >
-          <span className="absolute bottom-2 left-2.5 text-[10px] font-medium uppercase tracking-wide text-[#8a8a8e]">Aux / Other</span>
+          <div
+            className="absolute bottom-2.5 left-2.5 rounded border px-2.5 py-1"
+            style={{ backgroundColor: "#141414", borderColor: "#6a6a6e", boxShadow: "0 1px 2px rgba(0,0,0,0.4)" }}
+          >
+            <span className="font-['Oswald'] text-[10px] font-medium uppercase tracking-wide text-[#a4a4a8]">Aux / Other</span>
+          </div>
         </div>
       </div>
     </div>
