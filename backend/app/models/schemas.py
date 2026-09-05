@@ -10,6 +10,7 @@ class JobStatus(str, Enum):
     ANALYZING = "analyzing"
     DONE = "done"
     ERROR = "error"
+    CANCELLED = "cancelled"
 
 
 class ChordSegment(BaseModel):

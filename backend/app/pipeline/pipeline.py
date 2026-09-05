@@ -25,6 +25,11 @@ def _get_job_row(job_id: str):
         return cur.fetchone()
 
 
+def _is_cancelled(job_id: str) -> bool:
+    row = _get_job_row(job_id)
+    return row is None or row["status"] == JobStatus.CANCELLED.value
+
+
 def job_dir(job_id: str) -> Path:
     return settings.jobs_dir / job_id
 
@@ -36,6 +41,9 @@ def run_job(job_id: str) -> None:
     analysis_dir = directory / "analysis"
 
     try:
+        if _is_cancelled(job_id):
+            return
+
         source_url = _get_job_row(job_id)["source_url"]
         if source_url:
             _update_job(job_id, status=JobStatus.FETCHING.value, progress=0.05, stage_message="Downloading audio")
@@ -44,10 +52,16 @@ def run_job(job_id: str) -> None:
                 downloaded_path.rename(original_path)
             _update_job(job_id, original_filename=title)
 
+        if _is_cancelled(job_id):
+            return
+
         _update_job(job_id, status=JobStatus.SEPARATING.value, progress=0.1, stage_message="Separating stems")
         with sf.SoundFile(original_path) as f:
             duration_seconds = len(f) / f.samplerate
         separation.separate(original_path, stems_dir)
+
+        if _is_cancelled(job_id):
+            return
 
         done_fields = dict(
             status=JobStatus.DONE.value,
@@ -58,6 +72,9 @@ def run_job(job_id: str) -> None:
 
         _update_job(job_id, progress=0.5, stage_message="Detecting tempo")
         done_fields["tempo_bpm"] = tempo.detect_tempo(original_path)
+
+        if _is_cancelled(job_id):
+            return
 
         if settings.enable_chord_detection:
             _update_job(job_id, status=JobStatus.ANALYZING.value, progress=0.6, stage_message="Detecting chords and key")
@@ -72,7 +89,12 @@ def run_job(job_id: str) -> None:
             done_fields["key_estimate"] = f"{key_estimate.key} {key_estimate.mode}"
             done_fields["key_confidence"] = key_estimate.confidence
 
+        if _is_cancelled(job_id):
+            return
+
         _update_job(job_id, **done_fields)
     except Exception as exc:  # noqa: BLE001 - any failure must reach the job row
+        if _is_cancelled(job_id):
+            return
         logger.exception("Job %s failed", job_id)
         _update_job(job_id, status=JobStatus.ERROR.value, error_message=str(exc))

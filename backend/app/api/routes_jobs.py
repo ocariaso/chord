@@ -112,7 +112,21 @@ async def get_job(job_id: str) -> JobResponse:
     return _row_to_response(_get_job_row(job_id))
 
 
-TERMINAL_STATUSES = {JobStatus.DONE.value, JobStatus.ERROR.value}
+TERMINAL_STATUSES = {JobStatus.DONE.value, JobStatus.ERROR.value, JobStatus.CANCELLED.value}
+
+
+@router.post("/{job_id}/cancel", response_model=JobResponse)
+async def cancel_job(job_id: str) -> JobResponse:
+    row = _get_job_row(job_id)
+    if row["status"] in TERMINAL_STATUSES:
+        raise HTTPException(status_code=409, detail="Job has already finished")
+
+    with db_cursor() as cur:
+        cur.execute(
+            "UPDATE jobs SET status = ?, stage_message = ?, updated_at = ? WHERE id = ?",
+            (JobStatus.CANCELLED.value, "Cancelled", now_iso(), job_id),
+        )
+    return _row_to_response(_get_job_row(job_id))
 
 
 @router.get("/{job_id}/events")

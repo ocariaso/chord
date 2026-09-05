@@ -56,7 +56,15 @@ export function ChordTimeline({ segments, currentTime, duration, keyLabel, onSee
         </div>
         <div className="flex items-center gap-4">
           {keyLabel && (
-            <span className="text-sm text-neutral-500">Key: {transposeKeyLabel(keyLabel, transpose)}</span>
+            <span className="flex items-center gap-1 text-sm text-neutral-500">
+              Key: {transposeKeyLabel(keyLabel, transpose)}
+              <span
+                title="Adjust the key if detected wrong. This will transpose the chords accordingly."
+                className="flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full border border-neutral-600 text-[10px] leading-none text-neutral-500"
+              >
+                i
+              </span>
+            </span>
           )}
           <div className="flex items-center gap-1.5 text-sm text-neutral-400">
             <span>Transpose</span>
