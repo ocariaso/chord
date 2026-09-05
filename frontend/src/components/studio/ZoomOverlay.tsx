@@ -69,7 +69,7 @@ export function ZoomOverlay({ originRect, onClose, children, maxZoomScale = 2 }:
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-8"
+      className="fixed inset-0 z-50 overflow-auto overscroll-contain p-8"
       style={{
         backgroundColor: backdropVisible ? "rgba(0,0,0,0.7)" : "rgba(0,0,0,0)",
         transition: `background-color ${TRANSITION_MS}ms ease`,
@@ -77,16 +77,18 @@ export function ZoomOverlay({ originRect, onClose, children, maxZoomScale = 2 }:
       }}
       onClick={handleClose}
     >
-      <div ref={cardRef} onClick={(e) => e.stopPropagation()} className="relative">
-        <button
-          onClick={handleClose}
-          className="absolute -right-3 -top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-neutral-800 text-neutral-300 shadow-lg hover:bg-neutral-700"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width="14" height="14">
-            <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
-          </svg>
-        </button>
-        {children}
+      <div className="flex min-h-full items-center justify-center">
+        <div ref={cardRef} onClick={(e) => e.stopPropagation()} className="relative">
+          <button
+            onClick={handleClose}
+            className="absolute -right-3 -top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-neutral-800 text-neutral-300 shadow-lg hover:bg-neutral-700"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width="14" height="14">
+              <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+            </svg>
+          </button>
+          {children}
+        </div>
       </div>
     </div>
   );

@@ -37,7 +37,6 @@ interface StudioMixerProps {
   onToggleSolo: (name: string) => void;
   onVolumeChange: (name: string, volume: number) => void;
   onWaveSurferReady: (name: string, instance: WaveSurfer) => void;
-  onWaveSurferRemove: (name: string) => void;
 
   segments: ChordSegment[];
   currentTime: number;
@@ -74,7 +73,6 @@ export function StudioMixer({
   onToggleSolo,
   onVolumeChange,
   onWaveSurferReady,
-  onWaveSurferRemove,
   segments,
   currentTime,
   duration,
@@ -181,8 +179,9 @@ export function StudioMixer({
               onVolumeChange={(v) => onVolumeChange(closeup.name, v)}
               duration={duration}
               onSeek={onSeek}
-              onWaveSurferReady={onWaveSurferReady}
-              onWaveSurferRemove={onWaveSurferRemove}
+              isPlaying={isPlaying}
+              onPlayPause={onPlayPause}
+              currentTime={currentTime}
               originRect={closeup.rect}
               onClose={() => setCloseup(null)}
             />

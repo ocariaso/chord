@@ -295,7 +295,6 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
       onToggleSolo={toggleSolo}
       onVolumeChange={changeVolume}
       onWaveSurferReady={(stemName, instance) => waveSurfersRef.current.set(stemName, instance)}
-      onWaveSurferRemove={(stemName) => waveSurfersRef.current.delete(stemName)}
       segments={chordSegments}
       currentTime={currentTime}
       duration={duration}
