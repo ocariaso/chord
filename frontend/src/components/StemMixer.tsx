@@ -26,7 +26,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [soloedStem, setSoloedStem] = useState<string | null>(null);
+  const [soloedStems, setSoloedStems] = useState<Set<string>>(new Set());
   const [channelStates, setChannelStates] = useState<Record<string, ChannelState>>({});
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
@@ -128,9 +128,14 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   }
 
   function toggleSolo(name: string) {
-    const next = soloedStem === name ? null : name;
-    engineRef.current?.setSolo(next);
-    setSoloedStem(next);
+    const isSoloed = soloedStems.has(name);
+    engineRef.current?.setSolo(name, !isSoloed);
+    setSoloedStems((prev) => {
+      const next = new Set(prev);
+      if (isSoloed) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   }
 
   function changeVolume(name: string, volume: number) {
@@ -203,7 +208,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
             name={name}
             buffer={engineRef.current!.getBuffer(name)!}
             muted={channelStates[name]?.muted ?? false}
-            isSoloed={soloedStem === name}
+            isSoloed={soloedStems.has(name)}
             volume={channelStates[name]?.volume ?? 1}
             downloadHref={stemUrl(job.id, name)}
             onToggleMute={() => toggleMute(name)}

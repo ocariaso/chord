@@ -18,7 +18,7 @@ export class PlaybackEngine {
   private sourceNodes = new Map<string, AudioBufferSourceNode>();
   private volumes = new Map<string, number>();
   private muted = new Set<string>();
-  private soloed: string | null = null;
+  private soloed = new Set<string>();
 
   private offsetSeconds = 0;
   private startedAtContextTime = 0;
@@ -143,8 +143,9 @@ export class PlaybackEngine {
     this.applyGains();
   }
 
-  setSolo(stemName: string | null): void {
-    this.soloed = stemName;
+  setSolo(stemName: string, active: boolean): void {
+    if (active) this.soloed.add(stemName);
+    else this.soloed.delete(stemName);
     this.applyGains();
   }
 
@@ -170,7 +171,7 @@ export class PlaybackEngine {
 
   private applyGains(): void {
     for (const [name, gainNode] of this.gainNodes) {
-      const isAudible = this.soloed ? name === this.soloed : !this.muted.has(name);
+      const isAudible = this.soloed.size > 0 ? this.soloed.has(name) && !this.muted.has(name) : !this.muted.has(name);
       const volume = this.volumes.get(name) ?? 1;
       gainNode.gain.value = isAudible ? volume : 0;
     }
