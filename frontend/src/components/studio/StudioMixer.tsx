@@ -8,7 +8,7 @@ import { PianoAmp } from "./amps/PianoAmp";
 import { VocalsAmp } from "./amps/VocalsAmp";
 import { MasterUnit } from "./MasterUnit";
 import type { AmpProps } from "./types";
-import { GRID_GAP, MASTER_WIDTH } from "./constants";
+import { CABINET_INTERIOR_COLOR, CABINET_INTERIOR_IMAGE, GRID_GAP, MASTER_WIDTH } from "./constants";
 
 const AMP_COMPONENTS: Record<string, (props: AmpProps) => React.JSX.Element> = {
   vocals: VocalsAmp,
@@ -76,7 +76,7 @@ export function StudioMixer({
 
   return (
     <div className="flex flex-col items-center gap-6 py-2">
-      <div className="sticky top-0 z-10 w-full pb-1" style={{ backgroundColor: "#0a0a0a" }}>
+      <div className="sticky top-0 z-10 w-full pb-1" style={{ backgroundColor: CABINET_INTERIOR_COLOR, backgroundImage: CABINET_INTERIOR_IMAGE }}>
         <div className="mx-auto flex justify-center pt-2">
           <MasterUnit
             segments={segments}
