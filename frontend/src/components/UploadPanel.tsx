@@ -25,7 +25,9 @@ export function UploadPanel({ onFileSelected, onUrlSubmitted, isSubmitting, erro
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-8 p-8">
       <div className="text-center">
-        <h1 className="text-3xl font-semibold text-neutral-100">CHORD</h1>
+        <h1 className="text-3xl font-semibold text-neutral-100">
+          CHORD <span className="align-super text-xs font-normal text-neutral-500">v{__APP_VERSION__}</span>
+        </h1>
         <p className="mt-1 text-neutral-400">Component Harmony &amp; Orchestral Retrieval Decoder</p>
       </div>
 
