@@ -1,3 +1,5 @@
+import { formatTime } from "../utils/time";
+
 interface TransportBarProps {
   isPlaying: boolean;
   currentTime: number;
@@ -8,13 +10,6 @@ interface TransportBarProps {
   onToggleMetronome?: () => void;
   masterVolume: number;
   onMasterVolumeChange: (volume: number) => void;
-}
-
-function formatTime(seconds: number): string {
-  if (!Number.isFinite(seconds)) return "0:00";
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 function MetronomeIcon() {
