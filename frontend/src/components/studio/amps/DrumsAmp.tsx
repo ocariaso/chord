@@ -30,11 +30,12 @@ export function DrumsAmp({
   onWaveSurferReady,
   duration,
   onSeek,
+  controlsOnly = false,
 }: AmpProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { isDownloading, download } = useDownload(downloadHref, `${name}.wav`);
   const seekDrag = useSeekDrag(duration, onSeek);
-  useStemWaveform(containerRef, name, buffer, downloadHref, "#1e3a26", "#4ade80", 16, onWaveSurferReady);
+  useStemWaveform(containerRef, name, buffer, downloadHref, "#1e3a26", "#4ade80", 26, onWaveSurferReady);
 
   const woodStyle = {
     background: "linear-gradient(90deg, #7a2f1e 0%, #5e2216 12%, #8f3a24 28%, #5e2216 44%, #7a2f1e 60%, #8f3a24 76%, #5e2216 90%, #7a2f1e 100%)",
@@ -72,15 +73,19 @@ export function DrumsAmp({
         </button>
 
         <div className="flex flex-col items-center gap-0.5">
-          <DownloadLed active={isDownloading} idleColor="#3b82f6" idleGlow="#bfdbfe" size={6} />
-          <button
-            onClick={() => void download()}
-            title={`Download ${name}`}
-            className="flex h-5 w-5 items-center justify-center rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.4)]"
-            style={{ background: "radial-gradient(circle at 35% 30%, #e2e2e4, #6a6a6e 70%)" }}
-          >
-            <DownloadIcon />
-          </button>
+          <div className="relative flex h-5 w-5 items-center justify-center">
+            <span className="absolute -left-2.5 top-1/2 -translate-y-1/2">
+              <DownloadLed active={isDownloading} idleColor="#3b82f6" idleGlow="#bfdbfe" size={6} />
+            </span>
+            <button
+              onClick={() => void download()}
+              title={`Download ${name}`}
+              className="flex h-5 w-5 items-center justify-center rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.4)]"
+              style={{ background: "radial-gradient(circle at 35% 30%, #e2e2e4, #6a6a6e 70%)" }}
+            >
+              <DownloadIcon />
+            </button>
+          </div>
           <span className="font-['Oswald'] text-[6px] text-[#9a9a9e]">Save</span>
         </div>
       </div>
@@ -91,16 +96,18 @@ export function DrumsAmp({
         </div>
       </div>
 
-      <div className="rounded-b-lg p-3.5 shadow-[0_10px_24px_rgba(0,0,0,0.5)]" style={{ width: AMP_WIDTH, ...woodStyle }}>
-        <div
-          className="relative h-[120px] rounded shadow-[inset_0_2px_6px_rgba(0,0,0,0.6)]"
-          style={{ backgroundColor: "#0a0a0a", backgroundImage: "radial-gradient(circle, #1e1e1e 40%, transparent 42%)", backgroundSize: "10px 10px", backgroundPosition: "0 0, 5px 5px" }}
-        >
-          <div className="absolute left-1/2 top-3.5 -translate-x-1/2 rounded-lg border-2 px-3.5 py-1 shadow-[0_1px_3px_rgba(0,0,0,0.3)]" style={{ backgroundColor: "#141414", borderColor: "#f0f0f0" }}>
-            <span className="font-['Oswald'] text-[16px] font-bold text-white">Drums</span>
+      {!controlsOnly && (
+        <div className="rounded-b-lg p-3.5 shadow-[0_10px_24px_rgba(0,0,0,0.5)]" style={{ width: AMP_WIDTH, ...woodStyle }}>
+          <div
+            className="relative h-[120px] rounded shadow-[inset_0_2px_6px_rgba(0,0,0,0.6)]"
+            style={{ backgroundColor: "#0a0a0a", backgroundImage: "radial-gradient(circle, #1e1e1e 40%, transparent 42%)", backgroundSize: "10px 10px", backgroundPosition: "0 0, 5px 5px" }}
+          >
+            <div className="absolute left-1/2 top-3.5 -translate-x-1/2 rounded-lg border-2 px-3.5 py-1 shadow-[0_1px_3px_rgba(0,0,0,0.3)]" style={{ backgroundColor: "#141414", borderColor: "#f0f0f0" }}>
+              <span className="font-['Oswald'] text-[16px] font-bold text-white">Drums</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

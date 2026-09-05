@@ -20,6 +20,7 @@ export function GuitarAmp({
   onWaveSurferReady,
   duration,
   onSeek,
+  controlsOnly = false,
 }: AmpProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { isDownloading, download } = useDownload(downloadHref, `${name}.wav`);
@@ -93,46 +94,50 @@ export function GuitarAmp({
         </div>
       </div>
 
-      <div className="flex justify-center px-0 pb-2 pt-3">
-        <div className="relative rounded-md border-[1.5px] px-4 py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.5)]" style={{ backgroundColor: "#0a0a0a", borderColor: "#c4c4c8" }}>
-          <div className="absolute left-0.5 top-0.5 h-[3px] w-[3px] rounded-full" style={{ backgroundColor: "#8a8a8e" }} />
-          <div className="absolute right-0.5 top-0.5 h-[3px] w-[3px] rounded-full" style={{ backgroundColor: "#8a8a8e" }} />
-          <div className="absolute bottom-0.5 left-0.5 h-[3px] w-[3px] rounded-full" style={{ backgroundColor: "#8a8a8e" }} />
-          <div className="absolute bottom-0.5 right-0.5 h-[3px] w-[3px] rounded-full" style={{ backgroundColor: "#8a8a8e" }} />
-          <span
-            className="text-[20px]"
+      {!controlsOnly && (
+        <>
+          <div className="flex justify-center px-0 pb-2 pt-3">
+            <div className="relative rounded-md border-[1.5px] px-4 py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.5)]" style={{ backgroundColor: "#0a0a0a", borderColor: "#c4c4c8" }}>
+              <div className="absolute left-0.5 top-0.5 h-[3px] w-[3px] rounded-full" style={{ backgroundColor: "#8a8a8e" }} />
+              <div className="absolute right-0.5 top-0.5 h-[3px] w-[3px] rounded-full" style={{ backgroundColor: "#8a8a8e" }} />
+              <div className="absolute bottom-0.5 left-0.5 h-[3px] w-[3px] rounded-full" style={{ backgroundColor: "#8a8a8e" }} />
+              <div className="absolute bottom-0.5 right-0.5 h-[3px] w-[3px] rounded-full" style={{ backgroundColor: "#8a8a8e" }} />
+              <span
+                className="text-[20px]"
+                style={{
+                  fontFamily: "'Dancing Script',cursive",
+                  background: "linear-gradient(180deg, #fff 0%, #c9c9cd 45%, #6a6a70 55%, #e8e8ec 100%)",
+                  WebkitBackgroundClip: "text",
+                  backgroundClip: "text",
+                  color: "transparent",
+                }}
+              >
+                Guitar
+              </span>
+            </div>
+          </div>
+
+          <div
+            className="relative h-[110px] rounded shadow-[inset_0_2px_6px_rgba(0,0,0,0.5)]"
             style={{
-              fontFamily: "'Dancing Script',cursive",
-              background: "linear-gradient(180deg, #fff 0%, #c9c9cd 45%, #6a6a70 55%, #e8e8ec 100%)",
-              WebkitBackgroundClip: "text",
-              backgroundClip: "text",
-              color: "transparent",
+              backgroundColor: "#8a8a8e",
+              backgroundImage:
+                "radial-gradient(circle at 20% 30%, rgba(255,255,255,0.5) 0.6px, transparent 1px)," +
+                "radial-gradient(circle at 60% 70%, rgba(0,0,0,0.35) 0.6px, transparent 1px)," +
+                "radial-gradient(circle at 80% 20%, rgba(255,255,255,0.4) 0.6px, transparent 1px)," +
+                "radial-gradient(circle at 35% 80%, rgba(0,0,0,0.3) 0.6px, transparent 1px)," +
+                "radial-gradient(circle at 90% 55%, rgba(255,255,255,0.4) 0.6px, transparent 1px)",
+              backgroundSize: "6px 6px, 7px 7px, 5px 5px, 8px 8px, 6.5px 6.5px",
             }}
           >
-            Guitar
-          </span>
-        </div>
-      </div>
-
-      <div
-        className="relative h-[110px] rounded shadow-[inset_0_2px_6px_rgba(0,0,0,0.5)]"
-        style={{
-          backgroundColor: "#8a8a8e",
-          backgroundImage:
-            "radial-gradient(circle at 20% 30%, rgba(255,255,255,0.5) 0.6px, transparent 1px)," +
-            "radial-gradient(circle at 60% 70%, rgba(0,0,0,0.35) 0.6px, transparent 1px)," +
-            "radial-gradient(circle at 80% 20%, rgba(255,255,255,0.4) 0.6px, transparent 1px)," +
-            "radial-gradient(circle at 35% 80%, rgba(0,0,0,0.3) 0.6px, transparent 1px)," +
-            "radial-gradient(circle at 90% 55%, rgba(255,255,255,0.4) 0.6px, transparent 1px)",
-          backgroundSize: "6px 6px, 7px 7px, 5px 5px, 8px 8px, 6.5px 6.5px",
-        }}
-      >
-        <div className="absolute bottom-2 right-2.5 rounded-md border-[1.5px] px-2.5 py-0.5" style={{ backgroundColor: "#0a0a0a", borderColor: "#e5e5e5" }}>
-          <span className="text-[15px]" style={{ fontFamily: "'Dancing Script',cursive", color: "#f0f0f0" }}>
-            Six Strings
-          </span>
-        </div>
-      </div>
+            <div className="absolute bottom-2 right-2.5 rounded-md border-[1.5px] px-2.5 py-0.5" style={{ backgroundColor: "#0a0a0a", borderColor: "#e5e5e5" }}>
+              <span className="text-[15px]" style={{ fontFamily: "'Dancing Script',cursive", color: "#f0f0f0" }}>
+                Six Strings
+              </span>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -20,6 +20,7 @@ export function PianoAmp({
   onWaveSurferReady,
   duration,
   onSeek,
+  controlsOnly = false,
 }: AmpProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { isDownloading, download } = useDownload(downloadHref, `${name}.wav`);
@@ -85,23 +86,25 @@ export function PianoAmp({
           </div>
         </div>
 
-        <div
-          className="relative mx-2.5 mb-2.5 flex-1 rounded shadow-[inset_0_2px_6px_rgba(0,0,0,0.15)]"
-          style={{
-            minHeight: 110,
-            backgroundColor: "#e8e8ea",
-            backgroundImage:
-              "radial-gradient(#1a1a1a 46%, transparent 48%)," +
-              "radial-gradient(circle 48px at 175px 55px, rgba(110,110,114,0.65) 0%, rgba(110,110,114,0.65) 55%, transparent 100%)," +
-              "radial-gradient(circle 30px at 375px 78px, rgba(110,110,114,0.6) 0%, rgba(110,110,114,0.6) 55%, transparent 100%)",
-            backgroundSize: "9px 15px, auto, auto",
-            backgroundRepeat: "repeat, no-repeat, no-repeat",
-          }}
-        >
-          <div className="absolute left-3.5 top-3 rounded-md border-2 px-3 py-1.5 shadow-[0_1px_3px_rgba(0,0,0,0.3)]" style={{ backgroundColor: "#141414", borderColor: "#f0f0f0" }}>
-            <span className="font-['Oswald'] text-[13px] font-bold text-white">Piano</span>
+        {!controlsOnly && (
+          <div
+            className="relative mx-2.5 mb-2.5 flex-1 rounded shadow-[inset_0_2px_6px_rgba(0,0,0,0.15)]"
+            style={{
+              minHeight: 110,
+              backgroundColor: "#e8e8ea",
+              backgroundImage:
+                "radial-gradient(#1a1a1a 46%, transparent 48%)," +
+                "radial-gradient(circle 48px at 175px 55px, rgba(110,110,114,0.65) 0%, rgba(110,110,114,0.65) 55%, transparent 100%)," +
+                "radial-gradient(circle 30px at 375px 78px, rgba(110,110,114,0.6) 0%, rgba(110,110,114,0.6) 55%, transparent 100%)",
+              backgroundSize: "9px 15px, auto, auto",
+              backgroundRepeat: "repeat, no-repeat, no-repeat",
+            }}
+          >
+            <div className="absolute left-3.5 top-3 rounded-md border-2 px-3 py-1.5 shadow-[0_1px_3px_rgba(0,0,0,0.3)]" style={{ backgroundColor: "#141414", borderColor: "#f0f0f0" }}>
+              <span className="font-['Oswald'] text-[13px] font-bold text-white">Piano</span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div style={woodStyle} />

@@ -43,6 +43,7 @@ export function BassAmp({
   onWaveSurferReady,
   duration,
   onSeek,
+  controlsOnly = false,
 }: AmpProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const hexId = useId();
@@ -50,7 +51,7 @@ export function BassAmp({
   const ballId = useId();
   const { isDownloading, download } = useDownload(downloadHref, `${name}.wav`);
   const seekDrag = useSeekDrag(duration, onSeek);
-  useStemWaveform(containerRef, name, buffer, downloadHref, "#1e3a26", "#4ade80", 38, onWaveSurferReady);
+  useStemWaveform(containerRef, name, buffer, downloadHref, "#1e3a26", "#4ade80", 33, onWaveSurferReady);
 
   return (
     <div
@@ -140,31 +141,33 @@ export function BassAmp({
         </div>
       </div>
 
-      <div className="mt-2.5 rounded-md border-[1.5px] p-[3px]" style={{ borderColor: "#d8d8dc" }}>
-        <div
-          className="relative h-[114px] rounded shadow-[inset_0_2px_6px_rgba(0,0,0,0.6)]"
-          style={{
-            backgroundColor: "#161616",
-            backgroundImage:
-              "repeating-linear-gradient(90deg, rgba(255,255,255,0.14) 0 1.5px, transparent 1.5px 4px)," +
-              "repeating-linear-gradient(0deg, rgba(255,255,255,0.14) 0 1.5px, transparent 1.5px 4px)",
-          }}
-        >
-          <span
-            className="absolute left-1/2 top-[28%] -translate-x-1/2 -translate-y-1/2 text-[24px]"
+      {!controlsOnly && (
+        <div className="mt-2.5 rounded-md border-[1.5px] p-[3px]" style={{ borderColor: "#d8d8dc" }}>
+          <div
+            className="relative h-[114px] rounded shadow-[inset_0_2px_6px_rgba(0,0,0,0.6)]"
             style={{
-              fontFamily: "'Rock Salt',cursive",
-              background: "linear-gradient(180deg, #fff 0%, #c9c9cd 45%, #7a7a80 55%, #e8e8ec 100%)",
-              WebkitBackgroundClip: "text",
-              backgroundClip: "text",
-              color: "transparent",
-              filter: "drop-shadow(0 1px 0 rgba(255,255,255,0.4)) drop-shadow(0 2px 2px rgba(0,0,0,0.7))",
+              backgroundColor: "#161616",
+              backgroundImage:
+                "repeating-linear-gradient(90deg, rgba(255,255,255,0.14) 0 1.5px, transparent 1.5px 4px)," +
+                "repeating-linear-gradient(0deg, rgba(255,255,255,0.14) 0 1.5px, transparent 1.5px 4px)",
             }}
           >
-            Bass
-          </span>
+            <span
+              className="absolute left-1/2 top-[28%] -translate-x-1/2 -translate-y-1/2 text-[24px]"
+              style={{
+                fontFamily: "'Rock Salt',cursive",
+                background: "linear-gradient(180deg, #fff 0%, #c9c9cd 45%, #7a7a80 55%, #e8e8ec 100%)",
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                color: "transparent",
+                filter: "drop-shadow(0 1px 0 rgba(255,255,255,0.4)) drop-shadow(0 2px 2px rgba(0,0,0,0.7))",
+              }}
+            >
+              Bass
+            </span>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

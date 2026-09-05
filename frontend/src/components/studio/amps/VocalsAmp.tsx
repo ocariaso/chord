@@ -41,6 +41,7 @@ export function VocalsAmp({
   onWaveSurferReady,
   duration,
   onSeek,
+  controlsOnly = false,
 }: AmpProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { isDownloading, download } = useDownload(downloadHref, `${name}.wav`);
@@ -136,29 +137,31 @@ export function VocalsAmp({
         </span>
       </div>
 
-      <div
-        className="relative mt-2.5 h-[120px] rounded shadow-[inset_0_2px_6px_rgba(0,0,0,0.6)]"
-        style={{
-          backgroundColor: "#0d0d0d",
-          backgroundImage: "radial-gradient(circle at 2px 2px, rgba(255,255,255,0.06) 1px, transparent 1.2px)",
-          backgroundSize: "6px 6px",
-        }}
-      >
-        <span
-          className="absolute left-4 top-3.5 -rotate-6 text-[34px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]"
-          style={{ fontFamily: "'Dancing Script',cursive", color: "#e8dcc4" }}
+      {!controlsOnly && (
+        <div
+          className="relative mt-2.5 h-[120px] rounded shadow-[inset_0_2px_6px_rgba(0,0,0,0.6)]"
+          style={{
+            backgroundColor: "#0d0d0d",
+            backgroundImage: "radial-gradient(circle at 2px 2px, rgba(255,255,255,0.06) 1px, transparent 1.2px)",
+            backgroundSize: "6px 6px",
+          }}
         >
-          Vocals
-        </span>
-        <div
-          className="absolute bottom-1.5 left-1.5 h-4 w-4 rounded-sm"
-          style={{ background: "linear-gradient(135deg,#e2e2e4,#8a8a8e)", clipPath: "polygon(0 0, 100% 0, 0 100%)" }}
-        />
-        <div
-          className="absolute bottom-1.5 right-1.5 h-4 w-4 rounded-sm"
-          style={{ background: "linear-gradient(225deg,#e2e2e4,#8a8a8e)", clipPath: "polygon(100% 0, 100% 100%, 0 100%)" }}
-        />
-      </div>
+          <span
+            className="absolute left-4 top-3.5 -rotate-6 text-[34px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]"
+            style={{ fontFamily: "'Dancing Script',cursive", color: "#e8dcc4" }}
+          >
+            Vocals
+          </span>
+          <div
+            className="absolute bottom-1.5 left-1.5 h-4 w-4 rounded-sm"
+            style={{ background: "linear-gradient(135deg,#e2e2e4,#8a8a8e)", clipPath: "polygon(0 0, 100% 0, 0 100%)" }}
+          />
+          <div
+            className="absolute bottom-1.5 right-1.5 h-4 w-4 rounded-sm"
+            style={{ background: "linear-gradient(225deg,#e2e2e4,#8a8a8e)", clipPath: "polygon(100% 0, 100% 100%, 0 100%)" }}
+          />
+        </div>
+      )}
     </div>
   );
 }
