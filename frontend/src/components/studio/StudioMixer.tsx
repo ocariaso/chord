@@ -1,25 +1,12 @@
+import { useState } from "react";
 import type WaveSurfer from "wavesurfer.js";
 import type { ChordSegment } from "../../api/client";
-import { BassAmp } from "./amps/BassAmp";
-import { DrumsAmp } from "./amps/DrumsAmp";
-import { GuitarAmp } from "./amps/GuitarAmp";
+import { AmpCloseup } from "./AmpCloseup";
+import { AMP_COMPONENTS, STEM_ORDER } from "./ampComponents";
 import { OtherAmp } from "./amps/OtherAmp";
-import { PianoAmp } from "./amps/PianoAmp";
-import { VocalsAmp } from "./amps/VocalsAmp";
-import { MasterUnit } from "./MasterUnit";
-import type { AmpProps } from "./types";
+import { MasterCloseup } from "./MasterCloseup";
+import { MasterUnit, type ViewMode } from "./MasterUnit";
 import { CABINET_INTERIOR_COLOR, CABINET_INTERIOR_IMAGE, GRID_GAP, MASTER_WIDTH } from "./constants";
-
-const AMP_COMPONENTS: Record<string, (props: AmpProps) => React.JSX.Element> = {
-  vocals: VocalsAmp,
-  guitar: GuitarAmp,
-  bass: BassAmp,
-  piano: PianoAmp,
-  drums: DrumsAmp,
-  other: OtherAmp,
-};
-
-const STEM_ORDER = ["vocals", "guitar", "bass", "drums", "piano", "other"];
 
 interface ChannelState {
   muted: boolean;
@@ -27,6 +14,20 @@ interface ChannelState {
 }
 
 interface StudioMixerProps {
+  title: string;
+  author: string | null;
+  keyLabel: string | null;
+  bpm: number | null;
+  thumbnailUrl: string | null;
+  transpose: number;
+  onTransposeChange: React.Dispatch<React.SetStateAction<number>>;
+  viewMode: ViewMode;
+  onChangeViewMode: (mode: ViewMode) => void;
+  accentColor: string;
+  onDownloadAll: () => void;
+  isDownloadingAll: boolean;
+  onUploadAnother: () => void;
+
   stemNames: string[];
   getBuffer: (name: string) => AudioBuffer | undefined;
   channelStates: Record<string, ChannelState>;
@@ -36,11 +37,11 @@ interface StudioMixerProps {
   onToggleSolo: (name: string) => void;
   onVolumeChange: (name: string, volume: number) => void;
   onWaveSurferReady: (name: string, instance: WaveSurfer) => void;
+  onWaveSurferRemove: (name: string) => void;
 
   segments: ChordSegment[];
   currentTime: number;
   duration: number;
-  keyLabel: string | null;
   onSeek: (seconds: number) => void;
   isPlaying: boolean;
   onPlayPause: () => void;
@@ -51,6 +52,19 @@ interface StudioMixerProps {
 }
 
 export function StudioMixer({
+  title,
+  author,
+  keyLabel,
+  bpm,
+  thumbnailUrl,
+  transpose,
+  onTransposeChange,
+  viewMode,
+  onChangeViewMode,
+  accentColor,
+  onDownloadAll,
+  isDownloadingAll,
+  onUploadAnother,
   stemNames,
   getBuffer,
   channelStates,
@@ -60,10 +74,10 @@ export function StudioMixer({
   onToggleSolo,
   onVolumeChange,
   onWaveSurferReady,
+  onWaveSurferRemove,
   segments,
   currentTime,
   duration,
-  keyLabel,
   onSeek,
   isPlaying,
   onPlayPause,
@@ -73,24 +87,52 @@ export function StudioMixer({
   onMasterVolumeChange,
 }: StudioMixerProps) {
   const orderedNames = STEM_ORDER.filter((n) => stemNames.includes(n)).concat(stemNames.filter((n) => !STEM_ORDER.includes(n)));
+  const [closeup, setCloseup] = useState<{ name: string; rect: DOMRect } | null>(null);
+  const [masterCloseupRect, setMasterCloseupRect] = useState<DOMRect | null>(null);
+
+  function handleAmpClick(e: React.MouseEvent<HTMLDivElement>, name: string) {
+    const target = e.target as HTMLElement;
+    if (target.closest("button, .touch-none")) return;
+    setCloseup({ name, rect: e.currentTarget.getBoundingClientRect() });
+  }
+
+  function handleMasterClick(e: React.MouseEvent<HTMLDivElement>) {
+    const target = e.target as HTMLElement;
+    if (target.closest("button, .touch-none")) return;
+    setMasterCloseupRect(e.currentTarget.getBoundingClientRect());
+  }
+
+  const masterProps = {
+    title,
+    author,
+    keyLabel,
+    bpm,
+    thumbnailUrl,
+    transpose,
+    onTransposeChange,
+    segments,
+    currentTime,
+    duration,
+    onSeek,
+    isPlaying,
+    onPlayPause,
+    metronomeEnabled,
+    onToggleMetronome,
+    masterVolume,
+    onMasterVolumeChange,
+    viewMode,
+    onChangeViewMode,
+    accentColor,
+    onDownloadAll,
+    isDownloadingAll,
+    onUploadAnother,
+  };
 
   return (
     <div className="flex flex-col items-center gap-6 py-2">
       <div className="sticky top-0 z-10 w-full pb-1" style={{ backgroundColor: CABINET_INTERIOR_COLOR, backgroundImage: CABINET_INTERIOR_IMAGE }}>
-        <div className="mx-auto flex justify-center pt-2">
-          <MasterUnit
-            segments={segments}
-            currentTime={currentTime}
-            duration={duration}
-            keyLabel={keyLabel}
-            onSeek={onSeek}
-            isPlaying={isPlaying}
-            onPlayPause={onPlayPause}
-            metronomeEnabled={metronomeEnabled}
-            onToggleMetronome={onToggleMetronome}
-            masterVolume={masterVolume}
-            onMasterVolumeChange={onMasterVolumeChange}
-          />
+        <div onClick={handleMasterClick} className="mx-auto flex cursor-pointer justify-center pt-2">
+          <MasterUnit {...masterProps} />
         </div>
       </div>
 
@@ -101,24 +143,55 @@ export function StudioMixer({
           if (!buffer) return null;
           const state = channelStates[name] ?? { muted: false, volume: 1 };
           return (
-            <Amp
-              key={name}
-              name={name}
-              buffer={buffer}
-              muted={state.muted}
-              isSoloed={soloedStems.has(name)}
-              volume={state.volume}
-              downloadHref={stemUrl(name)}
-              onToggleMute={() => onToggleMute(name)}
-              onToggleSolo={() => onToggleSolo(name)}
-              onVolumeChange={(v) => onVolumeChange(name, v)}
-              onWaveSurferReady={onWaveSurferReady}
-              duration={duration}
-              onSeek={onSeek}
-            />
+            <div key={name} onClick={(e) => handleAmpClick(e, name)} className="cursor-pointer">
+              <Amp
+                name={name}
+                buffer={buffer}
+                muted={state.muted}
+                isSoloed={soloedStems.has(name)}
+                volume={state.volume}
+                downloadHref={stemUrl(name)}
+                onToggleMute={() => onToggleMute(name)}
+                onToggleSolo={() => onToggleSolo(name)}
+                onVolumeChange={(v) => onVolumeChange(name, v)}
+                onWaveSurferReady={onWaveSurferReady}
+                duration={duration}
+                onSeek={onSeek}
+              />
+            </div>
           );
         })}
       </div>
+
+      {closeup &&
+        (() => {
+          const buffer = getBuffer(closeup.name);
+          if (!buffer) return null;
+          const state = channelStates[closeup.name] ?? { muted: false, volume: 1 };
+          return (
+            <AmpCloseup
+              name={closeup.name}
+              buffer={buffer}
+              muted={state.muted}
+              isSoloed={soloedStems.has(closeup.name)}
+              volume={state.volume}
+              downloadHref={stemUrl(closeup.name)}
+              onToggleMute={() => onToggleMute(closeup.name)}
+              onToggleSolo={() => onToggleSolo(closeup.name)}
+              onVolumeChange={(v) => onVolumeChange(closeup.name, v)}
+              duration={duration}
+              onSeek={onSeek}
+              onWaveSurferReady={onWaveSurferReady}
+              onWaveSurferRemove={onWaveSurferRemove}
+              originRect={closeup.rect}
+              onClose={() => setCloseup(null)}
+            />
+          );
+        })()}
+
+      {masterCloseupRect && (
+        <MasterCloseup {...masterProps} originRect={masterCloseupRect} onClose={() => setMasterCloseupRect(null)} />
+      )}
     </div>
   );
 }

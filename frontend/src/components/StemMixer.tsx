@@ -7,6 +7,7 @@ import { downloadFile } from "../utils/download";
 import { ChordTimeline } from "./ChordTimeline";
 import { StemChannel } from "./StemChannel";
 import { MASTER_WIDTH } from "./studio/constants";
+import { DownloadTrayIcon, UploadTrayIcon } from "./studio/icons";
 import { StudioCabinet } from "./studio/StudioCabinet";
 import { StudioMixer } from "./studio/StudioMixer";
 import { TransportBar } from "./TransportBar";
@@ -14,26 +15,6 @@ import { TransportBar } from "./TransportBar";
 interface StemMixerProps {
   job: Job;
   onBack: () => void;
-}
-
-function DownloadTrayIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
-      <path d="M12 3v11" strokeLinecap="round" />
-      <path d="M7.5 10.5 12 15l4.5-4.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M5 20h14" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function UploadTrayIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
-      <path d="M12 20V9" strokeLinecap="round" />
-      <path d="M7.5 13.5 12 9l4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M5 4h14" strokeLinecap="round" />
-    </svg>
-  );
 }
 
 interface ChannelState {
@@ -69,6 +50,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [masterVolume, setMasterVolume] = useState(1);
   const [chordSegments, setChordSegments] = useState<ChordSegment[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
+  const [transpose, setTranspose] = useState(0);
   const accentColor = useDominantColor(job.has_thumbnail ? thumbnailUrl(job.id) : null) ?? "#9333ea";
 
   function changeViewMode(mode: ViewMode) {
@@ -291,6 +273,19 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
 
   const studioContent = (
     <StudioMixer
+      title={job.original_filename}
+      author={job.author}
+      keyLabel={job.key_estimate}
+      bpm={job.tempo_bpm}
+      thumbnailUrl={job.has_thumbnail ? thumbnailUrl(job.id) : null}
+      transpose={transpose}
+      onTransposeChange={setTranspose}
+      viewMode={viewMode}
+      onChangeViewMode={changeViewMode}
+      accentColor={accentColor}
+      onDownloadAll={handleDownloadAll}
+      isDownloadingAll={isDownloadingAll}
+      onUploadAnother={onBack}
       stemNames={job.stem_names}
       getBuffer={(name) => engineRef.current?.getBuffer(name)}
       channelStates={channelStates}
@@ -300,10 +295,10 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
       onToggleSolo={toggleSolo}
       onVolumeChange={changeVolume}
       onWaveSurferReady={(stemName, instance) => waveSurfersRef.current.set(stemName, instance)}
+      onWaveSurferRemove={(stemName) => waveSurfersRef.current.delete(stemName)}
       segments={chordSegments}
       currentTime={currentTime}
       duration={duration}
-      keyLabel={job.key_estimate}
       onSeek={handleSeek}
       isPlaying={isPlaying}
       onPlayPause={handlePlayPause}
@@ -326,10 +321,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
         />
         <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-4 p-8">
           <StudioCabinet>
-            <div className="flex flex-col gap-4">
-              {header}
-              {studioContent}
-            </div>
+            <div className="flex flex-col gap-4">{studioContent}</div>
           </StudioCabinet>
         </div>
       </>
