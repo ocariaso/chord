@@ -1,0 +1,14 @@
+# Install PyTorch + torchaudio separately first, matched to your CUDA driver version — see README.md.
+# e.g. pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+demucs
+librosa
+soundfile
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic-settings
+yt-dlp
+
+# madmom needs special install steps (system headers, --no-build-isolation,
+# and a couple of compatibility patches) — see README.md, not a plain pip line.
