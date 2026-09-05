@@ -17,3 +17,12 @@ button:not(:disabled) {
 button:disabled {
   cursor: not-allowed;
 }
+
+@keyframes marquee-loop {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--marquee-distance, 0px));
+  }
+}

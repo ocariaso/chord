@@ -1,17 +1,26 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ChordSegment } from "../../api/client";
-import { transposeChord, transposeKeyLabel } from "../../utils/transpose";
+import { transposeChord } from "../../utils/transpose";
 import { formatTime } from "../../utils/time";
+import { DownloadTrayIcon, UploadTrayIcon } from "./icons";
 import { LevelRing } from "./LevelRing";
 import { useKnobDrag, valueToRotation } from "./useKnobDrag";
 import { useSeekDrag } from "./useSeekDrag";
 import { MASTER_WIDTH } from "./constants";
 
-interface MasterUnitProps {
+export type ViewMode = "simple" | "studio";
+
+export interface MasterUnitProps {
+  title: string;
+  author: string | null;
+  keyLabel: string | null;
+  bpm: number | null;
+  thumbnailUrl: string | null;
+  transpose: number;
+  onTransposeChange: React.Dispatch<React.SetStateAction<number>>;
   segments: ChordSegment[];
   currentTime: number;
   duration: number;
-  keyLabel: string | null;
   onSeek: (seconds: number) => void;
   isPlaying: boolean;
   onPlayPause: () => void;
@@ -19,6 +28,12 @@ interface MasterUnitProps {
   onToggleMetronome?: () => void;
   masterVolume: number;
   onMasterVolumeChange: (volume: number) => void;
+  viewMode: ViewMode;
+  onChangeViewMode: (mode: ViewMode) => void;
+  accentColor: string;
+  onDownloadAll: () => void;
+  isDownloadingAll: boolean;
+  onUploadAnother: () => void;
 }
 
 const MIN_TRANSPOSE = -11;
@@ -56,10 +71,16 @@ function GainRing({ value, onChange }: { value: number; onChange: (v: number) =>
 }
 
 export function MasterUnit({
+  title,
+  author,
+  keyLabel,
+  bpm,
+  thumbnailUrl,
+  transpose,
+  onTransposeChange,
   segments,
   currentTime,
   duration,
-  keyLabel,
   onSeek,
   isPlaying,
   onPlayPause,
@@ -67,8 +88,29 @@ export function MasterUnit({
   onToggleMetronome,
   masterVolume,
   onMasterVolumeChange,
+  viewMode,
+  onChangeViewMode,
+  accentColor,
+  onDownloadAll,
+  isDownloadingAll,
+  onUploadAnother,
 }: MasterUnitProps) {
-  const [transpose, setTranspose] = useState(0);
+  const subtitle = [author, keyLabel, bpm != null ? `${bpm} BPM` : null].filter(Boolean).join(" · ");
+
+  const titleContainerRef = useRef<HTMLDivElement>(null);
+  const titleMeasureRef = useRef<HTMLSpanElement>(null);
+  const [marqueeTextWidth, setMarqueeTextWidth] = useState(0);
+  const MARQUEE_GAP = 48;
+
+  useEffect(() => {
+    const container = titleContainerRef.current;
+    const measure = titleMeasureRef.current;
+    if (!container || !measure) return;
+    const natural = measure.scrollWidth;
+    setMarqueeTextWidth(natural > container.clientWidth ? natural : 0);
+  }, [title]);
+
+  const marqueeDuration = Math.max(4, (marqueeTextWidth + MARQUEE_GAP) / 40);
 
   const activeIndex = activeSegmentIndex(segments, currentTime);
   const activeChord = activeIndex >= 0 ? transposeChord(segments[activeIndex].chord, transpose) : "—";
@@ -82,23 +124,17 @@ export function MasterUnit({
 
   return (
     <div
-      className="rounded-lg px-4 pt-2.5 shadow-[0_10px_24px_rgba(0,0,0,0.5)]"
+      className="rounded-lg px-4 pt-4 shadow-[0_10px_24px_rgba(0,0,0,0.5)]"
       style={{
         width: MASTER_WIDTH,
         background: "linear-gradient(100deg, #b8321f 0%, #9c281a 15%, #c43d28 30%, #9c281a 45%, #b8321f 60%, #c43d28 75%, #9c281a 90%, #b8321f 100%)",
       }}
     >
-      <div className="flex items-center pb-2">
-        <span className="font-['Oswald'] text-[13px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]">Chord</span>
-        <span className="font-['Oswald'] mx-1.5 text-[13px]" style={{ color: "#f5c2ba" }}>|</span>
-        <span className="font-['Oswald'] text-[13px]" style={{ color: "#f5c2ba" }}>Master</span>
-      </div>
-
       <div className="flex flex-col gap-3.5 rounded-t-md px-5 py-4" style={{ backgroundColor: "#161616" }}>
-        <div className="flex items-center justify-between gap-5">
+        <div className="flex items-center justify-between gap-3">
           <div
-            className="flex items-baseline gap-2.5 rounded px-3.5 py-1.5"
-            style={{ backgroundColor: "#081a0e", boxShadow: "inset 0 2px 5px rgba(0,0,0,0.8), inset 0 0 0 1px #000" }}
+            className="flex shrink-0 items-baseline gap-2.5 overflow-hidden rounded px-3.5 py-1.5"
+            style={{ width: 310, backgroundColor: "#081a0e", boxShadow: "inset 0 2px 5px rgba(0,0,0,0.8), inset 0 0 0 1px #000" }}
           >
             <span
               style={{
@@ -123,38 +159,156 @@ export function MasterUnit({
             ))}
           </div>
 
-          <div className="flex items-center gap-5">
-            {keyLabel && (
-              <div className="flex items-center gap-1.5">
-                <span className="font-['Oswald'] text-[10px] text-[#9a9a9e]">Key: {transposeKeyLabel(keyLabel, transpose)}</span>
-                <span
-                  title="Adjust the key if detected wrong. This will transpose the chords accordingly."
-                  className="flex h-[13px] w-[13px] cursor-help items-center justify-center rounded-full border text-[9px] text-[#6a6a6e]"
-                  style={{ borderColor: "#6a6a6e" }}
+          <div
+            className="flex h-[52px] min-w-0 flex-1 items-center justify-between gap-3 overflow-hidden rounded-md px-3"
+            style={{
+              ...(thumbnailUrl
+                ? {
+                    backgroundImage: `linear-gradient(90deg, rgba(10,10,10,0.92) 0%, rgba(10,10,10,0.65) 60%, rgba(10,10,10,0.3) 100%), url(${thumbnailUrl})`,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                  }
+                : {
+                    backgroundColor: "#141018",
+                    backgroundImage:
+                      "radial-gradient(circle at 22% 25%, rgba(147,51,234,0.22), transparent 55%)," +
+                      "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1.2px)," +
+                      "linear-gradient(135deg, #1b1420 0%, #130f17 55%, #0c0a0e 100%)",
+                    backgroundSize: "auto, 7px 7px, auto",
+                  }),
+              boxShadow: "inset 0 2px 5px rgba(0,0,0,0.75), inset 0 0 0 1px #000, 0 0 0 1px rgba(255,255,255,0.06)",
+            }}
+          >
+            <div ref={titleContainerRef} className="relative min-w-0 flex-1 overflow-hidden">
+              <span
+                ref={titleMeasureRef}
+                aria-hidden="true"
+                className="invisible absolute whitespace-nowrap text-[13px] font-semibold"
+              >
+                {title}
+              </span>
+              {marqueeTextWidth > 0 ? (
+                <h1
+                  className="flex whitespace-nowrap text-[13px] font-semibold text-neutral-100"
+                  style={
+                    {
+                      "--marquee-distance": `-${marqueeTextWidth + MARQUEE_GAP}px`,
+                      animation: `marquee-loop ${marqueeDuration}s linear infinite`,
+                    } as React.CSSProperties
+                  }
                 >
-                  i
-                </span>
+                  <span style={{ paddingRight: MARQUEE_GAP }}>{title}</span>
+                  <span style={{ paddingRight: MARQUEE_GAP }} aria-hidden="true">
+                    {title}
+                  </span>
+                </h1>
+              ) : (
+                <h1 className="truncate text-[13px] font-semibold text-neutral-100">{title}</h1>
+              )}
+              {subtitle && <p className="truncate text-[10.5px] text-neutral-400">{subtitle}</p>}
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                onClick={onDownloadAll}
+                disabled={isDownloadingAll}
+                title={isDownloadingAll ? "Preparing zip..." : "Download all stems (.zip)"}
+                className="flex h-6 w-6 items-center justify-center rounded text-neutral-300 hover:bg-black/40 disabled:text-neutral-600"
+              >
+                {isDownloadingAll ? (
+                  <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-neutral-400 border-t-transparent" />
+                ) : (
+                  <DownloadTrayIcon />
+                )}
+              </button>
+              <button
+                onClick={onUploadAnother}
+                title="Upload another song"
+                className="flex h-6 w-6 items-center justify-center rounded text-neutral-300 hover:bg-black/40"
+              >
+                <UploadTrayIcon />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-5">
+            <div className="flex flex-col items-center gap-1">
+              <span className="font-['Oswald'] text-[15px] font-semibold uppercase tracking-[0.14em] text-neutral-200">Master</span>
+              <div className="flex items-center gap-2">
+                <div className="flex flex-col items-center gap-0.5">
+                  <button
+                    onClick={() => onChangeViewMode("simple")}
+                    title="Simple view"
+                    className="flex h-5 w-8 items-center justify-center rounded-sm"
+                    style={{ backgroundColor: "#141414", boxShadow: "inset 0 0 0 1px #2a2a2e, inset 0 1px 2px rgba(0,0,0,0.6)" }}
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{
+                        background: viewMode === "simple" ? accentColor : "#2a2a2e",
+                        boxShadow: viewMode === "simple" ? `0 0 5px ${accentColor}` : "none",
+                      }}
+                    />
+                  </button>
+                  <span className="font-['Oswald'] text-[6px] text-[#6a6a6e]">Simple</span>
+                </div>
+                <div className="flex flex-col items-center gap-0.5">
+                  <button
+                    onClick={() => onChangeViewMode("studio")}
+                    title="Studio view"
+                    className="flex h-5 w-8 items-center justify-center rounded-sm"
+                    style={{ backgroundColor: "#141414", boxShadow: "inset 0 0 0 1px #2a2a2e, inset 0 1px 2px rgba(0,0,0,0.6)" }}
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{
+                        background: viewMode === "studio" ? "#4ade80" : "#2a2a2e",
+                        boxShadow: viewMode === "studio" ? "0 0 5px #4ade80" : "none",
+                      }}
+                    />
+                  </button>
+                  <span className="font-['Oswald'] text-[6px] text-[#6a6a6e]">Studio</span>
+                </div>
               </div>
-            )}
+            </div>
 
             <div className="flex flex-col items-center gap-0.5">
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setTranspose((t) => Math.max(MIN_TRANSPOSE, t - 1))}
+                  onClick={() => onTransposeChange((t) => Math.max(MIN_TRANSPOSE, t - 1))}
                   disabled={transpose === MIN_TRANSPOSE}
-                  className="flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold text-[#e5e5e5] shadow-[inset_0_0_0_1px_#4a4a4e] disabled:opacity-40"
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-[#e5e5e5] shadow-[inset_0_0_0_1px_#4a4a4e] disabled:opacity-40"
                   style={{ background: "radial-gradient(circle at 35% 30%,#3a3a3e,#0d0d0d 70%)" }}
                 >
-                  −
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width="10" height="10">
+                    <path d="M5 12h14" strokeLinecap="round" />
+                  </svg>
                 </button>
-                <span className="font-['Oswald'] w-3.5 text-center text-[11px] text-[#e5e5e5]">{formatTranspose(transpose)}</span>
+                <div
+                  className="flex w-7 shrink-0 items-center justify-center rounded-sm py-0.5"
+                  style={{ backgroundColor: "#081a0e", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.85), inset 0 0 0 1px #000" }}
+                >
+                  <span
+                    className="tabular-nums"
+                    style={{
+                      fontFamily: "'Orbitron', sans-serif",
+                      fontWeight: 700,
+                      fontSize: 11,
+                      color: "#4ade80",
+                      textShadow: "0 0 4px rgba(74,222,128,0.8), 0 0 1px rgba(74,222,128,0.9)",
+                    }}
+                  >
+                    {formatTranspose(transpose)}
+                  </span>
+                </div>
                 <button
-                  onClick={() => setTranspose((t) => Math.min(MAX_TRANSPOSE, t + 1))}
+                  onClick={() => onTransposeChange((t) => Math.min(MAX_TRANSPOSE, t + 1))}
                   disabled={transpose === MAX_TRANSPOSE}
-                  className="flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold text-[#e5e5e5] shadow-[inset_0_0_0_1px_#4a4a4e] disabled:opacity-40"
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-[#e5e5e5] shadow-[inset_0_0_0_1px_#4a4a4e] disabled:opacity-40"
                   style={{ background: "radial-gradient(circle at 35% 30%,#3a3a3e,#0d0d0d 70%)" }}
                 >
-                  +
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} width="10" height="10">
+                    <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                  </svg>
                 </button>
               </div>
               <span className="font-['Oswald'] text-[7px] text-[#6a6a6e]">Transpose</span>
