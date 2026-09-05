@@ -68,7 +68,7 @@ export function PianoAmp({
           </div>
 
           <div className="flex h-8 min-w-0 flex-1 items-center rounded shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]" style={{ backgroundColor: "#1a1a1a" }}>
-            <div ref={containerRef} className="h-full w-full cursor-pointer touch-none px-2" {...seekDrag} />
+            <div ref={containerRef} className="h-full w-full select-none cursor-pointer touch-none px-2" {...seekDrag} />
           </div>
 
           <div className="flex flex-col items-center gap-0.5">

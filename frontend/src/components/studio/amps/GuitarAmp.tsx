@@ -56,7 +56,7 @@ export function GuitarAmp({
           className="h-9 min-w-0 flex-1 rounded shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]"
           style={{ backgroundColor: "#000" }}
         >
-          <div ref={containerRef} className="h-full w-full cursor-pointer touch-none px-2" {...seekDrag} />
+          <div ref={containerRef} className="h-full w-full select-none cursor-pointer touch-none px-2" {...seekDrag} />
         </div>
 
         <div className="flex flex-col gap-1.5">

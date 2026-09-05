@@ -87,7 +87,7 @@ export function DrumsAmp({
 
       <div style={{ width: AMP_WIDTH, ...woodStyle }} className="flex justify-center px-5 py-2">
         <div className="flex h-[26px] w-full items-center rounded shadow-[inset_0_2px_4px_rgba(0,0,0,0.7)]" style={{ backgroundColor: "#0a0a0a" }}>
-          <div ref={containerRef} className="h-full w-full cursor-pointer touch-none px-2" {...seekDrag} />
+          <div ref={containerRef} className="h-full w-full select-none cursor-pointer touch-none px-2" {...seekDrag} />
         </div>
       </div>
 

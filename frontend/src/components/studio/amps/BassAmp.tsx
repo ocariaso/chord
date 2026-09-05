@@ -100,7 +100,7 @@ export function BassAmp({
         <div className="h-[38px] min-w-0 flex-1 rounded p-[2.5px] shadow-[0_1px_2px_rgba(0,0,0,0.3)]" style={{ background: "linear-gradient(180deg,#c4c4c8,#8a8a8e)" }}>
           <div
             ref={containerRef}
-            className="h-full w-full cursor-pointer touch-none rounded-sm px-2 shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]"
+            className="h-full w-full select-none cursor-pointer touch-none rounded-sm px-2 shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]"
             style={{ backgroundColor: "#0d0d0d" }}
             {...seekDrag}
           />

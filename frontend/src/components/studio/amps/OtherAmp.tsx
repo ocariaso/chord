@@ -63,7 +63,7 @@ export function OtherAmp({
 
         <div className="h-8 min-w-0 flex-1 rounded p-0.5 shadow-[0_1px_2px_rgba(0,0,0,0.3)]" style={{ background: "linear-gradient(180deg,#3a3a3e,#5a5a5e)" }}>
           <div className="h-full rounded-sm shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]" style={{ backgroundColor: "#0d0d0d" }}>
-            <div ref={containerRef} className="h-full w-full cursor-pointer touch-none px-2" {...seekDrag} />
+            <div ref={containerRef} className="h-full w-full select-none cursor-pointer touch-none px-2" {...seekDrag} />
           </div>
         </div>
 

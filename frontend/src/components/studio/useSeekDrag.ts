@@ -12,6 +12,7 @@ export function useSeekDrag(duration: number, onSeek: (seconds: number) => void)
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault(); // avoid the browser starting a text/drag selection while seeking
     draggingRef.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
     seek(e.currentTarget, e.clientX);

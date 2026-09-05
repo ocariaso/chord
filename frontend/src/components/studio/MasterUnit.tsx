@@ -209,7 +209,7 @@ export function MasterUnit({
           </button>
           <span className="font-['Oswald'] w-[34px] text-[11px] text-[#9a9a9e]">{formatTime(currentTime)}</span>
           <div
-            className="relative h-[5px] flex-1 cursor-pointer touch-none rounded shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)]"
+            className="relative h-[5px] flex-1 select-none cursor-pointer touch-none rounded shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)]"
             style={{ backgroundColor: "#0d0d0d" }}
             {...seekDrag}
           >

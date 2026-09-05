@@ -97,7 +97,7 @@ export function VocalsAmp({
           className="h-[34px] min-w-0 flex-1 rounded-sm shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
           style={{ backgroundColor: "#3a2f22" }}
         >
-          <div ref={containerRef} className="h-full w-full cursor-pointer touch-none px-2" {...seekDrag} />
+          <div ref={containerRef} className="h-full w-full select-none cursor-pointer touch-none px-2" {...seekDrag} />
         </div>
 
         <Knob
