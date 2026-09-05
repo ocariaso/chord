@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type WaveSurfer from "wavesurfer.js";
-import { downloadAllUrl, stemUrl, type Job } from "../api/client";
+import { downloadAllUrl, getChords, stemUrl, type ChordSegment, type Job } from "../api/client";
 import { PlaybackEngine } from "../audio/playbackEngine";
 import { downloadFile } from "../utils/download";
+import { ChordTimeline } from "./ChordTimeline";
 import { StemChannel } from "./StemChannel";
 import { TransportBar } from "./TransportBar";
 
@@ -30,6 +31,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [masterVolume, setMasterVolume] = useState(1);
+  const [chordSegments, setChordSegments] = useState<ChordSegment[]>([]);
 
   async function handleDownloadAll() {
     setIsDownloadingAll(true);
@@ -68,6 +70,20 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
       engine.dispose();
     };
   }, [job.id, job.stem_names]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getChords(job.id)
+      .then((segments) => {
+        if (!cancelled) setChordSegments(segments);
+      })
+      .catch(() => {
+        // Chord analysis may not be available for this job; leave the timeline hidden.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [job.id]);
 
   useEffect(() => {
     function tick() {
@@ -171,6 +187,14 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
           </button>
         </div>
       </div>
+
+      <ChordTimeline
+        segments={chordSegments}
+        currentTime={currentTime}
+        duration={engineRef.current?.duration ?? 0}
+        keyLabel={job.key_estimate}
+        onSeek={handleSeek}
+      />
 
       <div className="flex flex-col gap-2">
         {job.stem_names.map((name) => (
