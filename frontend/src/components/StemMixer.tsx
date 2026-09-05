@@ -1,16 +1,38 @@
 import { useEffect, useRef, useState } from "react";
 import type WaveSurfer from "wavesurfer.js";
-import { downloadAllUrl, getChords, stemUrl, type ChordSegment, type Job } from "../api/client";
+import { downloadAllUrl, getChords, stemUrl, thumbnailUrl, type ChordSegment, type Job } from "../api/client";
 import { PlaybackEngine } from "../audio/playbackEngine";
+import { useDominantColor } from "../hooks/useDominantColor";
 import { downloadFile } from "../utils/download";
 import { ChordTimeline } from "./ChordTimeline";
 import { StemChannel } from "./StemChannel";
+import { MASTER_WIDTH } from "./studio/constants";
 import { StudioMixer } from "./studio/StudioMixer";
 import { TransportBar } from "./TransportBar";
 
 interface StemMixerProps {
   job: Job;
   onBack: () => void;
+}
+
+function DownloadTrayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+      <path d="M12 3v11" strokeLinecap="round" />
+      <path d="M7.5 10.5 12 15l4.5-4.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 20h14" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function UploadTrayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+      <path d="M12 20V9" strokeLinecap="round" />
+      <path d="M7.5 13.5 12 9l4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 4h14" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 interface ChannelState {
@@ -46,6 +68,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [masterVolume, setMasterVolume] = useState(1);
   const [chordSegments, setChordSegments] = useState<ChordSegment[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
+  const accentColor = useDominantColor(job.has_thumbnail ? thumbnailUrl(job.id) : null) ?? "#9333ea";
 
   function changeViewMode(mode: ViewMode) {
     setViewMode(mode);
@@ -196,39 +219,65 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
 
   return (
     <div className={viewMode === "studio" ? "mx-auto flex max-w-6xl flex-col gap-4 p-8" : "mx-auto flex max-w-3xl flex-col gap-4 p-8"}>
-      <div className="flex items-center justify-between">
-        <div className="min-w-0">
+      <div
+        className={`mx-auto flex w-full items-start justify-between gap-6 rounded-lg ${job.has_thumbnail ? "p-4" : ""}`}
+        style={{
+          ...(viewMode === "studio" ? { maxWidth: MASTER_WIDTH } : {}),
+          ...(job.has_thumbnail
+            ? {
+                backgroundImage: `linear-gradient(90deg, rgba(10,10,10,0.9) 0%, rgba(10,10,10,0.6) 55%, rgba(10,10,10,0.25) 100%), url(${thumbnailUrl(job.id)})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }
+            : {}),
+        }}
+      >
+        <div className="min-w-0 flex-1">
           <h1 className="truncate text-xl font-semibold text-neutral-100">{job.original_filename}</h1>
-          {job.tempo_bpm != null && <p className="text-sm text-neutral-500">{job.tempo_bpm} BPM</p>}
+          {(job.author || job.tempo_bpm != null) && (
+            <p className="truncate text-sm text-neutral-500">
+              {[job.author, job.tempo_bpm != null ? `${job.tempo_bpm} BPM` : null].filter(Boolean).join(" · ")}
+            </p>
+          )}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 flex-col items-end gap-2">
           <div className="flex rounded-md bg-neutral-900 p-0.5 text-sm">
             <button
               onClick={() => changeViewMode("simple")}
-              className={`rounded px-3 py-1 ${viewMode === "simple" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-neutral-200"}`}
+              className={`rounded px-3 py-1 ${viewMode === "simple" ? "text-white" : "text-neutral-400 hover:text-neutral-200"}`}
+              style={viewMode === "simple" ? { backgroundColor: accentColor } : undefined}
             >
               Simple
             </button>
             <button
               onClick={() => changeViewMode("studio")}
-              className={`rounded px-3 py-1 ${viewMode === "studio" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-neutral-200"}`}
+              className={`rounded px-3 py-1 ${viewMode === "studio" ? "text-white" : "text-neutral-400 hover:text-neutral-200"}`}
+              style={viewMode === "studio" ? { backgroundColor: accentColor } : undefined}
             >
               Studio
             </button>
           </div>
-          <button
-            onClick={handleDownloadAll}
-            disabled={isDownloadingAll}
-            className="flex items-center gap-2 text-sm text-neutral-400 hover:text-neutral-200 disabled:text-neutral-500"
-          >
-            {isDownloadingAll && (
-              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-[1.5px] border-neutral-500 border-t-transparent" />
-            )}
-            {isDownloadingAll ? "Preparing zip..." : "Download all (.zip)"}
-          </button>
-          <button onClick={onBack} className="text-sm text-neutral-400 hover:text-neutral-200">
-            &larr; Upload another
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadAll}
+              disabled={isDownloadingAll}
+              title={isDownloadingAll ? "Preparing zip..." : "Download all stems (.zip)"}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200 disabled:text-neutral-600"
+            >
+              {isDownloadingAll ? (
+                <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-[1.5px] border-neutral-500 border-t-transparent" />
+              ) : (
+                <DownloadTrayIcon />
+              )}
+            </button>
+            <button
+              onClick={onBack}
+              title="Upload another song"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"
+            >
+              <UploadTrayIcon />
+            </button>
+          </div>
         </div>
       </div>
 

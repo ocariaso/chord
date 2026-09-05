@@ -3,6 +3,7 @@ export type JobStatus = "queued" | "fetching" | "separating" | "analyzing" | "do
 export interface Job {
   id: string;
   original_filename: string;
+  author: string | null;
   status: JobStatus;
   progress: number;
   stage_message: string | null;
@@ -15,6 +16,7 @@ export interface Job {
   created_at: string;
   updated_at: string;
   stem_names: string[];
+  has_thumbnail: boolean;
 }
 
 export interface ChordSegment {
@@ -75,6 +77,10 @@ export async function cancelJob(jobId: string): Promise<Job> {
 
 export function stemUrl(jobId: string, stemName: string): string {
   return `${API_BASE}/jobs/${jobId}/stems/${stemName}.wav`;
+}
+
+export function thumbnailUrl(jobId: string): string {
+  return `${API_BASE}/jobs/${jobId}/thumbnail.jpg`;
 }
 
 export function downloadAllUrl(jobId: string): string {
