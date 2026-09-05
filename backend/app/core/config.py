@@ -14,8 +14,7 @@ class Settings(BaseSettings):
     demucs_model: str = "htdemucs_6s"
     device: str = "cuda"
 
-    # Chord/key detection is on hold while separation is validated first.
-    enable_chord_detection: bool = False
+    enable_chord_detection: bool = True
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
