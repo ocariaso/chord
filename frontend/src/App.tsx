@@ -55,19 +55,22 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      {screen === "upload" && (
-        <UploadPanel
-          onFileSelected={handleFileSelected}
-          onUrlSubmitted={handleUrlSubmitted}
-          isSubmitting={isSubmitting}
-          error={uploadError}
-        />
-      )}
-      {screen === "processing" && (
-        <ProcessingScreen job={job} connectionError={connectionError} onRetry={handleBack} />
-      )}
-      {screen === "results" && job && <StemMixer job={job} onBack={handleBack} />}
+    <div className="flex min-h-screen flex-col bg-neutral-950 text-neutral-100">
+      <div className="flex-1">
+        {screen === "upload" && (
+          <UploadPanel
+            onFileSelected={handleFileSelected}
+            onUrlSubmitted={handleUrlSubmitted}
+            isSubmitting={isSubmitting}
+            error={uploadError}
+          />
+        )}
+        {screen === "processing" && (
+          <ProcessingScreen job={job} connectionError={connectionError} onRetry={handleBack} />
+        )}
+        {screen === "results" && job && <StemMixer job={job} onBack={handleBack} />}
+      </div>
+      <footer className="py-4 text-center text-xs text-neutral-600">Property of Ormin Cariaso</footer>
     </div>
   );
 }
