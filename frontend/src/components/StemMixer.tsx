@@ -7,6 +7,7 @@ import { downloadFile } from "../utils/download";
 import { ChordTimeline } from "./ChordTimeline";
 import { StemChannel } from "./StemChannel";
 import { MASTER_WIDTH } from "./studio/constants";
+import { StudioCabinet } from "./studio/StudioCabinet";
 import { StudioMixer } from "./studio/StudioMixer";
 import { TransportBar } from "./TransportBar";
 
@@ -217,10 +218,9 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
 
   const duration = engineRef.current?.duration ?? 0;
 
-  return (
-    <div className={viewMode === "studio" ? "mx-auto flex max-w-6xl flex-col gap-4 p-8" : "mx-auto flex max-w-3xl flex-col gap-4 p-8"}>
+  const header = (
       <div
-        className={`mx-auto flex w-full items-start justify-between gap-6 rounded-lg ${job.has_thumbnail ? "p-4" : ""}`}
+        className="mx-auto flex w-full items-start justify-between gap-6 rounded-lg p-4"
         style={{
           ...(viewMode === "studio" ? { maxWidth: MASTER_WIDTH } : {}),
           ...(job.has_thumbnail
@@ -229,7 +229,14 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
                 backgroundSize: "cover",
                 backgroundPosition: "center",
               }
-            : {}),
+            : {
+                backgroundColor: "#141018",
+                backgroundImage:
+                  "radial-gradient(circle at 22% 25%, rgba(147,51,234,0.22), transparent 55%)," +
+                  "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1.2px)," +
+                  "linear-gradient(135deg, #1b1420 0%, #130f17 55%, #0c0a0e 100%)",
+                backgroundSize: "auto, 7px 7px, auto",
+              }),
         }}
       >
         <div className="min-w-0 flex-1">
@@ -280,71 +287,96 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
           </div>
         </div>
       </div>
+  );
 
-      {viewMode === "studio" ? (
-        <StudioMixer
-          stemNames={job.stem_names}
-          getBuffer={(name) => engineRef.current?.getBuffer(name)}
-          channelStates={channelStates}
-          soloedStems={soloedStems}
-          stemUrl={(name) => stemUrl(job.id, name)}
-          onToggleMute={toggleMute}
-          onToggleSolo={toggleSolo}
-          onVolumeChange={changeVolume}
-          onWaveSurferReady={(stemName, instance) => waveSurfersRef.current.set(stemName, instance)}
-          segments={chordSegments}
-          currentTime={currentTime}
-          duration={duration}
-          keyLabel={job.key_estimate}
-          onSeek={handleSeek}
-          isPlaying={isPlaying}
-          onPlayPause={handlePlayPause}
-          metronomeEnabled={metronomeEnabled}
-          onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
-          masterVolume={masterVolume}
-          onMasterVolumeChange={changeMasterVolume}
+  const studioContent = (
+    <StudioMixer
+      stemNames={job.stem_names}
+      getBuffer={(name) => engineRef.current?.getBuffer(name)}
+      channelStates={channelStates}
+      soloedStems={soloedStems}
+      stemUrl={(name) => stemUrl(job.id, name)}
+      onToggleMute={toggleMute}
+      onToggleSolo={toggleSolo}
+      onVolumeChange={changeVolume}
+      onWaveSurferReady={(stemName, instance) => waveSurfersRef.current.set(stemName, instance)}
+      segments={chordSegments}
+      currentTime={currentTime}
+      duration={duration}
+      keyLabel={job.key_estimate}
+      onSeek={handleSeek}
+      isPlaying={isPlaying}
+      onPlayPause={handlePlayPause}
+      metronomeEnabled={metronomeEnabled}
+      onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
+      masterVolume={masterVolume}
+      onMasterVolumeChange={changeMasterVolume}
+    />
+  );
+
+  if (viewMode === "studio") {
+    return (
+      <>
+        <div
+          className="fixed inset-0 z-0"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 50% -10%, rgba(180,120,60,0.10), transparent 45%), linear-gradient(180deg, #140d09 0%, #0a0605 60%, #030202 100%)",
+          }}
         />
-      ) : (
-        <>
-          <ChordTimeline
-            segments={chordSegments}
-            currentTime={currentTime}
-            duration={duration}
-            keyLabel={job.key_estimate}
-            onSeek={handleSeek}
-          />
+        <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-4 p-8">
+          <StudioCabinet>
+            <div className="flex flex-col gap-4">
+              {header}
+              {studioContent}
+            </div>
+          </StudioCabinet>
+        </div>
+      </>
+    );
+  }
 
-          <div className="flex flex-col gap-2">
-            {job.stem_names.map((name) => (
-              <StemChannel
-                key={name}
-                name={name}
-                buffer={engineRef.current!.getBuffer(name)!}
-                muted={channelStates[name]?.muted ?? false}
-                isSoloed={soloedStems.has(name)}
-                volume={channelStates[name]?.volume ?? 1}
-                downloadHref={stemUrl(job.id, name)}
-                onToggleMute={() => toggleMute(name)}
-                onToggleSolo={() => toggleSolo(name)}
-                onVolumeChange={(v) => changeVolume(name, v)}
-                onWaveSurferReady={(stemName, instance) => waveSurfersRef.current.set(stemName, instance)}
-              />
-            ))}
-          </div>
+  return (
+    <div className="mx-auto flex max-w-3xl flex-col gap-4 p-8">
+      {header}
 
-          <TransportBar
-            isPlaying={isPlaying}
-            currentTime={currentTime}
-            duration={duration}
-            onPlayPause={handlePlayPause}
-            onSeek={handleSeek}
-            metronomeEnabled={metronomeEnabled}
-            onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
-            masterVolume={masterVolume}
-            onMasterVolumeChange={changeMasterVolume}
+      <ChordTimeline
+        segments={chordSegments}
+        currentTime={currentTime}
+        duration={duration}
+        keyLabel={job.key_estimate}
+        onSeek={handleSeek}
+      />
+
+      <div className="flex flex-col gap-2">
+        {job.stem_names.map((name) => (
+          <StemChannel
+            key={name}
+            name={name}
+            buffer={engineRef.current!.getBuffer(name)!}
+            muted={channelStates[name]?.muted ?? false}
+            isSoloed={soloedStems.has(name)}
+            volume={channelStates[name]?.volume ?? 1}
+            downloadHref={stemUrl(job.id, name)}
+            onToggleMute={() => toggleMute(name)}
+            onToggleSolo={() => toggleSolo(name)}
+            onVolumeChange={(v) => changeVolume(name, v)}
+            onWaveSurferReady={(stemName, instance) => waveSurfersRef.current.set(stemName, instance)}
           />
-        </>
-      )}
+        ))}
+      </div>
+
+      <TransportBar
+        isPlaying={isPlaying}
+        currentTime={currentTime}
+        duration={duration}
+        onPlayPause={handlePlayPause}
+        onSeek={handleSeek}
+        metronomeEnabled={metronomeEnabled}
+        onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
+        masterVolume={masterVolume}
+        onMasterVolumeChange={changeMasterVolume}
+      />
     </div>
   );
 }
