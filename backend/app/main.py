@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import routes_jobs, routes_stems
+from app.api import routes_analysis, routes_jobs, routes_stems
 from app.core.config import settings
 from app.db.database import init_db
 from app.pipeline.worker import start_worker
@@ -30,6 +30,7 @@ app.add_middleware(
 
 app.include_router(routes_jobs.router)
 app.include_router(routes_stems.router)
+app.include_router(routes_analysis.router)
 
 
 @app.get("/health")

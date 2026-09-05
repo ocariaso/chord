@@ -9,3 +9,6 @@ uvicorn[standard]
 python-multipart
 pydantic-settings
 yt-dlp
+
+# madmom needs special install steps (system headers, --no-build-isolation,
+# and a couple of compatibility patches) — see README.md, not a plain pip line.

@@ -17,6 +17,13 @@ export interface Job {
   stem_names: string[];
 }
 
+export interface ChordSegment {
+  start: number;
+  end: number;
+  chord: string;
+  confidence: number;
+}
+
 const API_BASE = "/api";
 
 export async function createJob(file: File): Promise<Job> {
@@ -59,4 +66,10 @@ export function stemUrl(jobId: string, stemName: string): string {
 
 export function downloadAllUrl(jobId: string): string {
   return `${API_BASE}/jobs/${jobId}/download`;
+}
+
+export async function getChords(jobId: string): Promise<ChordSegment[]> {
+  const res = await fetch(`${API_BASE}/jobs/${jobId}/chords`);
+  if (!res.ok) throw new Error(`Failed to fetch chords (${res.status})`);
+  return res.json();
 }

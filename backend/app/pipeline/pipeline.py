@@ -49,21 +49,20 @@ def run_job(job_id: str) -> None:
             duration_seconds = len(f) / f.samplerate
         separation.separate(original_path, stems_dir)
 
-        _update_job(job_id, progress=0.85, stage_message="Detecting tempo")
-        tempo_bpm = tempo.detect_tempo(original_path)
-
         done_fields = dict(
             status=JobStatus.DONE.value,
             progress=1.0,
             stage_message="Done",
             duration_seconds=duration_seconds,
-            tempo_bpm=tempo_bpm,
         )
 
+        _update_job(job_id, progress=0.5, stage_message="Detecting tempo")
+        done_fields["tempo_bpm"] = tempo.detect_tempo(original_path)
+
         if settings.enable_chord_detection:
-            _update_job(job_id, status=JobStatus.ANALYZING.value, progress=0.7, stage_message="Detecting chords and key")
+            _update_job(job_id, status=JobStatus.ANALYZING.value, progress=0.6, stage_message="Detecting chords and key")
             analysis_dir.mkdir(parents=True, exist_ok=True)
-            segments, key_estimate = chords.analyze_stems(stems_dir)
+            segments, key_estimate = chords.analyze_audio(original_path)
 
             (analysis_dir / "chords.json").write_text(
                 json.dumps([segment.model_dump() for segment in segments], indent=2)
