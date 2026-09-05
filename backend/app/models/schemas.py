@@ -33,6 +33,7 @@ class CreateJobFromUrlRequest(BaseModel):
 class JobResponse(BaseModel):
     id: str
     original_filename: str
+    author: str | None = None
     status: JobStatus
     progress: float
     stage_message: str | None = None
@@ -45,6 +46,7 @@ class JobResponse(BaseModel):
     created_at: str
     updated_at: str
     stem_names: list[str] = []
+    has_thumbnail: bool = False
 
 
 STEM_NAMES = ["vocals", "drums", "bass", "guitar", "piano", "other"]
