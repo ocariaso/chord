@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getJob, jobEventsUrl, type Job } from "../api/client";
 
-const TERMINAL_STATUSES = new Set(["done", "error"]);
+const TERMINAL_STATUSES = new Set(["done", "error", "cancelled"]);
 
 /** Tracks a job's live status via SSE. */
 export function useJobEvents(jobId: string | null): { job: Job | null; error: string | null } {

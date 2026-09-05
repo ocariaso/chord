@@ -1,4 +1,4 @@
-export type JobStatus = "queued" | "fetching" | "separating" | "analyzing" | "done" | "error";
+export type JobStatus = "queued" | "fetching" | "separating" | "analyzing" | "done" | "error" | "cancelled";
 
 export interface Job {
   id: string;
@@ -58,6 +58,15 @@ export async function getJob(jobId: string): Promise<Job> {
 
 export function jobEventsUrl(jobId: string): string {
   return `${API_BASE}/jobs/${jobId}/events`;
+}
+
+export async function cancelJob(jobId: string): Promise<Job> {
+  const res = await fetch(`${API_BASE}/jobs/${jobId}/cancel`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `Failed to cancel job (${res.status})`);
+  }
+  return res.json();
 }
 
 export function stemUrl(jobId: string, stemName: string): string {
