@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type WaveSurfer from "wavesurfer.js";
 import { downloadAllUrl, getChords, stemUrl, thumbnailUrl, type ChordSegment, type Job } from "../api/client";
 import { PlaybackEngine } from "../audio/playbackEngine";
-import { GRAY_ACCENT_COLORS, useDominantColors } from "../hooks/useDominantColor";
+import { DEFAULT_ACCENT_COLORS, useDominantColors } from "../hooks/useDominantColor";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { downloadFile } from "../utils/download";
 import { ChordTimeline } from "./ChordTimeline";
@@ -62,7 +62,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
   const [isSwitchingView, setIsSwitchingView] = useState(false);
   const [transpose, setTranspose] = useState(0);
-  const dominantColors = useDominantColors(job.has_thumbnail ? thumbnailUrl(job.id) : null) ?? GRAY_ACCENT_COLORS;
+  const dominantColors = useDominantColors(job.has_thumbnail ? thumbnailUrl(job.id) : null) ?? DEFAULT_ACCENT_COLORS;
   const accentColor = dominantColors.primary.css;
   const secondaryColor = dominantColors.secondary.css;
   // Themed "card" surfaces (stem rows, chord timeline, transport bar): a subtle secondary-tinted
@@ -235,7 +235,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-4 p-8 text-center">
         <p className="text-red-400">{loadError}</p>
-        <button onClick={onBack} className="rounded-md bg-purple-600 px-4 py-2 text-white hover:bg-purple-500">
+        <button onClick={onBack} style={{ backgroundColor: "#307E9F" }} className="rounded-md px-4 py-2 text-white hover:opacity-90">
           Back to upload
         </button>
       </div>
