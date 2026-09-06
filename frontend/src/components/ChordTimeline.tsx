@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { ChordSegment } from "../api/client";
 import { useClickTooltip } from "../hooks/useClickTooltip";
 import { transposeChord, transposeKeyLabel } from "../utils/transpose";
@@ -19,6 +18,8 @@ interface ChordTimelineProps {
   masterVolume: number;
   onMasterVolumeChange: (volume: number) => void;
   isMobile: boolean;
+  transpose: number;
+  onTransposeChange: React.Dispatch<React.SetStateAction<number>>;
 }
 
 function MetronomeIcon() {
@@ -67,8 +68,9 @@ export function ChordTimeline({
   masterVolume,
   onMasterVolumeChange,
   isMobile,
+  transpose,
+  onTransposeChange,
 }: ChordTimelineProps) {
-  const [transpose, setTranspose] = useState(0);
   const keyTooltip = useClickTooltip<HTMLSpanElement>();
 
   if (segments.length === 0) return null;
@@ -128,7 +130,7 @@ export function ChordTimeline({
     <div className="flex shrink-0 items-center gap-1.5 text-sm text-neutral-400">
       <span>Transpose</span>
       <button
-        onClick={() => setTranspose((t) => Math.max(MIN_TRANSPOSE, t - 1))}
+        onClick={() => onTransposeChange((t) => Math.max(MIN_TRANSPOSE, t - 1))}
         disabled={transpose === MIN_TRANSPOSE}
         style={{ boxShadow: `inset 0 0 0 1px ${cardBorder}` }}
         className="flex h-6 w-6 items-center justify-center rounded bg-neutral-800 font-semibold hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
@@ -137,7 +139,7 @@ export function ChordTimeline({
       </button>
       <span className="w-6 text-center tabular-nums text-neutral-200">{formatTranspose(transpose)}</span>
       <button
-        onClick={() => setTranspose((t) => Math.min(MAX_TRANSPOSE, t + 1))}
+        onClick={() => onTransposeChange((t) => Math.min(MAX_TRANSPOSE, t + 1))}
         disabled={transpose === MAX_TRANSPOSE}
         style={{ boxShadow: `inset 0 0 0 1px ${cardBorder}` }}
         className="flex h-6 w-6 items-center justify-center rounded bg-neutral-800 font-semibold hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"

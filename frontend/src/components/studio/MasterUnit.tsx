@@ -263,7 +263,7 @@ export function MasterUnit({
     <div className="flex flex-col items-center gap-0.5">
       <div ref={keyTooltip.containerRef} className="relative flex items-center gap-1">
         <div
-          className="flex shrink-0 items-center justify-center rounded-sm px-1.5 py-0.5"
+          className="flex w-16 shrink-0 items-center justify-center rounded-sm py-0.5"
           style={{ backgroundColor: "#081a0e", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.85), inset 0 0 0 1px #000" }}
         >
           <span
