@@ -5,7 +5,7 @@ import type { AmpProps } from "../types";
 import { useDownload } from "../useDownload";
 import { useSeekDrag } from "../useSeekDrag";
 import { useStemWaveform } from "../useStemWaveform";
-import { AMP_WIDTH } from "../constants";
+import { AMP_MOBILE_WIDTH, AMP_WIDTH } from "../constants";
 
 export function GuitarAmp({
   name,
@@ -31,7 +31,7 @@ export function GuitarAmp({
     <div
       className="relative rounded-lg border p-[9px] shadow-[0_10px_24px_rgba(0,0,0,0.6)]"
       style={{
-        width: AMP_WIDTH,
+        width: controlsOnly ? AMP_MOBILE_WIDTH : AMP_WIDTH,
         backgroundColor: "#131313",
         backgroundImage: "repeating-linear-gradient(115deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 5px)",
         borderColor: "#050505",

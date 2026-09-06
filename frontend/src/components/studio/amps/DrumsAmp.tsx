@@ -5,7 +5,7 @@ import type { AmpProps } from "../types";
 import { useDownload } from "../useDownload";
 import { useSeekDrag } from "../useSeekDrag";
 import { useStemWaveform } from "../useStemWaveform";
-import { AMP_WIDTH } from "../constants";
+import { AMP_MOBILE_WIDTH, AMP_WIDTH } from "../constants";
 
 function DownloadIcon() {
   return (
@@ -40,12 +40,13 @@ export function DrumsAmp({
   const woodStyle = {
     background: "linear-gradient(90deg, #7a2f1e 0%, #5e2216 12%, #8f3a24 28%, #5e2216 44%, #7a2f1e 60%, #8f3a24 76%, #5e2216 90%, #7a2f1e 100%)",
   };
+  const width = controlsOnly ? AMP_MOBILE_WIDTH : AMP_WIDTH;
 
   return (
     <div className="flex flex-col items-center">
       <div
         className="flex items-center justify-center gap-4 rounded-t-md px-5 py-2.5 shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]"
-        style={{ width: AMP_WIDTH, backgroundColor: "#1c1c1c" }}
+        style={{ width, backgroundColor: "#1c1c1c" }}
       >
         <Knob value={volume} onChange={onVolumeChange} size={40} label="Vol" labelColor="#9a9a9e" stops={["#f0f0f2", "#b6b6ba", "#7a7a7e"]} pointerColor="#1a1a1a" ring />
         <Knob value={0.25} onChange={() => {}} size={20} label="Tone" labelColor="#9a9a9e" stops={["#f0f0f2", "#b6b6ba", "#7a7a7e"]} pointerColor="#1a1a1a" disabled />
@@ -90,7 +91,7 @@ export function DrumsAmp({
         </div>
       </div>
 
-      <div style={{ width: AMP_WIDTH, ...woodStyle }} className="flex justify-center px-5 py-2">
+      <div style={{ width, ...woodStyle }} className="flex justify-center px-5 py-2">
         <div className="flex h-[26px] w-full items-center rounded shadow-[inset_0_2px_4px_rgba(0,0,0,0.7)]" style={{ backgroundColor: "#0a0a0a" }}>
           <div ref={containerRef} className="h-full w-full select-none cursor-pointer touch-none px-2" {...seekDrag} />
         </div>

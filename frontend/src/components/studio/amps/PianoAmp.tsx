@@ -5,7 +5,7 @@ import type { AmpProps } from "../types";
 import { useDownload } from "../useDownload";
 import { useSeekDrag } from "../useSeekDrag";
 import { useStemWaveform } from "../useStemWaveform";
-import { AMP_WIDTH } from "../constants";
+import { AMP_MOBILE_WIDTH, AMP_WIDTH } from "../constants";
 
 export function PianoAmp({
   name,
@@ -34,7 +34,7 @@ export function PianoAmp({
   };
 
   return (
-    <div className="flex overflow-hidden rounded-lg shadow-[0_10px_24px_rgba(0,0,0,0.5)]" style={{ width: AMP_WIDTH }}>
+    <div className="flex overflow-hidden rounded-lg shadow-[0_10px_24px_rgba(0,0,0,0.5)]" style={{ width: controlsOnly ? AMP_MOBILE_WIDTH : AMP_WIDTH }}>
       <div style={woodStyle} />
 
       <div className="relative flex flex-1 flex-col" style={{ backgroundColor: "#e2e2e4" }}>

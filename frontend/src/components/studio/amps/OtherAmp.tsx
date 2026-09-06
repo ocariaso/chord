@@ -5,7 +5,7 @@ import type { AmpProps } from "../types";
 import { useDownload } from "../useDownload";
 import { useSeekDrag } from "../useSeekDrag";
 import { useStemWaveform } from "../useStemWaveform";
-import { AMP_WIDTH } from "../constants";
+import { AMP_MOBILE_WIDTH, AMP_WIDTH } from "../constants";
 
 function DownloadIcon() {
   return (
@@ -40,7 +40,7 @@ export function OtherAmp({
   return (
     <div
       className="rounded-md border p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),inset_0_-2px_4px_rgba(0,0,0,0.3),0_6px_14px_rgba(0,0,0,0.5)]"
-      style={{ width: AMP_WIDTH, background: "linear-gradient(180deg,#5a5a5e 0%, #45454a 50%, #3a3a3e 100%)", borderColor: "#2a2a2e" }}
+      style={{ width: controlsOnly ? AMP_MOBILE_WIDTH : AMP_WIDTH, background: "linear-gradient(180deg,#5a5a5e 0%, #45454a 50%, #3a3a3e 100%)", borderColor: "#2a2a2e" }}
     >
       <div className="flex items-center gap-3.5 pb-3">
         <Knob value={volume} onChange={onVolumeChange} size={40} label="Vol" labelColor="#c4c4c8" stops={["#8a8a8e", "#5a5a5e", "#3a3a3e"]} pointerColor="#2a2a2e" ring />
