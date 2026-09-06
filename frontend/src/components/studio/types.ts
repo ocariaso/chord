@@ -15,4 +15,8 @@ export interface AmpProps {
   onSeek: (seconds: number) => void;
   /** Show just the interactive control row + waveform, skipping the decorative shell (used by the closer-look overlay). */
   controlsOnly?: boolean;
+  /** True only on an actual narrow viewport — picks the amp's narrower mobile design width. The
+   * closer-look overlay always renders at the full desktop width regardless of controlsOnly, since
+   * it does its own fit-to-viewport scaling. */
+  isMobile?: boolean;
 }

@@ -44,6 +44,7 @@ export function BassAmp({
   duration,
   onSeek,
   controlsOnly = false,
+  isMobile = false,
 }: AmpProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const hexId = useId();
@@ -56,7 +57,7 @@ export function BassAmp({
   return (
     <div
       className="relative rounded-lg border p-[10px_10px_16px] shadow-[0_10px_24px_rgba(0,0,0,0.6)]"
-      style={{ width: controlsOnly ? AMP_MOBILE_WIDTH : AMP_WIDTH, backgroundColor: "#141414", backgroundImage: "repeating-linear-gradient(115deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 5px)", borderColor: "#2a2a2a" }}
+      style={{ width: isMobile ? AMP_MOBILE_WIDTH : AMP_WIDTH, backgroundColor: "#141414", backgroundImage: "repeating-linear-gradient(115deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 5px)", borderColor: "#2a2a2a" }}
     >
       <div className="absolute -top-2 left-1/2 h-[13px] w-[110px] -translate-x-1/2 rounded-md shadow-[inset_0_2px_3px_rgba(0,0,0,0.7)]" style={{ backgroundColor: "#1c1c1c" }} />
       <div className="absolute -top-2 left-[calc(50%-68px)] h-[15px] w-4 rounded-sm" style={{ backgroundColor: "#111" }} />

@@ -42,6 +42,7 @@ export function VocalsAmp({
   duration,
   onSeek,
   controlsOnly = false,
+  isMobile = false,
 }: AmpProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { isDownloading, download } = useDownload(downloadHref, `${name}.wav`);
@@ -52,7 +53,7 @@ export function VocalsAmp({
     <div
       className="relative rounded-lg p-2.5 pb-4 shadow-[0_10px_24px_rgba(0,0,0,0.6)]"
       style={{
-        width: controlsOnly ? AMP_MOBILE_WIDTH : AMP_WIDTH,
+        width: isMobile ? AMP_MOBILE_WIDTH : AMP_WIDTH,
         backgroundColor: "#a8825f",
         backgroundImage: "repeating-linear-gradient(115deg, rgba(0,0,0,0.05) 0 2px, transparent 2px 5px)",
       }}

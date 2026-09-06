@@ -21,6 +21,7 @@ export function GuitarAmp({
   duration,
   onSeek,
   controlsOnly = false,
+  isMobile = false,
 }: AmpProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { isDownloading, download } = useDownload(downloadHref, `${name}.wav`);
@@ -31,7 +32,7 @@ export function GuitarAmp({
     <div
       className="relative rounded-lg border p-[9px] shadow-[0_10px_24px_rgba(0,0,0,0.6)]"
       style={{
-        width: controlsOnly ? AMP_MOBILE_WIDTH : AMP_WIDTH,
+        width: isMobile ? AMP_MOBILE_WIDTH : AMP_WIDTH,
         backgroundColor: "#131313",
         backgroundImage: "repeating-linear-gradient(115deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 5px)",
         borderColor: "#050505",

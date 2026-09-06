@@ -15,14 +15,6 @@ interface ChannelState {
   volume: number;
 }
 
-function ExpandIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3">
-      <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 interface StudioMixerProps {
   title: string;
   author: string | null;
@@ -111,11 +103,6 @@ export function StudioMixer({
     setMasterCloseupRect(e.currentTarget.getBoundingClientRect());
   }
 
-  function handleExpandClick(e: React.MouseEvent<HTMLButtonElement>, open: (rect: DOMRect) => void) {
-    e.stopPropagation();
-    open(e.currentTarget.parentElement!.getBoundingClientRect());
-  }
-
   const masterProps = {
     title,
     author,
@@ -152,13 +139,6 @@ export function StudioMixer({
               <MasterUnit {...masterProps} />
             </ScaleToFit>
           </div>
-          <button
-            onClick={(e) => handleExpandClick(e, (rect) => setMasterCloseupRect(rect))}
-            title="Look closer"
-            className="absolute right-1 top-3 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-neutral-300 shadow hover:bg-black/80"
-          >
-            <ExpandIcon />
-          </button>
         </div>
       </div>
 
@@ -189,16 +169,10 @@ export function StudioMixer({
                     duration={duration}
                     onSeek={onSeek}
                     controlsOnly={isMobile}
+                    isMobile={isMobile}
                   />
                 </ScaleToFit>
               </div>
-              <button
-                onClick={(e) => handleExpandClick(e, (rect) => setCloseup({ name, rect }))}
-                title="Look closer"
-                className="absolute right-1 top-1 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-neutral-300 shadow hover:bg-black/80"
-              >
-                <ExpandIcon />
-              </button>
             </div>
           );
         })}
@@ -222,6 +196,7 @@ export function StudioMixer({
               onVolumeChange={(v) => onVolumeChange(closeup.name, v)}
               duration={duration}
               onSeek={onSeek}
+              isMobile={isMobile}
               currentTime={currentTime}
               originRect={closeup.rect}
               onClose={() => setCloseup(null)}
