@@ -3,6 +3,7 @@ import type WaveSurfer from "wavesurfer.js";
 import { downloadAllUrl, getChords, stemUrl, thumbnailUrl, type ChordSegment, type Job } from "../api/client";
 import { PlaybackEngine } from "../audio/playbackEngine";
 import { useDominantColor } from "../hooks/useDominantColor";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { downloadFile } from "../utils/download";
 import { ChordTimeline } from "./ChordTimeline";
 import { StemChannel } from "./StemChannel";
@@ -52,6 +53,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
   const [transpose, setTranspose] = useState(0);
   const accentColor = useDominantColor(job.has_thumbnail ? thumbnailUrl(job.id) : null) ?? "#9333ea";
+  const isMobile = useMediaQuery("(max-width: 639px)");
 
   function changeViewMode(mode: ViewMode) {
     setViewMode(mode);
@@ -318,8 +320,8 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
               "radial-gradient(circle at 50% -10%, rgba(180,120,60,0.10), transparent 45%), linear-gradient(180deg, #140d09 0%, #0a0605 60%, #030202 100%)",
           }}
         />
-        <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-4 p-8">
-          <StudioCabinet>
+        <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-8">
+          <StudioCabinet isMobile={isMobile}>
             <div className="flex flex-col gap-4">{studioContent}</div>
           </StudioCabinet>
         </div>
