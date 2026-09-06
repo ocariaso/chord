@@ -6,6 +6,7 @@ import { GRAY_ACCENT_COLORS, useDominantColors } from "../hooks/useDominantColor
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { downloadFile } from "../utils/download";
 import { ChordTimeline } from "./ChordTimeline";
+import { ProcessingScreen } from "./ProcessingScreen";
 import { StemChannel } from "./StemChannel";
 import { DownloadTrayIcon, UploadTrayIcon } from "./studio/icons";
 import { StudioCabinet } from "./studio/StudioCabinet";
@@ -24,6 +25,14 @@ interface ChannelState {
 
 type ViewMode = "simple" | "studio";
 const VIEW_MODE_KEY = "chord:viewMode";
+const VIEW_TRANSITION_MS = 150;
+const SIMPLE_STEM_ORDER = ["vocals", "guitar", "bass", "piano", "drums", "other"];
+
+function orderedStemNames(stemNames: string[]): string[] {
+  return SIMPLE_STEM_ORDER.filter((n) => stemNames.includes(n)).concat(
+    stemNames.filter((n) => !SIMPLE_STEM_ORDER.includes(n))
+  );
+}
 
 function loadViewMode(): ViewMode {
   try {
@@ -38,6 +47,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const engineRef = useRef<PlaybackEngine | null>(null);
   const waveSurfersRef = useRef(new Map<string, WaveSurfer>());
   const rafRef = useRef<number>(0);
+  const viewTransitionTokenRef = useRef(0);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -50,6 +60,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [masterVolume, setMasterVolume] = useState(1);
   const [chordSegments, setChordSegments] = useState<ChordSegment[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
+  const [isSwitchingView, setIsSwitchingView] = useState(false);
   const [transpose, setTranspose] = useState(0);
   const dominantColors = useDominantColors(job.has_thumbnail ? thumbnailUrl(job.id) : null) ?? GRAY_ACCENT_COLORS;
   const accentColor = dominantColors.primary.css;
@@ -80,12 +91,23 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   }, [job.original_filename, loading]);
 
   function changeViewMode(mode: ViewMode) {
-    setViewMode(mode);
-    try {
-      localStorage.setItem(VIEW_MODE_KEY, mode);
-    } catch {
-      // Private browsing or storage disabled; the toggle still works for this session.
-    }
+    if (mode === viewMode) return;
+    const token = ++viewTransitionTokenRef.current;
+    setIsSwitchingView(true);
+    window.setTimeout(() => {
+      if (viewTransitionTokenRef.current !== token) return;
+      setViewMode(mode);
+      try {
+        localStorage.setItem(VIEW_MODE_KEY, mode);
+      } catch {
+        // Private browsing or storage disabled; the toggle still works for this session.
+      }
+      // Give the newly-mounted view a moment to render before revealing it, so the fade-in
+      // doesn't get blocked mid-transition by the mount itself.
+      window.setTimeout(() => {
+        if (viewTransitionTokenRef.current === token) setIsSwitchingView(false);
+      }, 200);
+    }, VIEW_TRANSITION_MS);
   }
 
   async function handleDownloadAll() {
@@ -221,11 +243,24 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   }
 
   if (loading) {
-    return <div className="p-8 text-center text-neutral-400">Loading stems...</div>;
+    return (
+      <ProcessingScreen
+        job={{ ...job, status: "separating", stage_message: "Loading stems...", progress: 1 }}
+        connectionError={null}
+        onRetry={onBack}
+        onCancel={onBack}
+      />
+    );
   }
 
   const duration = engineRef.current?.duration ?? 0;
-  const subtitle = [job.author, job.tempo_bpm != null ? `${job.tempo_bpm} BPM` : null].filter(Boolean).join(" · ");
+  const subtitle = [
+    job.author,
+    job.key_estimate,
+    job.tempo_bpm != null ? `${job.tempo_bpm} BPM` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const marqueeDuration = Math.max(4, (marqueeTextWidth + MARQUEE_GAP) / 40);
 
   const header = (
@@ -353,26 +388,24 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
     />
   );
 
-  if (viewMode === "studio") {
-    return (
-      <>
-        <div
-          className="fixed inset-0 z-0"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 50% -10%, rgba(180,120,60,0.10), transparent 45%), linear-gradient(180deg, #140d09 0%, #0a0605 60%, #030202 100%)",
-          }}
-        />
-        <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-8">
-          <StudioCabinet isMobile={isMobile}>
-            <div className="flex flex-col gap-4">{studioContent}</div>
-          </StudioCabinet>
-        </div>
-      </>
-    );
-  }
+  const studioView = (
+    <>
+      <div
+        className="fixed inset-0 z-0"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 50% -10%, rgba(180,120,60,0.10), transparent 45%), linear-gradient(180deg, #140d09 0%, #0a0605 60%, #030202 100%)",
+        }}
+      />
+      <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-8">
+        <StudioCabinet isMobile={isMobile}>
+          <div className="flex flex-col gap-4">{studioContent}</div>
+        </StudioCabinet>
+      </div>
+    </>
+  );
 
-  return (
+  const simpleView = (
     <>
       <div
         className="fixed inset-0 z-0"
@@ -398,6 +431,8 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
             masterVolume={masterVolume}
             onMasterVolumeChange={changeMasterVolume}
             isMobile={isMobile}
+            transpose={transpose}
+            onTransposeChange={setTranspose}
           />
 
           <TransportBar
@@ -412,7 +447,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
       </div>
 
       <div className="flex flex-col gap-2">
-        {job.stem_names.map((name) => (
+        {orderedStemNames(job.stem_names).map((name) => (
           <StemChannel
             key={name}
             name={name}
@@ -435,6 +470,30 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
         ))}
       </div>
       </div>
+    </>
+  );
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-0"
+        style={{
+          backgroundImage:
+            `radial-gradient(ellipse 90% 70% at 50% 0%, hsl(${dominantColors.primary.h}, ${dominantColors.primary.s}%, ${dominantColors.primary.l}%, 0.2), transparent 80%), ` +
+            "linear-gradient(180deg, #141416 0%, #0a0a0b 65%, #030303 100%)",
+        }}
+      />
+      <div style={{ opacity: isSwitchingView ? 0 : 1, transition: `opacity ${VIEW_TRANSITION_MS}ms ease` }}>
+        {viewMode === "studio" ? studioView : simpleView}
+      </div>
+      {isSwitchingView && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center">
+          <span
+            className="h-10 w-10 animate-spin rounded-full border-2"
+            style={{ borderColor: accentColor, borderTopColor: "transparent" }}
+          />
+        </div>
+      )}
     </>
   );
 }

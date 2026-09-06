@@ -26,3 +26,13 @@ button:disabled {
     transform: translateX(var(--marquee-distance, 0px));
   }
 }
+
+@keyframes eq-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.25);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}

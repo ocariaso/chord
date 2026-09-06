@@ -17,6 +17,11 @@ function App() {
 
   useEffect(() => {
     if (job && screen === "processing" && job.status === "done") {
+      try {
+        localStorage.setItem("chord:viewMode", "simple");
+      } catch {
+        // Private browsing or storage disabled; StemMixer just falls back to its own default.
+      }
       setScreen("results");
     }
   }, [job, screen]);
