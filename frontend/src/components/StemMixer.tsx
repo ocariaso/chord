@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type WaveSurfer from "wavesurfer.js";
 import { downloadAllUrl, getChords, stemUrl, thumbnailUrl, type ChordSegment, type Job } from "../api/client";
 import { PlaybackEngine } from "../audio/playbackEngine";
-import { useDominantColor } from "../hooks/useDominantColor";
+import { GRAY_ACCENT_COLORS, useDominantColors } from "../hooks/useDominantColor";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { downloadFile } from "../utils/download";
 import { ChordTimeline } from "./ChordTimeline";
 import { StemChannel } from "./StemChannel";
-import { MASTER_WIDTH } from "./studio/constants";
 import { DownloadTrayIcon, UploadTrayIcon } from "./studio/icons";
 import { StudioCabinet } from "./studio/StudioCabinet";
 import { StudioMixer } from "./studio/StudioMixer";
@@ -52,8 +51,33 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [chordSegments, setChordSegments] = useState<ChordSegment[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
   const [transpose, setTranspose] = useState(0);
-  const accentColor = useDominantColor(job.has_thumbnail ? thumbnailUrl(job.id) : null) ?? "#9333ea";
+  const dominantColors = useDominantColors(job.has_thumbnail ? thumbnailUrl(job.id) : null) ?? GRAY_ACCENT_COLORS;
+  const accentColor = dominantColors.primary.css;
+  const secondaryColor = dominantColors.secondary.css;
+  // Themed "card" surfaces (stem rows, chord timeline, transport bar): a subtle secondary-tinted
+  // wash over the usual dark base, so the whole Simple view reads as one cohesive palette.
+  const cardBg = `color-mix(in srgb, ${secondaryColor} 10%, #171717)`;
+  const cardBorder = `color-mix(in srgb, ${secondaryColor} 35%, transparent)`;
   const isMobile = useMediaQuery("(max-width: 639px)");
+
+  const titleContainerRef = useRef<HTMLDivElement>(null);
+  const titleMeasureRef = useRef<HTMLSpanElement>(null);
+  const [marqueeTextWidth, setMarqueeTextWidth] = useState(0);
+  const MARQUEE_GAP = 48;
+
+  useEffect(() => {
+    const container = titleContainerRef.current;
+    const measure = titleMeasureRef.current;
+    if (!container || !measure) return;
+    function update() {
+      const natural = measure!.scrollWidth;
+      setMarqueeTextWidth(natural > container!.clientWidth ? natural : 0);
+    }
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [job.original_filename, loading]);
 
   function changeViewMode(mode: ViewMode) {
     setViewMode(mode);
@@ -201,35 +225,54 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   }
 
   const duration = engineRef.current?.duration ?? 0;
+  const subtitle = [job.author, job.tempo_bpm != null ? `${job.tempo_bpm} BPM` : null].filter(Boolean).join(" · ");
+  const marqueeDuration = Math.max(4, (marqueeTextWidth + MARQUEE_GAP) / 40);
 
   const header = (
       <div
-        className="mx-auto flex w-full items-start justify-between gap-6 rounded-lg p-4"
+        className="flex w-full items-start justify-between gap-3 p-3 sm:gap-6 sm:p-4"
         style={{
-          ...(viewMode === "studio" ? { maxWidth: MASTER_WIDTH } : {}),
           ...(job.has_thumbnail
             ? {
-                backgroundImage: `linear-gradient(90deg, rgba(10,10,10,0.9) 0%, rgba(10,10,10,0.6) 55%, rgba(10,10,10,0.25) 100%), url(${thumbnailUrl(job.id)})`,
+                backgroundImage:
+                  `radial-gradient(circle at 85% 12%, hsl(${dominantColors.secondary.h}, ${dominantColors.secondary.s}%, ${dominantColors.secondary.l}%, 0.35), transparent 55%),` +
+                  `linear-gradient(90deg, rgba(10,10,10,0.9) 0%, rgba(10,10,10,0.6) 55%, rgba(10,10,10,0.25) 100%), url(${thumbnailUrl(job.id)})`,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
               }
             : {
                 backgroundColor: "#141018",
                 backgroundImage:
-                  "radial-gradient(circle at 22% 25%, rgba(147,51,234,0.22), transparent 55%)," +
+                  `radial-gradient(circle at 22% 25%, hsl(${dominantColors.secondary.h}, ${dominantColors.secondary.s}%, ${dominantColors.secondary.l}%, 0.22), transparent 55%),` +
                   "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1.2px)," +
                   "linear-gradient(135deg, #1b1420 0%, #130f17 55%, #0c0a0e 100%)",
                 backgroundSize: "auto, 7px 7px, auto",
               }),
         }}
       >
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-xl font-semibold text-neutral-100">{job.original_filename}</h1>
-          {(job.author || job.tempo_bpm != null) && (
-            <p className="truncate text-sm text-neutral-500">
-              {[job.author, job.tempo_bpm != null ? `${job.tempo_bpm} BPM` : null].filter(Boolean).join(" · ")}
-            </p>
+        <div ref={titleContainerRef} className="relative min-w-0 flex-1 overflow-hidden">
+          <span ref={titleMeasureRef} aria-hidden="true" className="invisible absolute whitespace-nowrap text-xl font-semibold">
+            {job.original_filename}
+          </span>
+          {marqueeTextWidth > 0 ? (
+            <h1
+              className="flex whitespace-nowrap text-xl font-semibold text-neutral-100"
+              style={
+                {
+                  "--marquee-distance": `-${marqueeTextWidth + MARQUEE_GAP}px`,
+                  animation: `marquee-loop ${marqueeDuration}s linear infinite`,
+                } as React.CSSProperties
+              }
+            >
+              <span style={{ paddingRight: MARQUEE_GAP }}>{job.original_filename}</span>
+              <span style={{ paddingRight: MARQUEE_GAP }} aria-hidden="true">
+                {job.original_filename}
+              </span>
+            </h1>
+          ) : (
+            <h1 className="truncate text-xl font-semibold text-neutral-100">{job.original_filename}</h1>
           )}
+          {subtitle && <p className="truncate text-sm text-neutral-500">{subtitle}</p>}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
           <div className="flex rounded-md bg-neutral-900 p-0.5 text-sm">
@@ -330,16 +373,43 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 p-8">
-      {header}
-
-      <ChordTimeline
-        segments={chordSegments}
-        currentTime={currentTime}
-        duration={duration}
-        keyLabel={job.key_estimate}
-        onSeek={handleSeek}
+    <>
+      <div
+        className="fixed inset-0 z-0"
+        style={{
+          backgroundImage: `radial-gradient(ellipse 90% 70% at 50% 0%, hsl(${dominantColors.primary.h}, ${dominantColors.primary.s}%, ${dominantColors.primary.l}%, 0.24), transparent 80%), linear-gradient(180deg, #141416 0%, #0a0a0b 65%, #030303 100%)`,
+        }}
       />
+      <div className="relative z-10 mx-auto flex max-w-3xl flex-col gap-4 p-3 sm:p-8">
+      <div className="overflow-hidden rounded-lg" style={{ backgroundColor: cardBg, boxShadow: `inset 0 0 0 1px ${cardBorder}` }}>
+        {header}
+
+        <div className="flex flex-col gap-4 p-3 sm:p-4" style={{ borderTop: `1px solid ${cardBorder}` }}>
+          <ChordTimeline
+            segments={chordSegments}
+            currentTime={currentTime}
+            duration={duration}
+            keyLabel={job.key_estimate}
+            onSeek={handleSeek}
+            accentColor={accentColor}
+            cardBorder={cardBorder}
+            metronomeEnabled={metronomeEnabled}
+            onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
+            masterVolume={masterVolume}
+            onMasterVolumeChange={changeMasterVolume}
+            isMobile={isMobile}
+          />
+
+          <TransportBar
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            duration={duration}
+            onPlayPause={handlePlayPause}
+            onSeek={handleSeek}
+            accentColor={accentColor}
+          />
+        </div>
+      </div>
 
       <div className="flex flex-col gap-2">
         {job.stem_names.map((name) => (
@@ -355,21 +425,16 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
             onToggleSolo={() => toggleSolo(name)}
             onVolumeChange={(v) => changeVolume(name, v)}
             onWaveSurferReady={(stemName, instance) => waveSurfersRef.current.set(stemName, instance)}
+            accentColor={accentColor}
+            secondaryColor={secondaryColor}
+            cardBg={cardBg}
+            cardBorder={cardBorder}
+            duration={duration}
+            onSeek={handleSeek}
           />
         ))}
       </div>
-
-      <TransportBar
-        isPlaying={isPlaying}
-        currentTime={currentTime}
-        duration={duration}
-        onPlayPause={handlePlayPause}
-        onSeek={handleSeek}
-        metronomeEnabled={metronomeEnabled}
-        onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
-        masterVolume={masterVolume}
-        onMasterVolumeChange={changeMasterVolume}
-      />
-    </div>
+      </div>
+    </>
   );
 }

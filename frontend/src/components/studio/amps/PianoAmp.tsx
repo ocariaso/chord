@@ -21,6 +21,7 @@ export function PianoAmp({
   duration,
   onSeek,
   controlsOnly = false,
+  isMobile = false,
 }: AmpProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { isDownloading, download } = useDownload(downloadHref, `${name}.wav`);
@@ -34,7 +35,7 @@ export function PianoAmp({
   };
 
   return (
-    <div className="flex overflow-hidden rounded-lg shadow-[0_10px_24px_rgba(0,0,0,0.5)]" style={{ width: controlsOnly ? AMP_MOBILE_WIDTH : AMP_WIDTH }}>
+    <div className="flex overflow-hidden rounded-lg shadow-[0_10px_24px_rgba(0,0,0,0.5)]" style={{ width: isMobile ? AMP_MOBILE_WIDTH : AMP_WIDTH }}>
       <div style={woodStyle} />
 
       <div className="relative flex flex-1 flex-col" style={{ backgroundColor: "#e2e2e4" }}>

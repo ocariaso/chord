@@ -31,6 +31,7 @@ export function DrumsAmp({
   duration,
   onSeek,
   controlsOnly = false,
+  isMobile = false,
 }: AmpProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { isDownloading, download } = useDownload(downloadHref, `${name}.wav`);
@@ -40,7 +41,7 @@ export function DrumsAmp({
   const woodStyle = {
     background: "linear-gradient(90deg, #7a2f1e 0%, #5e2216 12%, #8f3a24 28%, #5e2216 44%, #7a2f1e 60%, #8f3a24 76%, #5e2216 90%, #7a2f1e 100%)",
   };
-  const width = controlsOnly ? AMP_MOBILE_WIDTH : AMP_WIDTH;
+  const width = isMobile ? AMP_MOBILE_WIDTH : AMP_WIDTH;
 
   return (
     <div className="flex flex-col items-center">

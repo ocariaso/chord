@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ChordSegment } from "../../api/client";
-import { transposeChord } from "../../utils/transpose";
+import { useClickTooltip } from "../../hooks/useClickTooltip";
+import { transposeChord, transposeKeyLabel } from "../../utils/transpose";
 import { formatTime } from "../../utils/time";
 import { DownloadTrayIcon, UploadTrayIcon } from "./icons";
 import { LevelRing } from "./LevelRing";
@@ -123,6 +124,7 @@ export function MasterUnit({
   const upcomingChords = segments.slice(upcomingStart, upcomingStart + 5).map((s) => transposeChord(s.chord, transpose));
 
   const seekDrag = useSeekDrag(duration, onSeek);
+  const keyTooltip = useClickTooltip<HTMLDivElement>();
 
   const titleBoxBackgroundStyle: React.CSSProperties = {
     ...(thumbnailUrl
@@ -257,6 +259,48 @@ export function MasterUnit({
     </div>
   );
 
+  const keyCluster = keyLabel && (
+    <div className="flex flex-col items-center gap-0.5">
+      <div ref={keyTooltip.containerRef} className="relative flex items-center gap-1">
+        <div
+          className="flex shrink-0 items-center justify-center rounded-sm px-1.5 py-0.5"
+          style={{ backgroundColor: "#081a0e", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.85), inset 0 0 0 1px #000" }}
+        >
+          <span
+            className="whitespace-nowrap tabular-nums"
+            style={{
+              fontFamily: "'Orbitron', sans-serif",
+              fontWeight: 700,
+              fontSize: 11,
+              color: "#4ade80",
+              textShadow: "0 0 4px rgba(74,222,128,0.8), 0 0 1px rgba(74,222,128,0.9)",
+            }}
+          >
+            {transposeKeyLabel(keyLabel, transpose)}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => keyTooltip.setOpen((v) => !v)}
+          title="Adjust the key if detected wrong. This will transpose the chords accordingly."
+          className="flex h-3.5 w-3.5 shrink-0 cursor-help items-center justify-center rounded-full text-[9px] leading-none text-[#6a6a6e] shadow-[inset_0_0_0_1px_#4a4a4e]"
+        >
+          i
+        </button>
+        {keyTooltip.open && (
+          <div
+            role="tooltip"
+            style={{ backgroundColor: "#161616", boxShadow: "inset 0 0 0 1px #2a2a2e" }}
+            className="absolute left-1/2 top-full z-10 mt-2 w-44 -translate-x-1/2 rounded-md p-2.5 text-[10px] leading-snug text-neutral-300 shadow-lg"
+          >
+            Adjust the key if detected wrong. This will transpose the chords accordingly.
+          </div>
+        )}
+      </div>
+      <span className="font-['Oswald'] text-[7px] text-[#6a6a6e]">Key</span>
+    </div>
+  );
+
   const transposeCluster = (
     <div className="flex flex-col items-center gap-0.5">
       <div className="flex items-center gap-1">
@@ -345,6 +389,7 @@ export function MasterUnit({
             </div>
             <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
               {viewModeCluster}
+              {keyCluster}
               {transposeCluster}
               {metroCluster}
             </div>
@@ -365,6 +410,7 @@ export function MasterUnit({
 
             <div className="flex items-center gap-5">
               {viewModeCluster}
+              {keyCluster}
               {transposeCluster}
               {metroCluster}
             </div>
