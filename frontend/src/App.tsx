@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createJob, createJobFromUrl } from "./api/client";
+import { Footer } from "./components/Footer";
 import { ProcessingScreen } from "./components/ProcessingScreen";
 import { StemMixer } from "./components/StemMixer";
 import { UploadPanel } from "./components/UploadPanel";
@@ -60,7 +61,7 @@ function App() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-neutral-950 text-neutral-100">
+    <div className="flex min-h-screen flex-col bg-neutral-950 pb-14 text-neutral-100">
       <div className="flex-1">
         {screen === "upload" && (
           <UploadPanel
@@ -75,9 +76,7 @@ function App() {
         )}
         {screen === "results" && job && <StemMixer job={job} onBack={handleBack} />}
       </div>
-      <footer className="py-4 text-center text-xs text-neutral-600">
-        Property of Ormin Cariaso · v{__APP_VERSION__}
-      </footer>
+      <Footer />
     </div>
   );
 }
