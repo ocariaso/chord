@@ -75,7 +75,9 @@ function App() {
         )}
         {screen === "results" && job && <StemMixer job={job} onBack={handleBack} />}
       </div>
-      <footer className="py-4 text-center text-xs text-neutral-600">Property of Ormin Cariaso</footer>
+      <footer className="py-4 text-center text-xs text-neutral-600">
+        Property of Ormin Cariaso · v{__APP_VERSION__}
+      </footer>
     </div>
   );
 }

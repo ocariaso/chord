@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cancelJob, thumbnailUrl, type Job } from "../api/client";
-import { GRAY_ACCENT_COLORS, useDominantColors } from "../hooks/useDominantColor";
+import { EqualizerBars, MusicNoteIcon } from "./DecorativeIcons";
+import { DEFAULT_ACCENT_COLORS, useDominantColors } from "../hooks/useDominantColor";
 
 interface ProcessingScreenProps {
   job: Job | null;
@@ -22,40 +23,9 @@ const STAGE_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-const EQ_BAR_DELAYS = ["0ms", "160ms", "80ms", "240ms"];
-
-function EqualizerBars({ color }: { color: string }) {
-  return (
-    <div className="flex h-3.5 items-end gap-0.5">
-      {EQ_BAR_DELAYS.map((delay, i) => (
-        <span
-          key={i}
-          className="w-0.5 rounded-full"
-          style={{
-            height: "100%",
-            backgroundColor: color,
-            transformOrigin: "bottom",
-            animation: `eq-bounce 900ms ease-in-out ${delay} infinite`,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-function MusicNoteIcon({ color }: { color: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.5} className="h-10 w-10">
-      <circle cx="7" cy="18" r="3" />
-      <circle cx="17" cy="16" r="3" />
-      <path d="M10 18V5.5L20 3v13" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 export function ProcessingScreen({ job, connectionError, onRetry, onCancel }: ProcessingScreenProps) {
   const [isCancelling, setIsCancelling] = useState(false);
-  const dominantColors = useDominantColors(job?.has_thumbnail ? thumbnailUrl(job.id) : null) ?? GRAY_ACCENT_COLORS;
+  const dominantColors = useDominantColors(job?.has_thumbnail ? thumbnailUrl(job.id) : null) ?? DEFAULT_ACCENT_COLORS;
   const accentColor = dominantColors.primary.css;
 
   const titleContainerRef = useRef<HTMLDivElement>(null);

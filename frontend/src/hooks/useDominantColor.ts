@@ -13,10 +13,10 @@ export interface AccentColors {
   secondary: AccentColor;
 }
 
-/** Used whenever there's no thumbnail (or color extraction fails) — a neutral, non-committal theme. */
-export const GRAY_ACCENT_COLORS: AccentColors = {
-  primary: { h: 0, s: 0, l: 45, css: "hsl(0, 0%, 45%)" },
-  secondary: { h: 0, s: 0, l: 62, css: "hsl(0, 0%, 62%)" },
+/** Used whenever there's no thumbnail (or color extraction fails) — the app's own default blue theme. */
+export const DEFAULT_ACCENT_COLORS: AccentColors = {
+  primary: { h: 198, s: 54, l: 41, css: "hsl(198, 54%, 41%)" },
+  secondary: { h: 198, s: 54, l: 58, css: "hsl(198, 54%, 58%)" },
 };
 
 function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
