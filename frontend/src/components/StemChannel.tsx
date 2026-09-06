@@ -54,7 +54,9 @@ export function StemChannel({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // This instance only renders the waveform; PlaybackEngine owns playback.
+    // This instance only renders the waveform; PlaybackEngine owns playback. A real media
+    // element (loaded from the same stem URL) gives WaveSurfer a genuine duration to compute
+    // cursor/progress position from; `peaks` still skips re-decoding for the waveform itself.
     const instance = WaveSurfer.create({
       container: containerRef.current,
       height: 56,
@@ -63,6 +65,7 @@ export function StemChannel({
       cursorColor: "#e5e5e5",
       cursorWidth: 1,
       interact: false,
+      url: downloadHref,
       peaks: [buffer.getChannelData(0)],
       duration: buffer.duration,
     });

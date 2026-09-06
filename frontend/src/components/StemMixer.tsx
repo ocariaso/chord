@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type WaveSurfer from "wavesurfer.js";
-import { downloadAllUrl, getChords, stemUrl, type ChordSegment, type Job } from "../api/client";
+import { downloadAllUrl, getChords, stemUrl, thumbnailUrl, type ChordSegment, type Job } from "../api/client";
 import { PlaybackEngine } from "../audio/playbackEngine";
+import { useDominantColor } from "../hooks/useDominantColor";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { downloadFile } from "../utils/download";
 import { ChordTimeline } from "./ChordTimeline";
 import { StemChannel } from "./StemChannel";
+import { MASTER_WIDTH } from "./studio/constants";
+import { DownloadTrayIcon, UploadTrayIcon } from "./studio/icons";
+import { StudioCabinet } from "./studio/StudioCabinet";
+import { StudioMixer } from "./studio/StudioMixer";
 import { TransportBar } from "./TransportBar";
 
 interface StemMixerProps {
@@ -15,6 +21,18 @@ interface StemMixerProps {
 interface ChannelState {
   muted: boolean;
   volume: number;
+}
+
+type ViewMode = "simple" | "studio";
+const VIEW_MODE_KEY = "chord:viewMode";
+
+function loadViewMode(): ViewMode {
+  try {
+    const stored = localStorage.getItem(VIEW_MODE_KEY);
+    return stored === "studio" ? "studio" : "simple";
+  } catch {
+    return "simple";
+  }
 }
 
 export function StemMixer({ job, onBack }: StemMixerProps) {
@@ -32,6 +50,19 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [masterVolume, setMasterVolume] = useState(1);
   const [chordSegments, setChordSegments] = useState<ChordSegment[]>([]);
+  const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
+  const [transpose, setTranspose] = useState(0);
+  const accentColor = useDominantColor(job.has_thumbnail ? thumbnailUrl(job.id) : null) ?? "#9333ea";
+  const isMobile = useMediaQuery("(max-width: 639px)");
+
+  function changeViewMode(mode: ViewMode) {
+    setViewMode(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // Private browsing or storage disabled; the toggle still works for this session.
+    }
+  }
 
   async function handleDownloadAll() {
     setIsDownloadingAll(true);
@@ -169,34 +200,143 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
     return <div className="p-8 text-center text-neutral-400">Loading stems...</div>;
   }
 
-  return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 p-8">
-      <div className="flex items-center justify-between">
-        <div className="min-w-0">
+  const duration = engineRef.current?.duration ?? 0;
+
+  const header = (
+      <div
+        className="mx-auto flex w-full items-start justify-between gap-6 rounded-lg p-4"
+        style={{
+          ...(viewMode === "studio" ? { maxWidth: MASTER_WIDTH } : {}),
+          ...(job.has_thumbnail
+            ? {
+                backgroundImage: `linear-gradient(90deg, rgba(10,10,10,0.9) 0%, rgba(10,10,10,0.6) 55%, rgba(10,10,10,0.25) 100%), url(${thumbnailUrl(job.id)})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }
+            : {
+                backgroundColor: "#141018",
+                backgroundImage:
+                  "radial-gradient(circle at 22% 25%, rgba(147,51,234,0.22), transparent 55%)," +
+                  "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1.2px)," +
+                  "linear-gradient(135deg, #1b1420 0%, #130f17 55%, #0c0a0e 100%)",
+                backgroundSize: "auto, 7px 7px, auto",
+              }),
+        }}
+      >
+        <div className="min-w-0 flex-1">
           <h1 className="truncate text-xl font-semibold text-neutral-100">{job.original_filename}</h1>
-          {job.tempo_bpm != null && <p className="text-sm text-neutral-500">{job.tempo_bpm} BPM</p>}
+          {(job.author || job.tempo_bpm != null) && (
+            <p className="truncate text-sm text-neutral-500">
+              {[job.author, job.tempo_bpm != null ? `${job.tempo_bpm} BPM` : null].filter(Boolean).join(" · ")}
+            </p>
+          )}
         </div>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleDownloadAll}
-            disabled={isDownloadingAll}
-            className="flex items-center gap-2 text-sm text-neutral-400 hover:text-neutral-200 disabled:text-neutral-500"
-          >
-            {isDownloadingAll && (
-              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-[1.5px] border-neutral-500 border-t-transparent" />
-            )}
-            {isDownloadingAll ? "Preparing zip..." : "Download all (.zip)"}
-          </button>
-          <button onClick={onBack} className="text-sm text-neutral-400 hover:text-neutral-200">
-            &larr; Upload another
-          </button>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <div className="flex rounded-md bg-neutral-900 p-0.5 text-sm">
+            <button
+              onClick={() => changeViewMode("simple")}
+              className={`rounded px-3 py-1 ${viewMode === "simple" ? "text-white" : "text-neutral-400 hover:text-neutral-200"}`}
+              style={viewMode === "simple" ? { backgroundColor: accentColor } : undefined}
+            >
+              Simple
+            </button>
+            <button
+              onClick={() => changeViewMode("studio")}
+              className={`rounded px-3 py-1 ${viewMode === "studio" ? "text-white" : "text-neutral-400 hover:text-neutral-200"}`}
+              style={viewMode === "studio" ? { backgroundColor: accentColor } : undefined}
+            >
+              Studio
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadAll}
+              disabled={isDownloadingAll}
+              title={isDownloadingAll ? "Preparing zip..." : "Download all stems (.zip)"}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200 disabled:text-neutral-600"
+            >
+              {isDownloadingAll ? (
+                <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-[1.5px] border-neutral-500 border-t-transparent" />
+              ) : (
+                <DownloadTrayIcon />
+              )}
+            </button>
+            <button
+              onClick={onBack}
+              title="Upload another song"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"
+            >
+              <UploadTrayIcon />
+            </button>
+          </div>
         </div>
       </div>
+  );
+
+  const studioContent = (
+    <StudioMixer
+      title={job.original_filename}
+      author={job.author}
+      keyLabel={job.key_estimate}
+      bpm={job.tempo_bpm}
+      thumbnailUrl={job.has_thumbnail ? thumbnailUrl(job.id) : null}
+      transpose={transpose}
+      onTransposeChange={setTranspose}
+      viewMode={viewMode}
+      onChangeViewMode={changeViewMode}
+      accentColor={accentColor}
+      onDownloadAll={handleDownloadAll}
+      isDownloadingAll={isDownloadingAll}
+      onUploadAnother={onBack}
+      stemNames={job.stem_names}
+      getBuffer={(name) => engineRef.current?.getBuffer(name)}
+      channelStates={channelStates}
+      soloedStems={soloedStems}
+      stemUrl={(name) => stemUrl(job.id, name)}
+      onToggleMute={toggleMute}
+      onToggleSolo={toggleSolo}
+      onVolumeChange={changeVolume}
+      onWaveSurferReady={(stemName, instance) => waveSurfersRef.current.set(stemName, instance)}
+      segments={chordSegments}
+      currentTime={currentTime}
+      duration={duration}
+      onSeek={handleSeek}
+      isPlaying={isPlaying}
+      onPlayPause={handlePlayPause}
+      metronomeEnabled={metronomeEnabled}
+      onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
+      masterVolume={masterVolume}
+      onMasterVolumeChange={changeMasterVolume}
+    />
+  );
+
+  if (viewMode === "studio") {
+    return (
+      <>
+        <div
+          className="fixed inset-0 z-0"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 50% -10%, rgba(180,120,60,0.10), transparent 45%), linear-gradient(180deg, #140d09 0%, #0a0605 60%, #030202 100%)",
+          }}
+        />
+        <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-8">
+          <StudioCabinet isMobile={isMobile}>
+            <div className="flex flex-col gap-4">{studioContent}</div>
+          </StudioCabinet>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="mx-auto flex max-w-3xl flex-col gap-4 p-8">
+      {header}
 
       <ChordTimeline
         segments={chordSegments}
         currentTime={currentTime}
-        duration={engineRef.current?.duration ?? 0}
+        duration={duration}
         keyLabel={job.key_estimate}
         onSeek={handleSeek}
       />
@@ -222,7 +362,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
       <TransportBar
         isPlaying={isPlaying}
         currentTime={currentTime}
-        duration={engineRef.current?.duration ?? 0}
+        duration={duration}
         onPlayPause={handlePlayPause}
         onSeek={handleSeek}
         metronomeEnabled={metronomeEnabled}

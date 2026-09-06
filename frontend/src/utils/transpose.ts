@@ -9,9 +9,10 @@ function transposeNote(root: string, semitones: number): string {
 
 /** A capo on fret N means the shapes you play read N semitones below the actual chord. */
 export function transposeChord(chord: string, capo: number): string {
+  if (chord === "N") return "-"; // no chord detected (silence) — display as a plain dash, not the model's raw "N" label
   if (capo === 0) return chord;
   const match = chord.match(/^([A-G]#?)(.*)$/);
-  if (!match) return chord; // e.g. "N" for silence
+  if (!match) return chord;
   const [, root, suffix] = match;
   return `${transposeNote(root, capo)}${suffix}`;
 }
