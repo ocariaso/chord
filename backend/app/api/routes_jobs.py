@@ -2,6 +2,7 @@ import asyncio
 import json
 import shutil
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -39,15 +40,19 @@ def _row_to_response(row) -> JobResponse:
     )
 
 
+ALLOWED_UPLOAD_EXTENSIONS = {".mp3", ".flac"}
+
+
 @router.post("", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
 async def create_job(file: UploadFile) -> JobResponse:
-    if not file.filename or not file.filename.lower().endswith(".mp3"):
-        raise HTTPException(status_code=400, detail="Only .mp3 uploads are supported")
+    extension = Path(file.filename).suffix.lower() if file.filename else ""
+    if extension not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Only .mp3 and .flac uploads are supported")
 
     job_id = uuid.uuid4().hex
     directory = job_dir(job_id)
     directory.mkdir(parents=True, exist_ok=True)
-    original_path = directory / "original.mp3"
+    original_path = directory / f"original{extension}"
 
     contents = await file.read()
     if not contents:

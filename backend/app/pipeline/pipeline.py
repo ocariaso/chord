@@ -36,7 +36,6 @@ def job_dir(job_id: str) -> Path:
 
 def run_job(job_id: str) -> None:
     directory = job_dir(job_id)
-    original_path = directory / "original.mp3"
     stems_dir = directory / "stems"
     analysis_dir = directory / "analysis"
 
@@ -46,12 +45,14 @@ def run_job(job_id: str) -> None:
 
         source_url = _get_job_row(job_id)["source_url"]
         if source_url:
+            original_path = directory / "original.mp3"
             _update_job(job_id, status=JobStatus.FETCHING.value, progress=0.05, stage_message="Downloading audio")
             downloaded_path, title, author = source.download_audio(source_url, directory)
             if downloaded_path != original_path:
                 downloaded_path.rename(original_path)
             _update_job(job_id, original_filename=title, author=author)
         else:
+            original_path = next(directory.glob("original.*"))
             author = metadata.extract_author(original_path)
             if author:
                 _update_job(job_id, author=author)
