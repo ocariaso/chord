@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { cancelJobUrl, getJob, jobEventsUrl, type Job } from "../api/client";
+import { discardJobUrl, getJob, jobEventsUrl, type Job } from "../api/client";
 
 const TERMINAL_STATUSES = new Set(["done", "error", "cancelled"]);
 
@@ -49,21 +49,20 @@ export function useJobEvents(jobId: string | null): { job: Job | null; error: st
       source.close();
     };
 
-    // If the tab closes or the page reloads/navigates away while this job is still
-    // queued or running, tell the backend to stop it instead of leaving it orphaned.
-    function abandonIfStillRunning() {
-      if (statusRef.current && !TERMINAL_STATUSES.has(statusRef.current)) {
-        navigator.sendBeacon(cancelJobUrl(currentJobId));
+    // Cleans this job up on the backend when the page is left, instead of leaving it orphaned.
+    function discardOnLeave() {
+      if (statusRef.current) {
+        navigator.sendBeacon(discardJobUrl(currentJobId));
       }
     }
 
-    window.addEventListener("pagehide", abandonIfStillRunning);
+    window.addEventListener("pagehide", discardOnLeave);
 
     return () => {
       cancelled = true;
       source.close();
-      window.removeEventListener("pagehide", abandonIfStillRunning);
-      abandonIfStillRunning();
+      window.removeEventListener("pagehide", discardOnLeave);
+      discardOnLeave();
     };
   }, [jobId]);
 

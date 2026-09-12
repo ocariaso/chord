@@ -76,6 +76,10 @@ export function cancelJobUrl(jobId: string): string {
   return `${API_BASE}/jobs/${jobId}/cancel`;
 }
 
+export function discardJobUrl(jobId: string): string {
+  return `${API_BASE}/jobs/${jobId}/discard`;
+}
+
 export async function cancelJob(jobId: string): Promise<Job> {
   const res = await fetch(cancelJobUrl(jobId), { method: "POST" });
   if (!res.ok) {
