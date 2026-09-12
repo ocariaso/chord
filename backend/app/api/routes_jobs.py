@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shutil
 import uuid
 
 from fastapi import APIRouter, HTTPException, UploadFile
@@ -9,6 +10,7 @@ from starlette import status
 from app.db.database import db_cursor, now_iso
 from app.models.schemas import STEM_NAMES, CreateJobFromUrlRequest, JobResponse, JobStatus
 from app.pipeline.pipeline import job_dir
+from app.pipeline.thumbnail import THUMBNAIL_FILENAME
 from app.pipeline.worker import enqueue
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -16,9 +18,11 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 def _row_to_response(row) -> JobResponse:
     stem_names = STEM_NAMES if row["status"] == JobStatus.DONE.value else []
+    has_thumbnail = (job_dir(row["id"]) / THUMBNAIL_FILENAME).exists()
     return JobResponse(
         id=row["id"],
         original_filename=row["original_filename"],
+        author=row["author"],
         status=row["status"],
         progress=row["progress"],
         stage_message=row["stage_message"],
@@ -31,6 +35,7 @@ def _row_to_response(row) -> JobResponse:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         stem_names=stem_names,
+        has_thumbnail=has_thumbnail,
     )
 
 
@@ -127,6 +132,22 @@ async def cancel_job(job_id: str) -> JobResponse:
             (JobStatus.CANCELLED.value, "Cancelled", now_iso(), job_id),
         )
     return _row_to_response(_get_job_row(job_id))
+
+
+@router.post("/{job_id}/discard", status_code=status.HTTP_204_NO_CONTENT)
+async def discard_job(job_id: str) -> None:
+    """Cancels a still-running job or deletes a finished one, so leaving the page cleans it up."""
+    row = _get_job_row(job_id)
+    if row["status"] not in TERMINAL_STATUSES:
+        with db_cursor() as cur:
+            cur.execute(
+                "UPDATE jobs SET status = ?, stage_message = ?, updated_at = ? WHERE id = ?",
+                (JobStatus.CANCELLED.value, "Cancelled", now_iso(), job_id),
+            )
+        return
+    with db_cursor() as cur:
+        cur.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+    shutil.rmtree(job_dir(job_id), ignore_errors=True)
 
 
 @router.get("/{job_id}/events")
