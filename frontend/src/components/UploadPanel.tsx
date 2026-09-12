@@ -89,12 +89,12 @@ export function UploadPanel({ onFileSelected, onUrlSubmitted, isSubmitting, erro
             <input
               ref={inputRef}
               type="file"
-              accept=".mp3,audio/mpeg"
+              accept=".mp3,.flac,audio/mpeg,audio/flac"
               className="hidden"
               onChange={(e) => handleFiles(e.target.files)}
             />
             <p className="text-sm text-neutral-300 sm:text-base">
-              {isSubmitting ? "Uploading..." : "Drag & drop an MP3 here, or click to choose a file"}
+              {isSubmitting ? "Uploading..." : "Drag & drop an MP3 or FLAC here, or click to choose a file"}
             </p>
           </div>
 

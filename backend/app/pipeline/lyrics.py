@@ -27,7 +27,7 @@ _TITLE_NOISE_RE = re.compile(
 
 def guess_candidates(original_filename: str, author: str | None) -> list[tuple[str, str | None]]:
     """Returns (track, artist) candidates to try against the lyrics database, best guess first."""
-    title = re.sub(r"\.mp3$", "", original_filename, flags=re.IGNORECASE)
+    title = re.sub(r"\.(mp3|flac)$", "", original_filename, flags=re.IGNORECASE)
     title = _TITLE_NOISE_RE.sub("", title).strip(" -")
 
     candidates = [(title, author)]
