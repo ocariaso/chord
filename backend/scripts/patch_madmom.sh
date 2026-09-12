@@ -3,8 +3,9 @@
 # Run once after `pip install madmom --no-build-isolation` — see README.md.
 set -e
 
-MADMOM_DIR="$(python3 -c 'import madmom, os; print(os.path.dirname(madmom.__file__))' 2>/dev/null)"
-if [ -z "$MADMOM_DIR" ]; then
+SITE_PACKAGES="$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])' 2>/dev/null)"
+MADMOM_DIR="$SITE_PACKAGES/madmom"
+if [ ! -d "$MADMOM_DIR" ]; then
   echo "madmom not found on the active Python's path — activate the venv first." >&2
   exit 1
 fi

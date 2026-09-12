@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shutil
 import uuid
 
 from fastapi import APIRouter, HTTPException, UploadFile
@@ -131,6 +132,22 @@ async def cancel_job(job_id: str) -> JobResponse:
             (JobStatus.CANCELLED.value, "Cancelled", now_iso(), job_id),
         )
     return _row_to_response(_get_job_row(job_id))
+
+
+@router.post("/{job_id}/discard", status_code=status.HTTP_204_NO_CONTENT)
+async def discard_job(job_id: str) -> None:
+    """Cancels a still-running job or deletes a finished one, so leaving the page cleans it up."""
+    row = _get_job_row(job_id)
+    if row["status"] not in TERMINAL_STATUSES:
+        with db_cursor() as cur:
+            cur.execute(
+                "UPDATE jobs SET status = ?, stage_message = ?, updated_at = ? WHERE id = ?",
+                (JobStatus.CANCELLED.value, "Cancelled", now_iso(), job_id),
+            )
+        return
+    with db_cursor() as cur:
+        cur.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+    shutil.rmtree(job_dir(job_id), ignore_errors=True)
 
 
 @router.get("/{job_id}/events")
