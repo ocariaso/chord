@@ -1,4 +1,8 @@
-.claude/
+# Ignore local Claude Code state, but keep project skills version-controlled so the
+# docs-map rule persists for everyone. (Must be `.claude/*`, not `.claude/`: git cannot
+# re-include a path inside an excluded directory.)
+.claude/*
+!.claude/skills/
 .scratch/
 
 # server

@@ -40,6 +40,21 @@ chord/
     nginx.conf              serves the build and proxies /api to the server
   scripts/
     start.sh / stop.sh
+  docs/                     full documentation — see docs/README.md
   docker-compose.yml
   docker-compose.gpu.yml    override start.sh applies when an NVIDIA GPU is detected
 ```
+
+## Documentation
+
+[`docs/`](docs/) covers the system in depth, one folder per category:
+
+| | |
+| --- | --- |
+| [docs/map/](docs/map/) | file-by-file index — [tasks.md](docs/map/tasks.md) routes "change X" to the files involved |
+| [docs/architecture/](docs/architecture/) | how it fits together, and [why](docs/architecture/decisions.md) |
+| [docs/features/](docs/features/) | each capability end to end |
+| [docs/api/](docs/api/) | HTTP reference |
+| [docs/data/](docs/data/) | schema, on-disk layout, retention |
+| [docs/operations/](docs/operations/) | Docker, configuration, local dev, troubleshooting |
+| [docs/conventions/](docs/conventions/) | the code style used here |
