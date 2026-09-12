@@ -1,6 +1,6 @@
 # CHORD
 
-**CHORD** — *Component Harmony & Orchestral Retrieval Decoder* — is a tool for deconstructing a song. Upload an MP3 or paste a URL, and it separates the track into instrument and vocal stems, and detects its chord progression, key, and lyrics. 
+**CHORD** — *Component Harmony & Orchestral Retrieval Decoder* 
 
 ## How to run
 
@@ -17,8 +17,6 @@ Then open **http://localhost:8080**. `start.sh` builds and starts both services,
 ```
 
 Stops everything. Your job history and cached models are kept in `backend/data/` and survive a stop/start.
-
-Prefer to run without Docker? See `backend/README.md` and `frontend/README.md` for manual setup.
 
 ## Folder structure
 
