@@ -8,16 +8,7 @@ from app.models.schemas import ChordSegment, KeyEstimate
 
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
-# madmom's key model names some keys with flats (e.g. "Db major"); the rest of the
-# app only deals in sharps, so normalize to the enharmonic sharp spelling on the way in.
-_FLAT_TO_SHARP = {"Cb": "B", "Db": "C#", "Eb": "D#", "Fb": "E", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
-
-_ROOT_RE = re.compile(r"^([A-G][#b]?)")
-
-
-def _normalize_root(root: str) -> str:
-    return _FLAT_TO_SHARP.get(root, root)
-
+_ROOT_RE = re.compile(r"^([A-G]#?)")
 
 _chord_feature_processor: CNNChordFeatureProcessor | None = None
 _chord_decode_processor: CRFChordRecognitionProcessor | None = None
@@ -26,7 +17,7 @@ _key_processor: CNNKeyRecognitionProcessor | None = None
 
 def _chord_root(label: str) -> str | None:
     match = _ROOT_RE.match(label)
-    return _normalize_root(match.group(1)) if match else None
+    return match.group(1) if match else None
 
 
 def _madmom_label_to_chord(label: str) -> str:
@@ -34,7 +25,6 @@ def _madmom_label_to_chord(label: str) -> str:
     if label == "N":
         return "N"
     root, _, quality = label.partition(":")
-    root = _normalize_root(root)
     if quality == "maj":
         return root
     if quality == "min":
@@ -87,7 +77,7 @@ def analyze_audio(audio_path: Path) -> tuple[list[ChordSegment], KeyEstimate]:
 
     prediction = _get_key_processor()(str(audio_path))
     key_name, mode = key_prediction_to_label(prediction).rsplit(" ", 1)
-    key_estimate = KeyEstimate(key=_normalize_root(key_name), mode=mode, confidence=float(prediction.max()))
+    key_estimate = KeyEstimate(key=key_name, mode=mode, confidence=float(prediction.max()))
     key_estimate = _resolve_relative_ambiguity(key_estimate, segments)
 
     return segments, key_estimate

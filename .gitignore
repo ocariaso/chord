@@ -7,8 +7,6 @@ backend/data/
 backend/__pycache__/
 backend/**/__pycache__/
 *.pyc
-.env
-.env.*
 
 # frontend
 frontend/node_modules/

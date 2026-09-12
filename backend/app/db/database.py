@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS jobs (
 MIGRATED_COLUMNS = [
     ("source_url", "TEXT"),
     ("tempo_bpm", "REAL"),
-    ("author", "TEXT"),
 ]
 
 

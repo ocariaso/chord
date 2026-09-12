@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
-import { useSeekDrag } from "./studio/useSeekDrag";
 import { downloadFile } from "../utils/download";
 
 function DownloadIcon() {
@@ -24,12 +23,6 @@ interface StemChannelProps {
   onToggleSolo: () => void;
   onVolumeChange: (volume: number) => void;
   onWaveSurferReady: (name: string, instance: WaveSurfer) => void;
-  accentColor: string;
-  secondaryColor: string;
-  cardBg: string;
-  cardBorder: string;
-  duration: number;
-  onSeek: (seconds: number) => void;
 }
 
 export function StemChannel({
@@ -43,17 +36,9 @@ export function StemChannel({
   onToggleSolo,
   onVolumeChange,
   onWaveSurferReady,
-  accentColor,
-  secondaryColor,
-  cardBg,
-  cardBorder,
-  duration,
-  onSeek,
 }: StemChannelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const waveSurferRef = useRef<WaveSurfer | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
-  const seekDrag = useSeekDrag(duration, onSeek);
 
   async function handleDownload() {
     setIsDownloading(true);
@@ -69,42 +54,31 @@ export function StemChannel({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // This instance only renders the waveform; PlaybackEngine owns playback. A real media
-    // element (loaded from the same stem URL) gives WaveSurfer a genuine duration to compute
-    // cursor/progress position from; `peaks` still skips re-decoding for the waveform itself.
+    // This instance only renders the waveform; PlaybackEngine owns playback.
     const instance = WaveSurfer.create({
       container: containerRef.current,
       height: 56,
       waveColor: "#525252",
-      progressColor: accentColor,
+      progressColor: "#a855f7",
       cursorColor: "#e5e5e5",
       cursorWidth: 1,
       interact: false,
-      url: downloadHref,
       peaks: [buffer.getChannelData(0)],
       duration: buffer.duration,
     });
-    waveSurferRef.current = instance;
     onWaveSurferReady(name, instance);
 
     return () => instance.destroy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buffer]);
 
-  // The accent color resolves asynchronously (sampled from the thumbnail after it loads), so keep
-  // the already-created instance's progress color in sync instead of only setting it at creation.
-  useEffect(() => {
-    waveSurferRef.current?.setOptions({ progressColor: accentColor });
-  }, [accentColor]);
-
   return (
-    <div className="flex items-center gap-3 rounded-md p-3" style={{ backgroundColor: cardBg, boxShadow: `inset 0 0 0 1px ${cardBorder}` }}>
+    <div className="flex items-center gap-3 rounded-md bg-neutral-900 p-3">
       <div className="flex w-24 shrink-0 flex-col gap-1">
         <span className="truncate text-sm font-medium capitalize text-neutral-200">{name}</span>
         <div className="flex gap-1">
           <button
             onClick={onToggleMute}
-            style={!muted ? { boxShadow: `inset 0 0 0 1px ${cardBorder}` } : undefined}
             className={`rounded px-2 py-0.5 text-xs font-semibold ${
               muted ? "bg-red-600 text-white" : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
             }`}
@@ -113,9 +87,8 @@ export function StemChannel({
           </button>
           <button
             onClick={onToggleSolo}
-            style={isSoloed ? { backgroundColor: secondaryColor } : { boxShadow: `inset 0 0 0 1px ${cardBorder}` }}
             className={`rounded px-2 py-0.5 text-xs font-semibold ${
-              isSoloed ? "text-white" : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+              isSoloed ? "bg-yellow-500 text-black" : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
             }`}
           >
             S
@@ -123,7 +96,7 @@ export function StemChannel({
         </div>
       </div>
 
-      <div ref={containerRef} className="min-w-0 flex-1 cursor-pointer touch-none select-none" {...seekDrag} />
+      <div ref={containerRef} className="min-w-0 flex-1" />
 
       <input
         type="range"
@@ -132,8 +105,7 @@ export function StemChannel({
         step={0.01}
         value={volume}
         onChange={(e) => onVolumeChange(Number(e.target.value))}
-        style={{ accentColor }}
-        className="w-20 shrink-0"
+        className="w-20 shrink-0 accent-purple-500"
       />
 
       <button

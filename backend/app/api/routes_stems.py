@@ -6,17 +6,8 @@ from fastapi.responses import FileResponse, Response
 
 from app.models.schemas import STEM_NAMES
 from app.pipeline.pipeline import job_dir
-from app.pipeline.thumbnail import THUMBNAIL_FILENAME
 
 router = APIRouter(prefix="/jobs", tags=["stems"])
-
-
-@router.get("/{job_id}/thumbnail.jpg")
-async def get_thumbnail(job_id: str) -> FileResponse:
-    thumbnail_path = job_dir(job_id) / THUMBNAIL_FILENAME
-    if not thumbnail_path.exists():
-        raise HTTPException(status_code=404, detail="No thumbnail available")
-    return FileResponse(thumbnail_path, media_type="image/jpeg")
 
 
 @router.get("/{job_id}/stems/{stem_name}.wav")

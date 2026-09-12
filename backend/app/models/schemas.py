@@ -26,16 +26,6 @@ class KeyEstimate(BaseModel):
     confidence: float
 
 
-class LyricsLine(BaseModel):
-    time: float
-    text: str
-
-
-class LyricsResponse(BaseModel):
-    synced: list[LyricsLine] | None = None
-    plain: str | None = None
-
-
 class CreateJobFromUrlRequest(BaseModel):
     url: str
 
@@ -43,7 +33,6 @@ class CreateJobFromUrlRequest(BaseModel):
 class JobResponse(BaseModel):
     id: str
     original_filename: str
-    author: str | None = None
     status: JobStatus
     progress: float
     stage_message: str | None = None
@@ -56,7 +45,6 @@ class JobResponse(BaseModel):
     created_at: str
     updated_at: str
     stem_names: list[str] = []
-    has_thumbnail: bool = False
 
 
 STEM_NAMES = ["vocals", "drums", "bass", "guitar", "piano", "other"]

@@ -7,7 +7,7 @@ import soundfile as sf
 from app.core.config import settings
 from app.db.database import db_cursor, now_iso
 from app.models.schemas import JobStatus
-from app.pipeline import chords, metadata, separation, source, tempo, thumbnail
+from app.pipeline import chords, separation, source, tempo
 
 logger = logging.getLogger(__name__)
 
@@ -47,21 +47,13 @@ def run_job(job_id: str) -> None:
         source_url = _get_job_row(job_id)["source_url"]
         if source_url:
             _update_job(job_id, status=JobStatus.FETCHING.value, progress=0.05, stage_message="Downloading audio")
-            downloaded_path, title, author = source.download_audio(source_url, directory)
+            downloaded_path, title = source.download_audio(source_url, directory)
             if downloaded_path != original_path:
                 downloaded_path.rename(original_path)
-            _update_job(job_id, original_filename=title, author=author)
-        else:
-            author = metadata.extract_author(original_path)
-            if author:
-                _update_job(job_id, author=author)
+            _update_job(job_id, original_filename=title)
 
         if _is_cancelled(job_id):
             return
-
-        thumbnail_path = directory / thumbnail.THUMBNAIL_FILENAME
-        if not thumbnail_path.exists():
-            thumbnail.extract_embedded_cover(original_path, thumbnail_path)
 
         _update_job(job_id, status=JobStatus.SEPARATING.value, progress=0.1, stage_message="Separating stems")
         with sf.SoundFile(original_path) as f:
