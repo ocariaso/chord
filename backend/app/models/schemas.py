@@ -26,16 +26,6 @@ class KeyEstimate(BaseModel):
     confidence: float
 
 
-class LyricsLine(BaseModel):
-    time: float
-    text: str
-
-
-class LyricsResponse(BaseModel):
-    synced: list[LyricsLine] | None = None
-    plain: str | None = None
-
-
 class CreateJobFromUrlRequest(BaseModel):
     url: str
 

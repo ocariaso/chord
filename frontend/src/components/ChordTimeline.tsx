@@ -20,7 +20,6 @@ interface ChordTimelineProps {
   isMobile: boolean;
   transpose: number;
   onTransposeChange: React.Dispatch<React.SetStateAction<number>>;
-  lyricLine?: string;
 }
 
 function MetronomeIcon() {
@@ -71,7 +70,6 @@ export function ChordTimeline({
   isMobile,
   transpose,
   onTransposeChange,
-  lyricLine,
 }: ChordTimelineProps) {
   const keyTooltip = useClickTooltip<HTMLSpanElement>();
 
@@ -90,23 +88,16 @@ export function ChordTimeline({
   const seekDrag = useSeekDrag(duration, onSeek);
 
   const chordGroup = (
-    <div className="flex shrink-0 flex-col gap-1">
-      <div className="flex flex-wrap items-baseline gap-3">
-        <span className="text-3xl font-semibold tabular-nums text-neutral-100">{activeChord}</span>
-        {upcomingChords.length > 0 && (
-          <div className="flex flex-wrap items-baseline gap-2.5">
-            {upcomingChords.map((chord, i) => (
-              <span key={i} className={`text-lg font-medium tabular-nums ${UPCOMING_OPACITY[i]}`}>
-                {chord}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-      {lyricLine && (
-        <p className="text-sm italic sm:max-w-sm" style={{ color: accentColor }}>
-          {lyricLine}
-        </p>
+    <div className="flex shrink-0 flex-wrap items-baseline gap-3">
+      <span className="text-3xl font-semibold tabular-nums text-neutral-100">{activeChord}</span>
+      {upcomingChords.length > 0 && (
+        <div className="flex flex-wrap items-baseline gap-2.5">
+          {upcomingChords.map((chord, i) => (
+            <span key={i} className={`text-lg font-medium tabular-nums ${UPCOMING_OPACITY[i]}`}>
+              {chord}
+            </span>
+          ))}
+        </div>
       )}
     </div>
   );

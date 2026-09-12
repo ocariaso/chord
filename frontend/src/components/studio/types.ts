@@ -19,6 +19,4 @@ export interface AmpProps {
    * closer-look overlay always renders at the full desktop width regardless of controlsOnly, since
    * it does its own fit-to-viewport scaling. */
   isMobile?: boolean;
-  /** Only set (and only rendered) for the vocals amp — the current live-lyrics line, if any. */
-  lyricLine?: string;
 }
