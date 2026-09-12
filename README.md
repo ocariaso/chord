@@ -2,6 +2,8 @@
 
 **CHORD** — *Component Harmony & Orchestral Retrieval Decoder* 
 
+<img width="3179" height="889" alt="image" src="https://github.com/user-attachments/assets/6792f37a-6270-4c9e-a229-7ba518707a67" />
+
 ## How to run
 
 Requires [Docker](https://www.docker.com/).
