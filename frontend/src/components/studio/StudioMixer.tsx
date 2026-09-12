@@ -50,6 +50,7 @@ interface StudioMixerProps {
   onToggleMetronome?: () => void;
   masterVolume: number;
   onMasterVolumeChange: (volume: number) => void;
+  lyricLine?: string;
 }
 
 export function StudioMixer({
@@ -85,6 +86,7 @@ export function StudioMixer({
   onToggleMetronome,
   masterVolume,
   onMasterVolumeChange,
+  lyricLine,
 }: StudioMixerProps) {
   const orderedNames = STEM_ORDER.filter((n) => stemNames.includes(n)).concat(stemNames.filter((n) => !STEM_ORDER.includes(n)));
   const [closeup, setCloseup] = useState<{ name: string; rect: DOMRect } | null>(null);
@@ -170,6 +172,7 @@ export function StudioMixer({
                     onSeek={onSeek}
                     controlsOnly={isMobile}
                     isMobile={isMobile}
+                    lyricLine={name === "vocals" ? lyricLine : undefined}
                   />
                 </ScaleToFit>
               </div>
@@ -198,6 +201,7 @@ export function StudioMixer({
               onSeek={onSeek}
               isMobile={isMobile}
               currentTime={currentTime}
+              lyricLine={closeup.name === "vocals" ? lyricLine : undefined}
               originRect={closeup.rect}
               onClose={() => setCloseup(null)}
             />
