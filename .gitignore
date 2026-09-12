@@ -1,15 +1,15 @@
 .claude/
 .scratch/
 
-# backend
-backend/.venv/
-backend/data/
-backend/__pycache__/
-backend/**/__pycache__/
+# server
+server/.venv/
+server/data/
+server/__pycache__/
+server/**/__pycache__/
 *.pyc
 .env
 .env.*
 
-# frontend
-frontend/node_modules/
-frontend/dist/
+# web
+web/node_modules/
+web/dist/

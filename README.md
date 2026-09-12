@@ -20,7 +20,7 @@ Requires [Docker](https://www.docker.com/).
 
 ```
 chord/
-  backend/                  FastAPI service: separation (Demucs), chord/key detection (madmom), lyrics
+  server/                   FastAPI service: separation (Demucs), chord/key detection (madmom), lyrics
     app/
       api/                  HTTP routes
       core/                 config
@@ -30,14 +30,14 @@ chord/
     scripts/                one-off setup scripts (e.g. patching madmom)
     data/                   gitignored, runtime-only: db.sqlite3, jobs/, models_cache/
     Dockerfile
-  frontend/                 React + TypeScript + Vite SPA
+  web/                      React + TypeScript + Vite SPA
     src/
-      api/                  backend client
+      api/                  server client
       components/           Upload, Processing, and the Simple/Studio result views
       hooks/                 job status, lyrics, dominant color, etc.
       audio/                the Web Audio playback engine
     Dockerfile
-    nginx.conf              serves the build and proxies /api to the backend
+    nginx.conf              serves the build and proxies /api to the server
   scripts/
     start.sh / stop.sh
   docker-compose.yml

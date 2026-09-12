@@ -49,7 +49,7 @@ export function useJobEvents(jobId: string | null): { job: Job | null; error: st
       source.close();
     };
 
-    // Cleans this job up on the backend when the page is left, instead of leaving it orphaned.
+    // Cleans this job up on the server when the page is left, instead of leaving it orphaned.
     function discardOnLeave() {
       if (statusRef.current) {
         navigator.sendBeacon(discardJobUrl(currentJobId));
