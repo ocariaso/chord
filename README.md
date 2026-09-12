@@ -10,13 +10,9 @@ Requires [Docker](https://www.docker.com/).
 ./scripts/start.sh
 ```
 
-Then open **http://localhost:8080**. `start.sh` builds and starts both services, and uses your NVIDIA GPU automatically if you have one (falls back to CPU otherwise).
-
 ```bash
 ./scripts/stop.sh
 ```
-
-Stops everything. Your job history and cached models are kept in `backend/data/` and survive a stop/start.
 
 ## Folder structure
 
