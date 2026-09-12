@@ -1,6 +1,8 @@
 # CHORD
 
-**CHORD** — *Component Harmony & Orchestral Retrieval Decoder* 
+**CHORD** — Component Harmony & Orchestral Retrieval Decoder
+
+<img width="3082" height="889" alt="image" src="https://github.com/user-attachments/assets/d4d81215-368f-4a09-9e7f-939f40aae066" />
 
 ## How to run
 
