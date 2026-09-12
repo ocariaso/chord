@@ -3,8 +3,11 @@ import type WaveSurfer from "wavesurfer.js";
 import { downloadAllUrl, getChords, stemUrl, thumbnailUrl, type ChordSegment, type Job } from "../api/client";
 import { PlaybackEngine } from "../audio/playbackEngine";
 import { DEFAULT_ACCENT_COLORS, useDominantColors } from "../hooks/useDominantColor";
+import { useLyrics } from "../hooks/useLyrics";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { downloadFile } from "../utils/download";
+import { detectHasVocals } from "../utils/hasVocals";
+import { currentLyricLine, lyricsDisplayLine } from "../utils/lyrics";
 import { ChordTimeline } from "./ChordTimeline";
 import { ProcessingScreen } from "./ProcessingScreen";
 import { StemChannel } from "./StemChannel";
@@ -59,6 +62,8 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [masterVolume, setMasterVolume] = useState(1);
   const [chordSegments, setChordSegments] = useState<ChordSegment[]>([]);
+  const [hasVocals, setHasVocals] = useState(true);
+  const lyrics = useLyrics(job.id);
   const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
   const [isSwitchingView, setIsSwitchingView] = useState(false);
   const [transpose, setTranspose] = useState(0);
@@ -135,6 +140,8 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
         setChannelStates(
           Object.fromEntries(job.stem_names.map((name) => [name, { muted: false, volume: 1 }]))
         );
+        const vocalsBuffer = engine.getBuffer("vocals");
+        setHasVocals(vocalsBuffer ? detectHasVocals(vocalsBuffer) : false);
         setLoading(false);
       })
       .catch((err) => {
@@ -254,6 +261,8 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
   }
 
   const duration = engineRef.current?.duration ?? 0;
+  const lyricLine = hasVocals ? lyricsDisplayLine(lyrics, currentTime) : undefined;
+  const syncedLyricLine = hasVocals ? currentLyricLine(lyrics, currentTime) : null;
   const subtitle = [
     job.author,
     job.key_estimate,
@@ -385,6 +394,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
       onToggleMetronome={job.tempo_bpm != null ? toggleMetronome : undefined}
       masterVolume={masterVolume}
       onMasterVolumeChange={changeMasterVolume}
+      lyricLine={lyricLine}
     />
   );
 
@@ -433,6 +443,7 @@ export function StemMixer({ job, onBack }: StemMixerProps) {
             isMobile={isMobile}
             transpose={transpose}
             onTransposeChange={setTranspose}
+            lyricLine={syncedLyricLine ?? undefined}
           />
 
           <TransportBar

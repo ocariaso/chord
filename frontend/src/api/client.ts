@@ -26,6 +26,16 @@ export interface ChordSegment {
   confidence: number;
 }
 
+export interface LyricsLine {
+  time: number;
+  text: string;
+}
+
+export interface Lyrics {
+  synced: LyricsLine[] | null;
+  plain: string | null;
+}
+
 const API_BASE = "/api";
 
 export async function createJob(file: File): Promise<Job> {
@@ -90,5 +100,13 @@ export function downloadAllUrl(jobId: string): string {
 export async function getChords(jobId: string): Promise<ChordSegment[]> {
   const res = await fetch(`${API_BASE}/jobs/${jobId}/chords`);
   if (!res.ok) throw new Error(`Failed to fetch chords (${res.status})`);
+  return res.json();
+}
+
+/** Returns null if no lyrics were found for this job. */
+export async function getLyrics(jobId: string): Promise<Lyrics | null> {
+  const res = await fetch(`${API_BASE}/jobs/${jobId}/lyrics`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to fetch lyrics (${res.status})`);
   return res.json();
 }
