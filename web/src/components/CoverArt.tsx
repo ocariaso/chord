@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { thumbnailUrl } from "../api/client";
+import { MusicNoteIcon } from "./icons";
 
 interface CoverArtProps {
   jobId: string;
@@ -10,7 +11,7 @@ interface CoverArtProps {
   outlined?: boolean;
 }
 
-/** The accent-gradient tile, with the track's artwork blended in through Nocturne's `.lighten` when there is some. */
+/** The accent-gradient tile: the track's artwork drawn plainly on top, or a music-note mark before it's there. */
 export function CoverArt({ jobId, hasThumbnail, size, radius, outlined = true }: CoverArtProps) {
   const [failed, setFailed] = useState(false);
   return (
@@ -23,13 +24,20 @@ export function CoverArt({ jobId, hasThumbnail, size, radius, outlined = true }:
         background: "linear-gradient(150deg, var(--color-accent-800), var(--color-accent-900))",
       }}
     >
-      {hasThumbnail && !failed && (
+      {hasThumbnail && !failed ? (
         <img
           src={thumbnailUrl(jobId)}
           alt=""
-          className="lighten size-full object-cover"
+          className="size-full object-cover"
           onError={() => setFailed(true)}
         />
+      ) : (
+        <span
+          className="flex size-full items-center justify-center"
+          style={{ color: "var(--color-accent-200)" }}
+        >
+          <MusicNoteIcon size={Math.round(size * 0.4)} />
+        </span>
       )}
       {outlined && (
         <span

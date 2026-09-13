@@ -2,6 +2,7 @@ import { useState } from "react";
 import { cancelJob, createJob, createJobFromUrl, resumeJob, type Job } from "./api/client";
 import { Footer } from "./components/Footer";
 import { failureCopy, landingCopy } from "./design/copy";
+import { useAccentHue } from "./hooks/useAccentHue";
 import { MAX_RECONNECT_ATTEMPTS, useJobEvents } from "./hooks/useJobEvents";
 import { FailurePanel } from "./screens/failure/FailurePanel";
 import { LandingScreen, type SubmitError, type Submission } from "./screens/landing/LandingScreen";
@@ -29,6 +30,7 @@ function App() {
 
   const { job: liveJob, connection, stageSnapshots, reconnect } = useJobEvents(activeJobId);
   const job = liveJob ?? (createdJob?.id === activeJobId ? createdJob : null);
+  useAccentHue(job?.id ?? null, job?.has_thumbnail ?? false);
 
   function startWatching(created: Job) {
     setCreatedJob(created);

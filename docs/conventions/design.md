@@ -99,8 +99,9 @@ never writes over it.
 - **Nocturne:** `.btn` and its variants, `.input`, `.field`, `.dialog` and its parts, `.lighten`.
 - **Leftovers from the template's demo — don't use:** `.ch-nav*`, the harness's own navigation;
   `.ch-m-stem`, the harness's phone stem card, which the app doesn't draw (see
-  [Responsive](#responsive)); and `.ch-wave-a|b|c`, placeholder envelopes the app replaces with a
-  traced `polygon()`.
+  [Responsive](#responsive)); `.ch-wave-a|b|c`, placeholder envelopes the app replaces with a
+  traced `polygon()`; and Nocturne's `.lighten`, dropped from `CoverArt` — see
+  [Recorded decisions](#recorded-decisions).
 
 ## Screens and their states
 
@@ -335,7 +336,9 @@ taken. *Template* is what the retired files said or drew.
 | Sticky transport, upload progress bar, loop markers on the chord strip, speed chip on phones | not drawn | removed | the app had grown them; the design doesn't have them |
 | Footer | none | kept on the landing screen only: Nocturne icon buttons and a `.ch-hint` line | kept by decision; a job's screens need the whole viewport |
 | `db()` | linear, −12…0 dB | 36 dB span with the bottom silent; the master through its own ticks | the guide invited a different taper, and these match the strips' tick columns |
-| Page ground | a radial gradient `#1d1f33` → `#161826` → `#121320` | the same gradient through `--ch-panel-raised`, `--color-bg` and `--ch-well` | the nearest tokens; two of the stops weren't tokens |
+| Page ground | a radial gradient `#1d1f33` → `#161826` → `#121320` | the same gradient at `--ch-panel-raised`/`--color-bg`/`--ch-well`'s own lightness and chroma, but at `--accent-hue` instead of their fixed indigo | the nearest tokens, then hue-shifted to tint per track along with the accent — two of the stops weren't tokens to begin with |
+| Per-track accent | not drawn; a fixed palette | the accent family and the page ground both read their hue from cover art, `--accent-hue` added as a fifth runtime property | reinstates the app's earlier per-song accent inside the design's own lightness/chroma floors — see [decisions.md](../architecture/decisions.md#a-per-track-accent-hue-driven-by-one-custom-property) |
+| Cover art blend | `CoverArt`'s image drawn with `.lighten` over the accent gradient | drawn plainly, no blend | the accent already derives from the art; blending it too was double theming, and it dimmed the art itself |
 
 A new decision is recorded here and in [../architecture/decisions.md](../architecture/decisions.md) in
 the same change.
