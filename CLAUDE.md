@@ -21,6 +21,7 @@ Demucs model).
 | Running, building, debugging | [`docs/operations/`](docs/operations/) |
 | Code style actually used here | [`docs/conventions/`](docs/conventions/) |
 | Why something is the way it is | [`docs/architecture/decisions.md`](docs/architecture/decisions.md) |
+| Planned improvements, one page each | [`docs/todos/`](docs/todos/) |
 
 ## Standing rule: keep the map current
 

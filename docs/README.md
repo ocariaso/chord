@@ -18,6 +18,7 @@ Every category below is a folder. This page is the only file at the top level.
 | Match the existing code style | [conventions/](conventions/) |
 | Change what a screen looks like or says | [conventions/design.md](conventions/design.md) — the design standard |
 | Know *why* something is built this way | [architecture/decisions.md](architecture/decisions.md) |
+| See planned improvements not yet built | [todos/](todos/) |
 
 ## The two halves
 
@@ -92,11 +93,22 @@ docs/
 │   ├── local-development.md       running without Docker
 │   └── troubleshooting.md         known failure modes and their causes
 │
-└── conventions/
-    ├── README.md                  patterns shared across both halves
-    ├── design.md                  the design standard, and the design check
-    ├── python.md                  server-side style, layering, error handling
-    └── typescript.md              web-side style, React patterns, ch- styling
+├── conventions/
+│   ├── README.md                  patterns shared across both halves
+│   ├── design.md                  the design standard, and the design check
+│   ├── python.md                  server-side style, layering, error handling
+│   └── typescript.md              web-side style, React patterns, ch- styling
+│
+└── todos/                         planned improvements, one page each, not yet in the code
+    ├── README.md                  the index, grouped by area
+    ├── local-network-exposure.md  localhost-only by default, cross-site and internal-URL checks
+    ├── restart-recovery.md        interrupted jobs continue on the next start
+    ├── job-reaper.md              deleting what discard-on-leave misses
+    ├── device-visibility.md       reporting a fallback to CPU
+    ├── apple-silicon.md           separation on the Apple GPU (mps)
+    ├── prebuilt-releases.md       published images, versions, contributor files
+    ├── tests-and-ci.md            tests for both halves and CI
+    └── generated-api-types.md     TypeScript types from the OpenAPI schema
 ```
 
 ## Keeping these docs true
