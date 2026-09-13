@@ -73,8 +73,8 @@ def _get_separator() -> Separator:
     return _separator
 ```
 
-A module-level singleton, constructed on first use. Model weights are hundreds of MB and take
-seconds to load onto the device, so this happens once per process and every later job reuses it.
+A module-level singleton, constructed on first use. Loading the weights onto the device takes
+seconds, so this happens once per process and every later job reuses it.
 The same lazy-singleton pattern appears in [`chords.py`](../../server/app/pipeline/chords.py)
 for madmom's processors.
 
@@ -85,17 +85,18 @@ not be if concurrency were introduced.
 
 ## Weights cache
 
-[`main.py`](../../server/app/main.py) sets `TORCH_HOME` to `settings.models_cache_dir` **before**
-any torch import:
+The `htdemucs_6s` weights (about 53 MB) are **baked into the server image**. demucs 4.1 loads a
+named model from the Hugging Face Hub and caches it under `HF_HOME`;
+[`server/Dockerfile`](../../server/Dockerfile) points `HF_HOME` at `/opt/models/huggingface`,
+downloads the model there at build time, then sets `HF_HUB_OFFLINE=1`, so the separator reads the
+baked copy and nothing downloads at runtime. Left to the first job, the weights landed in the
+container's ephemeral `~/.cache/huggingface` and were fetched again after every rebuild —
+`TORCH_HOME`, which [`main.py`](../../server/app/main.py) points at the data volume, is only
+demucs' fallback path.
 
-```python
-os.environ.setdefault("TORCH_HOME", str(settings.models_cache_dir))
-```
-
-That resolves to `server/data/models_cache/`, which is inside the bind mount. Without it, torch
-would download `htdemucs_6s` into the container's `~/.cache` and lose it on every recreate —
-a repeated multi-hundred-MB download. **The first separation on a fresh install downloads the
-weights**, which is why the first job is much slower than the rest.
+The model is therefore chosen at build time: `DEMUCS_MODEL` is a build argument, which the image
+also sets as the runtime variable. What a runtime-only override does is in
+[configuration](../operations/configuration.md#demucs-weights).
 
 ## Output
 
@@ -176,8 +177,8 @@ larger ones.
 | 0.60 | *Detecting chords and key* |
 | 1.00 | *Done* |
 
-The bar holds at 0.10 while the separator is constructed — and on a fresh install, while the weights
-download — because no chunk has started yet.
+The bar holds at 0.10 while the separator is constructed and its weights load, because no chunk has
+started yet.
 
 The processing screen turns the same numbers into an estimate.
 [`ProcessingScreen.tsx`](../../web/src/screens/processing/ProcessingScreen.tsx) keeps the first
@@ -226,7 +227,8 @@ Roughly, for a four-minute track:
 | Modern NVIDIA GPU | tens of seconds |
 | CPU | several minutes |
 
-The first job on a fresh install adds the weights download on top, with the bar at 10%.
+The first job after a server start adds a few seconds of loading the weights onto the device, with
+the bar at 10%.
 
 ## Client side
 

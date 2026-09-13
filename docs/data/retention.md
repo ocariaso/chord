@@ -119,7 +119,7 @@ rm -rf server/data/jobs/* server/data/db.sqlite3
 ```
 
 `init_db()` recreates the schema on the next boot, and `config.py` recreates the directories at
-import time. Keep `models_cache/` — deleting it forces a multi-hundred-MB Demucs re-download.
+import time. The Demucs weights are in the image, so this forces no download.
 
 **Stale rows only**, keeping finished jobs:
 
@@ -156,8 +156,10 @@ find server/data/jobs -mindepth 2 -maxdepth 2 -type d -name stems.partial -exec 
 
 ## What to keep
 
-`server/data/models_cache/` is a pure download cache but an expensive one. Leave it alone unless
-you're reclaiming space deliberately, and exclude it from the reset commands above.
+`server/data/models_cache/` is normally empty: the Demucs weights are baked into the server image.
+It fills only when `DEMUCS_MODEL` names a model the image wasn't built with, and deleting it then
+makes the next job download that model again — see
+[../operations/configuration.md](../operations/configuration.md#demucs-weights).
 
 ## If retention were wanted
 

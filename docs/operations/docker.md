@@ -54,8 +54,9 @@ Points worth noting:
   `http://localhost:8080/api/docs`.
 - **`depends_on` is start-order only**, not readiness. nginx starts before uvicorn is listening;
   early requests to `/api` get a 502 until the server is up. There is no healthcheck.
-- **The only persistent state is the bind mount** `./server/data:/app/data` — database, job
-  artifacts and the Demucs weights cache. See [../data/README.md](../data/README.md).
+- **The only persistent state is the bind mount** `./server/data:/app/data` — database and job
+  artifacts. The Demucs weights are in the image, not here. See
+  [../data/README.md](../data/README.md).
 
 ## The GPU overlay
 
@@ -124,6 +125,10 @@ RUN pip install torch torchaudio --extra-index-url ${TORCH_INDEX_URL}
 COPY requirements.txt . && RUN pip install -r requirements.txt
 RUN pip install cython wheel && pip install madmom --no-build-isolation
 COPY scripts/patch_madmom.sh … && RUN bash scripts/patch_madmom.sh
+ARG DEMUCS_MODEL=htdemucs_6s
+ENV HF_HOME=/opt/models/huggingface DEMUCS_MODEL=${DEMUCS_MODEL}
+RUN python -c "from demucs.hf import get_hf_model; get_hf_model('${DEMUCS_MODEL}')"
+ENV HF_HUB_OFFLINE=1
 COPY app app
 RUN groupadd -g 1000 chord && useradd -u 1000 -g chord -m chord && chown -R chord:chord /app
 USER chord
@@ -133,10 +138,20 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 - **Python 3.10** is pinned by madmom's compatibility ceiling, not by preference.
 - Layer order is deliberate: system packages, then torch (huge, rarely changes), then
-  requirements, then madmom, then application code last — so an edit to `app/` rebuilds only the
-  final layers.
+  requirements, then madmom, then the Demucs weights, then application code last — so an edit to
+  `app/` rebuilds only the final layers.
 - **madmom is installed separately** from `requirements.txt` and then patched in place. Full
   explanation: [../architecture/server.md](../architecture/server.md#the-madmom-problem).
+- **The Demucs weights are baked in.** demucs 4.1 downloads a named model from the Hugging Face
+  Hub into `HF_HOME`, which isn't on the data volume, so left to the first job the weights were
+  fetched again after every rebuild — with an *unauthenticated requests to the HF Hub* warning
+  each time. The build fetches them into `/opt/models/huggingface` instead, and
+  `HF_HUB_OFFLINE=1` keeps the running server off the Hub. The step calls
+  `demucs.hf.get_hf_model` rather than `get_model`, because `get_model` swallows a Hub failure and
+  falls back to demucs' legacy AWS repo, which would leave the build green and the image without
+  weights. `DEMUCS_MODEL` is a build argument that also becomes the runtime variable, so the
+  server uses the model the image carries; see
+  [configuration.md](configuration.md#demucs-weights).
 - `ffmpeg` is a runtime dependency (yt-dlp, cover-art extraction, ffprobe metadata, librosa
   decoding). `build-essential` / `pkg-config` / `libopus-dev` serve madmom's C extensions and the
   audio stack.

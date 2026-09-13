@@ -8,10 +8,12 @@ Two distinct layers, frequently confused: **build arguments** (baked into an ima
 | Argument | Where | Default | Effect |
 | --- | --- | --- | --- |
 | `TORCH_INDEX_URL` | [`server/Dockerfile`](../../server/Dockerfile) | `https://download.pytorch.org/whl/cpu` | which torch/torchaudio wheel is installed |
+| `DEMUCS_MODEL` | [`server/Dockerfile`](../../server/Dockerfile) | `htdemucs_6s` | which Demucs model's weights are baked into the image; the image also sets it as the runtime `DEMUCS_MODEL` |
 
-Set by Compose — the base file passes `${TORCH_INDEX_URL:-…/cpu}`, the GPU overlay hardcodes
-`…/cu124`. **Changing it requires a rebuild.** Switching between CPU and GPU is therefore not a
-restart; it's `--build`.
+`TORCH_INDEX_URL` is set by Compose — the base file passes `${TORCH_INDEX_URL:-…/cpu}`, the GPU
+overlay hardcodes `…/cu124`. **Changing it requires a rebuild.** Switching between CPU and GPU is
+therefore not a restart; it's `--build`. Compose doesn't pass `DEMUCS_MODEL`, so the image gets
+the Dockerfile default unless the build is given `--build-arg DEMUCS_MODEL=…`.
 
 ## Server environment variables
 
@@ -23,14 +25,14 @@ No `.env` file is read — `Settings` declares no `env_file` — and list values
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `DEVICE` | `cuda` | `cpu` or `cuda`. Falls back to CPU if CUDA is unavailable. Compose sets `${DEVICE:-cpu}` in the base file and `cuda` in the overlay. |
-| `DEMUCS_MODEL` | `htdemucs_6s` | **See the warning below.** |
+| `DEMUCS_MODEL` | `htdemucs_6s` | The Docker image sets it from the build argument of the same name. **See the warning below.** |
 | `ENABLE_CHORD_DETECTION` | `true` | `false` skips the madmom stage entirely — no `analyzing` status, no `chords.json`, no key. |
 | `MAX_DURATION_SECONDS` | `720` | The longest track, in seconds, a job will separate; `0` disables the check. A URL job is refused from yt-dlp's metadata before anything downloads, an upload once the worker reads it and before separation. Both fail with *"This track is M:SS long. CHORD separates tracks up to N minutes."* |
 | `CORS_ORIGINS` | `["http://localhost:5173"]` | Only relevant when the browser talks to the server directly (local dev). Irrelevant behind nginx. |
 | `DATA_DIR` | `<repo>/server/data` | |
 | `DB_PATH` | `<repo>/server/data/db.sqlite3` | |
 | `JOBS_DIR` | `<repo>/server/data/jobs` | |
-| `MODELS_CACHE_DIR` | `<repo>/server/data/models_cache` | becomes `TORCH_HOME` |
+| `MODELS_CACHE_DIR` | `<repo>/server/data/models_cache` | becomes `TORCH_HOME`, demucs' fallback download cache — see [Demucs weights](#demucs-weights) |
 
 > **The four path settings are independent defaults, not layered.** Each is computed from
 > `SERVER_DIR` separately, so setting `DATA_DIR` alone moves *nothing* — the database and jobs
@@ -51,17 +53,34 @@ No `.env` file is read — `Settings` declares no `env_file` — and list values
 > The landing page's *"up to 12 minutes"* is hardcoded in `landingCopy` in
 > [`design/copy.ts`](../../web/src/design/copy.ts) and doesn't follow the setting.
 
-### `TORCH_HOME`
+### Demucs weights
 
-Not a setting you pass; [`main.py`](../../server/app/main.py) sets it from
-`models_cache_dir` before anything imports torch:
+The weights come from the image, not the data volume.
+[`server/Dockerfile`](../../server/Dockerfile) sets three variables around the step that
+downloads them:
+
+| Variable | Value | Why |
+| --- | --- | --- |
+| `HF_HOME` | `/opt/models/huggingface` | demucs 4.1 loads a named model from the Hugging Face Hub and caches it here — a directory in the image |
+| `HF_HUB_OFFLINE` | `1`, set after the download | the running server reads the baked copy and never contacts the Hub |
+| `DEMUCS_MODEL` | the build argument | the runtime setting names the model the image carries |
+
+None of them is a setting you pass. [`main.py`](../../server/app/main.py) also sets `TORCH_HOME`
+from `models_cache_dir` before anything imports torch:
 
 ```python
 os.environ.setdefault("TORCH_HOME", str(settings.models_cache_dir))
 ```
 
-`setdefault`, so an explicitly provided `TORCH_HOME` wins. Without this, Demucs would download
-its weights into the container's ephemeral `~/.cache` and lose them on every recreate.
+demucs uses it only on its fallback path: `get_model` tries the Hub first and, if that fails for
+any reason, downloads from its legacy AWS repo into `TORCH_HOME`. With the Hub offline, that is what
+a `DEMUCS_MODEL` overridden at runtime to a model the image wasn't built with does — the first job
+downloads it into `server/data/models_cache/`, where it survives recreation. To change the model,
+rebuild with `--build-arg DEMUCS_MODEL=…` instead, after reading the `STEM_NAMES` warning above.
+
+Outside Docker none of the image's variables is set, so the first separation downloads the weights
+from the Hub into `~/.cache/huggingface` and logs the Hub's unauthenticated-requests warning; see
+[local-development.md](local-development.md#first-run-is-slow).
 
 ## Compose variables
 

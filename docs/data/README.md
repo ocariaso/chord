@@ -14,7 +14,7 @@ or message broker.
 ```text
 server/data/                     ← gitignored; bind-mounted into the container at /app/data
 ├── db.sqlite3                   job metadata, one row per job
-├── models_cache/                Demucs pretrained weights (TORCH_HOME)
+├── models_cache/                TORCH_HOME — normally empty; the Demucs weights are in the image
 └── jobs/
     └── <job_id>/                one directory per job, uuid4 hex
         ├── original.mp3         the source audio (or original.flac for a FLAC upload)
@@ -70,7 +70,7 @@ Uncompressed WAV dominates everything else:
 | `original.flac` upload | up to the 512 MB nginx accepts |
 | `thumbnail.jpg` | tens of KB |
 | `analysis/*.json` | single-digit KB |
-| `models_cache/` (htdemucs_6s) | several hundred MB, once |
+| `models_cache/` | empty unless demucs falls back to its legacy download; the `htdemucs_6s` weights (~53 MB) are in the image |
 | the `jobs` row | a few hundred bytes |
 
 The same stems cost more again in the browser, which decodes all six into 32-bit float
@@ -89,5 +89,5 @@ outgrow what a browser tab can hold.
 The entire application state is `server/data/`. Stop the container and copy the directory and
 you have everything; there is nothing in the image or in a volume you'd miss.
 
-`models_cache/` is regenerable — it is only a download cache — so it can be excluded from a
-backup at the cost of re-downloading the weights on the next first job.
+`models_cache/` is only demucs' fallback download cache, normally empty, and can be left out of a
+backup. The weights the server uses come back with the image.

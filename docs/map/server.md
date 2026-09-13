@@ -26,11 +26,16 @@ Dependency direction is strictly downward: `api → pipeline, db, models`;
 
 ## Build and dependencies
 
-### `Dockerfile` — the server image (29 lines)
+### `Dockerfile` — the server image (40 lines)
 **Notes:** `python:3.10-slim` (pinned by madmom's compatibility ceiling). Installs `ffmpeg`,
 `build-essential`, `pkg-config`, `libopus-dev`; then torch via the `TORCH_INDEX_URL` build arg;
 then `requirements.txt`; then madmom separately with `--no-build-isolation` followed by
-`patch_madmom.sh`; then `COPY app app` last so code edits rebuild only the final layers. Creates
+`patch_madmom.sh`; then **bakes in the Demucs weights** — the `DEMUCS_MODEL` build arg (default
+`htdemucs_6s`, also exported as the runtime variable) is downloaded into
+`HF_HOME=/opt/models/huggingface`, and `HF_HUB_OFFLINE=1` is set after it so the server never
+contacts the Hub. The download calls `demucs.hf.get_hf_model`, not `get_model`, because
+`get_model` swallows a Hub failure and falls back to the legacy AWS repo, which would pass the
+build with nothing baked. Then `COPY app app` last so code edits rebuild only the final layers. Creates
 and switches to a non-root `chord` user (uid/gid 1000) — **the host's `server/data` must be
 writable by uid 1000**. `CMD uvicorn app.main:app --host 0.0.0.0 --port 8000`.
 
@@ -65,8 +70,9 @@ Effectively idempotent. Extend it if a third incompatibility appears.
 `db.database`, `pipeline.worker`
 **Used by:** the `CMD`/uvicorn entry point
 **Notes:** sets `TORCH_HOME` from `settings.models_cache_dir` via `os.environ.setdefault`
-**before any torch import** — without it Demucs' weights land in the container's ephemeral
-cache. `lifespan` runs `init_db()` then `start_worker()`. Adds CORS from `settings.cors_origins`
+**before any torch import**. demucs reaches `TORCH_HOME` only on its legacy fallback — a model
+the image doesn't carry — since the weights it normally loads are baked into the image under
+`HF_HOME` (see the `Dockerfile` entry). `lifespan` runs `init_db()` then `start_worker()`. Adds CORS from `settings.cors_origins`
 (irrelevant behind nginx). Mounts the three routers plus `GET /health`.
 
 ### `app/core/config.py` — settings and paths (28 lines)
@@ -293,7 +299,7 @@ cap.
 **Exports:** `separate`
 **Imports from:** `core.config`
 **Used by:** `pipeline.pipeline`
-**Notes:** lazy module-level `Separator` singleton (weights are hundreds of MB; loaded once per
+**Notes:** lazy module-level `Separator` singleton (loading the weights onto the device takes seconds; loaded once per
 process). `_resolve_device()` falls back to `cpu` when `device == "cuda"` but
 `torch.cuda.is_available()` is false. Because the singleton outlives jobs, `separate()` swaps the
 progress callback in with `update_parameter` on every call. `_chunk_callback` counts only

@@ -201,15 +201,25 @@ split.
 
 Separation starts the bar at 10% and then follows Demucs, which reports progress as each chunk of
 audio *starts* — so the bar holds at 10% until the second chunk begins, a noticeable while on CPU.
-On a server's first job it holds much longer: the `htdemucs_6s` weights download when the
-separator is first created, after the job has already moved to 10%. The time-remaining estimate
-appears only after 3 s of measured progress.
+On a server's first job it holds a little longer, while the separator loads its weights onto the
+device. The time-remaining estimate appears only after 3 s of measured progress.
 
-### The first job is dramatically slower than the rest
+### The first job is slower than the rest
 
-The first separation downloads the `htdemucs_6s` weights (several hundred MB) into
-`server/data/models_cache/`. It's cached after that, and survives container recreation because
-that directory is inside the bind mount.
+The first separation after a start constructs the Demucs separator, loading the weights onto the
+device — a few seconds, once per process. Nothing downloads: the weights are in the image. A first
+job that sits at 10% for much longer is downloading a model the image wasn't built with; see the
+next entry.
+
+### "You are sending unauthenticated requests to the HF Hub"
+
+The server is contacting the Hugging Face Hub, which a current image never does. Either the image
+predates the weights being baked in — rebuild it with `./scripts/start.sh` — or the server is running
+outside Docker, where the first separation downloads the weights into `~/.cache/huggingface` and the
+warning is harmless. A `DEMUCS_MODEL` set at runtime to a model the image doesn't carry never
+reaches the Hub, since it is offline; demucs downloads it from its legacy repo into
+`server/data/models_cache/` instead. See
+[configuration.md](configuration.md#demucs-weights).
 
 ### Cancel doesn't stop the current stage
 

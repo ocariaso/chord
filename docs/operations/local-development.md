@@ -188,8 +188,10 @@ may not be writable by your user (or vice versa).
 
 ## First run is slow
 
-The first separation downloads the `htdemucs_6s` weights (several hundred MB) into
-`server/data/models_cache/`. Subsequent jobs reuse them. On CPU, expect several minutes per
+Outside Docker the weights aren't baked in. The first separation downloads `htdemucs_6s` (about
+53 MB) from the Hugging Face Hub into `~/.cache/huggingface` — not `server/data/models_cache/`,
+which demucs uses only on its fallback path — and logs the Hub's *unauthenticated requests*
+warning, which is harmless. Subsequent jobs reuse them. On CPU, expect several minutes per
 four-minute track after that.
 
 ## No test suite

@@ -30,8 +30,9 @@ source .venv/bin/activate
 uvicorn app.main:app --reload --port 8000
 ```
 
-First request that triggers separation will download the `htdemucs` pretrained
-weights into `data/models_cache/` (cached after that).
+The first separation downloads the `htdemucs_6s` pretrained weights from the
+Hugging Face Hub into `~/.cache/huggingface` (cached after that). The Docker image
+bakes them in instead.
 
 ## Data layout
 
@@ -39,7 +40,7 @@ Everything under `data/` is runtime-only and gitignored:
 
 ```
 data/db.sqlite3           # job metadata
-data/models_cache/        # Demucs pretrained weights (TORCH_HOME)
+data/models_cache/        # TORCH_HOME: demucs' fallback download cache, normally empty
 data/jobs/<job_id>/
   original.mp3
   stems/{vocals,drums,bass,guitar,piano,other}.wav

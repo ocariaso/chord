@@ -491,3 +491,20 @@ since 2018. It does not install on a modern Python/numpy.
 **Cost:** the ugliest part of the build, and the reason the server is pinned to Python 3.10. The
 patches are two known breakages (`collections.MutableSequence`, removed `np.*` aliases); a third
 would mean extending the script. `enable_chord_detection=False` exists as the escape hatch.
+
+## The Demucs weights are baked into the image
+
+**Constraint:** demucs 4.1 loads a named model from the Hugging Face Hub and caches it under
+`HF_HOME`, which defaults to the container's `~/.cache` — outside the data volume. `TORCH_HOME`,
+which `main.py` points at the volume, covers only demucs' legacy fallback. Left to the first job,
+the weights were downloaded again after every rebuild.
+
+**Choice:** download the weights during the image build into `/opt/models/huggingface`, and run
+the server with `HF_HUB_OFFLINE=1` ([`server/Dockerfile`](../../server/Dockerfile)). The build
+step calls `demucs.hf.get_hf_model` directly, so a failed download fails the build instead of
+falling back silently.
+
+**Cost:** the model is a build-time choice — `DEMUCS_MODEL` is a build argument, and a runtime
+override to a different model downloads it from demucs' legacy repo on the first job. The image
+grows by the weights (~53 MB for `htdemucs_6s`), and building needs the Hub reachable. In exchange
+no job downloads anything and separation needs no network.
