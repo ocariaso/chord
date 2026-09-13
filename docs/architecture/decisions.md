@@ -147,7 +147,7 @@ sequential ones and can exhaust VRAM.
 ([`worker.py`](../../server/app/pipeline/worker.py)).
 
 **Cost:** the queue is memory-only. A restart silently orphans every queued and in-progress job
-— their rows sit in a non-terminal status forever and nothing reaps them; a page still showing
+— their rows sit in a non-terminal status forever, and the reaper deliberately skips them; a page still showing
 such a job can revive it by cancelling and then resuming, and nothing else can. Nothing
 de-duplicates entries either — a job id can sit in the queue twice — so `run_job` starts only on a
 `queued` row, and the copy that reaches the worker after the job has run returns without doing
@@ -310,8 +310,13 @@ effect cleanup; the server deletes the row and the directory for a finished job.
 
 **Cost:** **there is no history.** Clicking *New track* destroys the job you were looking at,
 and a cancelled job can be resumed only while its page stays open. A hard tab crash skips the
-beacon and leaks the directory forever. `GET /jobs` still exists and lists everything, so the
-data model could support a library — the client never asks for one.
+beacon. The job then waits for the [reaper](../data/retention.md#the-reaper), which deletes a
+terminal job `JOB_TTL_HOURS` (24) after it last changed or last had a heartbeat, so a crashed tab's
+stems stay on disk for up to a day. The reaper is a backstop, not the mechanism: deleting on leave
+frees the disk as soon as a job is closed, where the reaper waits out the TTL. An open page sends
+a heartbeat every 5 minutes, because playback makes no requests and the reaper has no other way to
+tell a job in use from an abandoned one. `GET /jobs` still exists and lists everything, so the data model could support a
+library — the client never asks for one.
 
 ## Sharps everywhere, normalized at the boundary
 

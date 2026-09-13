@@ -10,7 +10,7 @@ The API contract exists **twice**, by hand. Nothing checks that the copies agree
 | Lyrics | `LyricsResponse` / `LyricsLine` | `Lyrics` / `LyricsLine` |
 | Request bodies | `CreateJobFromUrlRequest`, `SaveLyricsRequest` | the object literals sent by `createJobFromUrl` and `saveLyrics` |
 | Stem names | `STEM_NAMES` | `STEM_KEYS` in [`design/stems.ts`](../../web/src/design/stems.ts), typed by `StemKey` in [`design/player.ts`](../../web/src/design/player.ts) — the same six, in the same order |
-| Terminal statuses | `TERMINAL_STATUSES` in [`routes_jobs.py`](../../server/app/api/routes_jobs.py) | `TERMINAL_STATUSES` in [`useJobEvents.ts`](../../web/src/hooks/useJobEvents.ts) |
+| Terminal statuses | `TERMINAL_STATUSES` in [`schemas.py`](../../server/app/models/schemas.py) | `TERMINAL_STATUSES` in [`useJobEvents.ts`](../../web/src/hooks/useJobEvents.ts) |
 | Stage messages | the `stage_message` literals in [`pipeline.py`](../../server/app/pipeline/pipeline.py) | `processingCopy.stages` in [`design/copy.ts`](../../web/src/design/copy.ts), read through `PROCESSING_STAGES` and `processingStage` in [`design/stages.ts`](../../web/src/design/stages.ts) |
 
 A rename on one side is a **silent** break on the other: the field arrives as `undefined`, and
@@ -38,8 +38,9 @@ most recent examples:
    a new column is invisible until added here.
 5. **`Job`** in `client.ts`.
 
-A column only the server needs stops after step 2. `attempt` is one: it is in both lists and in
-the pipeline's writes, and deliberately absent from `JobResponse` and `Job`.
+A column only the server needs stops after step 2. `attempt` and `last_seen_at` are two: both are
+in both lists (`attempt` in the pipeline's writes too, `last_seen_at` in the heartbeat's) and are
+deliberately absent from `JobResponse` and `Job`.
 
 Changing a status value additionally means updating both `TERMINAL_STATUSES` sets if the new
 status is terminal, and `processingStage` in `design/stages.ts` if it isn't — an unrecognized status

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # browser tab can hold. The landing page's "up to 12 minutes" copy assumes the default; 0 disables.
     max_duration_seconds: float = 720
 
+    # The reaper deletes a finished, failed or cancelled job this long after it last changed: the discard a page sends
+    # on leaving is lost when a tab crashes, and a job discarded mid-run is only cancelled. 0 turns the reaper off.
+    job_ttl_hours: float = 24
+
     cors_origins: list[str] = ["http://localhost:5173"]
 
 

@@ -18,7 +18,6 @@ makes another easier, the page says so under *Works with*.
 | --- | --- |
 | [local-network-exposure.md](local-network-exposure.md) | listen on localhost only by default, and reject cross-site requests and internal URLs |
 | [restart-recovery.md](restart-recovery.md) | jobs interrupted by a stop or restart continue on the next start |
-| [job-reaper.md](job-reaper.md) | delete job data that discard-on-leave misses, so the disk doesn't fill |
 | [device-visibility.md](device-visibility.md) | report when separation falls back to the CPU |
 | [apple-silicon.md](apple-silicon.md) | separation on the Apple GPU (`mps`) for Mac users |
 

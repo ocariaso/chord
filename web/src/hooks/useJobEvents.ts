@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, discardJobUrl, getJob, jobEventsUrl, type Job } from "../api/client";
+import { ApiError, discardJobUrl, getJob, jobEventsUrl, sendHeartbeat, type Job } from "../api/client";
 import { processingStage } from "../design/stages";
 
 const TERMINAL_STATUSES = new Set(["done", "error", "cancelled"]);
 export const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 10_000;
+// Far inside the server's JOB_TTL_HOURS, and slow enough that a background tab's throttled timers still keep it.
+const HEARTBEAT_INTERVAL_MS = 5 * 60_000;
 
 export type ConnectionState =
   | { status: "live" }
@@ -63,6 +65,23 @@ export function useJobEvents(jobId: string | null): {
       window.removeEventListener("pagehide", discardOnLeave);
       discardOnLeave();
     };
+  }, [jobId]);
+
+  // Once the stems are loaded, playback never calls the server, so without this the reaper can't tell an open job
+  // from an abandoned one and deletes it from under the page.
+  useEffect(() => {
+    if (!jobId) return;
+    const currentJobId = jobId;
+
+    function beat() {
+      sendHeartbeat(currentJobId).catch(() => {
+        // One missed beat is covered by the next, long before the TTL; a job that is already gone has nothing to keep.
+      });
+    }
+
+    beat();
+    const timer = window.setInterval(beat, HEARTBEAT_INTERVAL_MS);
+    return () => window.clearInterval(timer);
   }, [jobId]);
 
   useEffect(() => {

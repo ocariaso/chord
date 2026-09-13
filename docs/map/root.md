@@ -47,7 +47,7 @@ misparses batch files with LF endings (labels and `goto` in particular).
 
 - **`server`** — build context `./server`, `image: chord-server`,
   `container_name: chord-server`, build arg `TORCH_INDEX_URL` (defaults to the CPU wheel index),
-  env `DEVICE` (defaults `cpu`), bind mount `./server/data:/app/data`, `expose: 8000` (**not**
+  env `DEVICE` (defaults `cpu`) and `JOB_TTL_HOURS` (defaults `24`), bind mount `./server/data:/app/data`, `expose: 8000` (**not**
   published), `restart: unless-stopped`.
 - **`web`** — build context `./web`, `image: chord-web`, `container_name: chord-web`,
   `ports: ${PORT:-8080}:80`, `depends_on: [server]`, `restart: unless-stopped`.

@@ -276,7 +276,8 @@ sqlite3 server/data/db.sqlite3 \
    WHERE status NOT IN ('done','error','cancelled') ORDER BY created_at;"
 ```
 
-Cancel and then resume one through the API to run it again, or clean up:
+The reaper leaves them alone, since it can't tell a stale row from a running one. Cancel and then
+resume one through the API to run it again, or clean up:
 [../data/retention.md](../data/retention.md#stale-rows).
 
 ### Two uploads, and the second doesn't start
@@ -293,6 +294,13 @@ Leaving the results deletes it. *New track* goes through `handleBack`, which cle
 row **and** the stems directory for a terminal job. Reloading or closing the tab does the same
 through `pagehide`. There is no history, by design:
 [../data/retention.md](../data/retention.md#discard).
+
+The reaper also deletes a finished, failed or cancelled job that hasn't changed, and that no page
+has had open, for `JOB_TTL_HOURS` (24 by default). An open page sends a heartbeat every 5 minutes,
+so an open job is deleted only when its heartbeats stop reaching the server for that long — the
+browser froze or discarded the tab, or the server couldn't be reached. The page can still play,
+but exports fail and a reload shows *Job not found*. Raise the limit, or set it to `0`: [configuration.md](configuration.md). See
+[../data/retention.md](../data/retention.md#the-reaper).
 
 ## Audio and the mixer
 

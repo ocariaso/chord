@@ -19,8 +19,10 @@ string union in [`client.ts`](../../web/src/api/client.ts).
 | `cancelled` | `cancel` / `discard` endpoints | terminal, user-initiated; the only status `resume` accepts |
 
 `TERMINAL_STATUSES = {done, error, cancelled}` appears in two places that must agree:
+[`schemas.py`](../../server/app/models/schemas.py), read by
 [`routes_jobs.py`](../../server/app/api/routes_jobs.py) (to reject cancels, to choose between
-cancelling and deleting on discard, to stop the SSE stream) and
+cancelling and deleting on discard, to stop the SSE stream) and by
+[`reaper.py`](../../server/app/pipeline/reaper.py) (the only jobs it deletes); and
 [`useJobEvents.ts`](../../web/src/hooks/useJobEvents.ts) (to close the EventSource and to stop
 reconnecting).
 
@@ -225,7 +227,8 @@ Cancellation is **cooperative**. It writes a row and nothing else:
   finished download found — changes only those two columns.
 - Files already written stay on disk: the original, `thumbnail.jpg`, a finished `stems/`. An
   abandoned separation leaves only an empty `stems.partial/`, which the next separation clears.
-  Cancel does not clean up; only `discard` does.
+  Cancel does not clean up. `discard` does, and so does the
+  [reaper](../data/retention.md#the-reaper), `JOB_TTL_HOURS` after the cancel.
 
 `_is_superseded` also returns `True` when the row is *missing*, so a deleted job stops the
 pipeline too.
@@ -319,16 +322,21 @@ Two consequences worth internalizing:
 
 ## What is never cleaned up
 
-- A job whose browser tab crashed hard enough to skip `pagehide`, or whose beacon never reached
-  the server — leaving from the *Connection lost* panel, for instance: row and files persist
-  forever.
-- Rows in `queued`/`fetching`/`separating`/`analyzing` after a server restart: the in-memory queue
-  is gone, so nothing will ever advance them. A page that still has the job open can cancel and
-  then resume it; otherwise the row is permanently stale.
-- Parts of a job directory recreated by a run whose job was discarded mid-stage.
-- An upload that failed partway through being copied to disk: the directory is removed only when
-  the upload is empty, and no row was inserted to find it by.
-- Anything in `data/jobs/` whose row was deleted by other means.
+Rows in `queued`/`fetching`/`separating`/`analyzing` after a server restart, and their files. The
+in-memory queue is gone, so nothing will ever advance them, and the
+[reaper](../data/retention.md#the-reaper) leaves every non-terminal row alone because it can't tell
+a stale one from a running one. A page that still has the job open can cancel and then resume it.
+Otherwise the row stays stale until it's removed by hand
+([retention.md](../data/retention.md#cleaning-up)).
 
-There is no reaper, no TTL and no admin sweep. Clearing `server/data/jobs/` by hand (with the
-container stopped) is the current remedy.
+Everything else a discard misses waits for the reaper, which sweeps at startup and then hourly:
+
+| Left behind | Reaped |
+| --- | --- |
+| a job whose tab crashed hard enough to skip `pagehide`, or whose beacon never reached the server (leaving from the *Connection lost* panel, for instance) | row and files, `JOB_TTL_HOURS` (24) after the job last changed or last had a heartbeat from an open page |
+| a job discarded while running, which is only cancelled | the same, counted from the cancel |
+| parts of a job directory recreated by a run whose job was discarded mid-stage | once nothing in the directory has changed for an hour, since it has no row |
+| an upload that failed partway through being copied to disk, which never got a row | the same |
+| anything in `data/jobs/` whose row was deleted by other means | the same |
+
+With `JOB_TTL_HOURS=0` the reaper is off, and all of it persists until it's removed by hand.

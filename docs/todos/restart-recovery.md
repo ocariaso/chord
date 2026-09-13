@@ -39,8 +39,9 @@ bug.
 
 ## Works with
 
-Independent. [job-reaper.md](job-reaper.md) should leave non-terminal rows alone, because this is
-what handles them.
+Independent. The [reaper](../data/retention.md#the-reaper) already leaves non-terminal rows alone,
+so a recovered job is never deleted before it runs. An interrupted job marked `error` instead
+starts its `JOB_TTL_HOURS` from that write.
 
 ## Docs to update
 

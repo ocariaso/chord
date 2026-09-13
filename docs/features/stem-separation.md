@@ -149,7 +149,7 @@ All six files go into `stems.partial/`, which is renamed to `stems/` only after 
 written. So **`stems/` is either complete or absent**, and that guarantee is what lets a resume trust
 it. Each run deletes any leftover `stems.partial/` before starting. Stems are written only after
 Demucs returns, so a pass abandoned by a cancel leaves an empty `stems.partial/` behind (until the job
-is resumed or discarded), while a crash in the middle of writing can leave some FLACs in it — never in
+is resumed, discarded or reaped), while a crash in the middle of writing can leave some FLACs in it — never in
 `stems/`.
 
 ### Sample rate

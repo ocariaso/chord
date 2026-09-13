@@ -54,7 +54,7 @@ on every read rather than stored:
 | audio | `original.*` and `stems/*.flac` — exported WAVs are converted on request, never stored |
 
 They can disagree. A row whose directory was deleted still lists in `GET /jobs`; a directory
-whose row was deleted is invisible to the API and will never be cleaned up. See
+whose row was deleted is invisible to the API, and only the reaper's directory pass removes it. See
 [retention.md](retention.md).
 
 ## Sizing

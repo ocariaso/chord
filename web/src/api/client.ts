@@ -123,6 +123,12 @@ export async function resumeJob(jobId: string): Promise<Job> {
   return res.json();
 }
 
+/** Tells the server a page still has this job open, so its reaper doesn't delete the job. */
+export async function sendHeartbeat(jobId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/jobs/${jobId}/heartbeat`, { method: "POST" });
+  if (!res.ok) throw new ApiError(`Failed to send heartbeat (${res.status})`, res.status);
+}
+
 export function stemUrl(jobId: string, stemName: string): string {
   return `${API_BASE}/jobs/${jobId}/stems/${stemName}.flac`;
 }
