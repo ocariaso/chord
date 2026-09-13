@@ -175,9 +175,11 @@ comments and in review.
   tempo, Detecting chords and key. Stages before the current one are `.is-done`, the current one
   `.is-current`, later ones plain. A skipped stage — an upload never downloads — shows as done, never
   hidden, so the layout doesn't jump.
-- **A failure** is `.ch-alert` and an optional `.ch-log`, with a primary and a secondary action. The
-  dot is the only status hue — `--ch-danger` for hard failures, `--ch-warn` for recoverable ones,
-  neutral for cancelled — and the panel itself is never tinted.
+- **A failure** is a centered `.ch-alert` — a 56px `.ch-dropicon` mark, a 32px title and the body —
+  then an optional `.ch-log`, with a primary and a secondary action. There is no status dot: the
+  mark's ring is the only status hue, as a hairline — `--ch-danger` for hard failures, `--ch-warn`
+  for recoverable ones, the accent for cancelled. Cancelled draws a stop mark, the others an alert
+  mark in `--color-neutral-300`; nothing else is tinted.
 
 ## Copy
 

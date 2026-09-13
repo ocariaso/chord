@@ -607,12 +607,14 @@ and Ko-fi as Nocturne ghost icon buttons (`.btn-icon`), plus `footerCopy.copyrig
 unscrolled page as it can. In the page flow (`flex-none` under `main`), not fixed. Hardcodes the author's
 URLs and email.
 
-### `src/components/icons.tsx` — shared inline SVG (55 lines)
-**Exports:** `UploadIcon`, `PlusIcon`, `PlayIcon`, `PauseIcon`, `MetronomeIcon`, `CheckIcon`
+### `src/components/icons.tsx` — shared inline SVG (72 lines)
+**Exports:** `UploadIcon`, `PlusIcon`, `PlayIcon`, `PauseIcon`, `MetronomeIcon`, `StopIcon`, `AlertIcon`,
+`CheckIcon`
 **Used by:** `landing/LandingScreen` (`UploadIcon`), `processing/ProcessingScreen` (`CheckIcon`),
-`results/ResultsTopbar` (`PlusIcon`), `results/Transport` (`PlayIcon`, `PauseIcon`,
-`MetronomeIcon`)
-**Notes:** the template harness's paths, drawn in `currentColor` except `CheckIcon`, whose stroke is the
+`failure/FailurePanel` (`StopIcon`, `AlertIcon`), `results/ResultsTopbar` (`PlusIcon`),
+`results/Transport` (`PlayIcon`, `PauseIcon`, `MetronomeIcon`)
+**Notes:** the template harness's paths — plus `StopIcon` and `AlertIcon`, app-authored in the same
+24px, 1.6–1.8 stroke style for the failure panel's mark — drawn in `currentColor` except `CheckIcon`, whose stroke is the
 `color` it is given — the accent for a done stage, transparent otherwise.
 
 ---
@@ -701,9 +703,9 @@ the same `stageSnapshots`, so the done stages keep their times; its *Cancel* is 
 `ResultsScreen`'s `onBack`, which discards the finished job.
 **See:** [../architecture/job-lifecycle.md](../architecture/job-lifecycle.md)
 
-### `src/screens/failure/FailurePanel.tsx` — failure states (76 lines)
+### `src/screens/failure/FailurePanel.tsx` — failure states (100 lines)
 **Exports:** `FailurePanel`, `FailureTone`, `FailureAction`
-**Imports from:** nothing in-repo
+**Imports from:** `components/icons`
 **Used by:** `App`, `results/ResultsScreen`
 **Notes:** the `job-error`, `job-cancelled`, `connection-error` and `results-load-error` states:
 `.ch-alert` + optional `.ch-log` (newlines kept — a stem failure logs one request per line) + a
@@ -711,8 +713,10 @@ primary and optional secondary action, centered and wrapping. Like `LandingScree
 `ProcessingScreen` it is not on a `ScreenCard`: one centered 460px column on the page ground, grown
 (`flex-1 min-h-0`) and vertically centered, with `vh`-clamped padding and gaps. The log is cut at
 `30vh` (overflow hidden) so a long traceback never scrolls the page; *Copy log* still copies all of
-it. The tone picks **only the dot color** —
-`--ch-danger`, `--ch-warn` or `--color-neutral-600` — and the panel itself is never tinted. Every
+it. Above the title (an `h1`, 32px) sits a 56px `.ch-dropicon`
+mark; **there is no status dot**. The tone picks the mark — `StopIcon` for `neutral`, `AlertIcon`
+otherwise, in `--color-neutral-300` — and the hue of the mark's hairline ring, `--ch-danger`,
+`--ch-warn` or `--color-accent-700`; nothing else is tinted. Every
 one of those states has a secondary action; only *Job not found* leaves it out. The words come from the
 caller. `role="alert"` announces it on mount.
 

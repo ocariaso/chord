@@ -45,6 +45,23 @@ export function MetronomeIcon({ size = 12 }: IconProps) {
   );
 }
 
+export function StopIcon({ size = 20 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden="true">
+      <rect x="7" y="7" width="10" height="10" rx="2" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function AlertIcon({ size = 20 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+      <path d="M12 6v8" strokeLinecap="round" />
+      <path d="M12 18v.01" strokeLinecap="round" strokeWidth={2.6} />
+    </svg>
+  );
+}
+
 /** The stage list's tick; stroked in `color`, transparent for stages not yet done. */
 export function CheckIcon({ color }: { color: string }) {
   return (
