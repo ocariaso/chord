@@ -21,10 +21,12 @@ interface ConsoleViewProps {
   metronome: boolean;
   onExport: () => void;
   readMeters: (target: MeterReadings, now: number) => void;
+  /** Below 720px: horizontal strips stacked in a column, Master first, instead of a row that scrolls sideways. */
+  isPhone?: boolean;
 }
 
 /** The Console view: a row of strips and the master strip. The meters bypass React, written each frame (design.md#metering). */
-export function ConsoleView({ stems, controls, master, onMasterChange, metronome, onExport, readMeters }: ConsoleViewProps) {
+export function ConsoleView({ stems, controls, master, onMasterChange, metronome, onExport, readMeters, isPhone = false }: ConsoleViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const peakRef = useRef<HTMLSpanElement>(null);
   const meterElementsRef = useRef<HTMLElement[]>([]);
@@ -60,19 +62,41 @@ export function ConsoleView({ stems, controls, master, onMasterChange, metronome
     }
   });
 
+  const masterStrip = (
+    <MasterStrip
+      master={master}
+      onMasterChange={onMasterChange}
+      metronome={metronome}
+      onExport={onExport}
+      peakRef={peakRef}
+      compact={isPhone}
+    />
+  );
+  const stripRow = (
+    <div className="ch-striprow">
+      {stems.map((stem) => (
+        <ConsoleStrip key={stem.state.key} stem={stem} anySolo={anySolo} controls={controls} compact={isPhone} />
+      ))}
+    </div>
+  );
+
+  if (isPhone) {
+    return (
+      <div ref={containerRef} className="flex flex-1 flex-col" style={{ gap: "var(--space-4)", padding: "var(--space-4) var(--space-8)" }}>
+        {masterStrip}
+        {stripRow}
+      </div>
+    );
+  }
   return (
     <div
       ref={containerRef}
       className="flex flex-1 items-stretch"
       style={{ gap: "var(--space-8)", padding: "var(--space-6) var(--space-8)" }}
     >
-      <div className="ch-striprow">
-        {stems.map((stem) => (
-          <ConsoleStrip key={stem.state.key} stem={stem} anySolo={anySolo} controls={controls} />
-        ))}
-      </div>
+      {stripRow}
       <span className="ch-divider-x" />
-      <MasterStrip master={master} onMasterChange={onMasterChange} metronome={metronome} onExport={onExport} peakRef={peakRef} />
+      {masterStrip}
     </div>
   );
 }

@@ -17,27 +17,32 @@ interface MasterStripProps {
   onExport: () => void;
   /** Where the frame loop writes the true-peak readout. */
   peakRef: RefObject<HTMLSpanElement | null>;
+  /** Below 720px: a horizontal bar instead of the 190px column, matching the stem strips. */
+  compact?: boolean;
 }
 
 /** The Console's 190px master strip: fader, stereo meter, the Output / Peak / Metronome readouts, Export stems. */
-export function MasterStrip({ master, onMasterChange, metronome, onExport, peakRef }: MasterStripProps) {
+export function MasterStrip({ master, onMasterChange, metronome, onExport, peakRef, compact = false }: MasterStripProps) {
   const masterText = `${formatDb(masterDb(master))} dB`;
   return (
     <div
-      className="ch-panel flex flex-col"
+      className="ch-panel flex"
       style={{
-        width: 190,
+        flexDirection: compact ? "row" : "column",
+        flexWrap: compact ? "wrap" : undefined,
+        alignItems: compact ? "center" : undefined,
+        width: compact ? "100%" : 190,
         flex: "none",
-        gap: 14,
-        padding: "var(--space-6) 14px",
+        gap: compact ? "var(--space-3)" : 14,
+        padding: compact ? "var(--space-3) 14px" : "var(--space-6) 14px",
         background: "var(--ch-panel-raised)",
         boxShadow: "inset 0 0 0 1px var(--color-neutral-800)",
       }}
     >
-      <span className="ch-label" style={{ color: "var(--color-text)" }}>
+      <span className="ch-label" style={{ color: "var(--color-text)", flex: compact ? "none" : undefined, width: compact ? 76 : undefined }}>
         {resultsCopy.master}
       </span>
-      <span className="flex flex-1" style={{ gap: "var(--space-4)" }}>
+      <span className="flex flex-1" style={{ gap: "var(--space-4)", minHeight: compact ? 84 : undefined }}>
         <VerticalFader value={master} onChange={onMasterChange} label={resultsCopy.masterLevelLabel(masterText)} valueText={masterText} />
         <span className="ch-meter" style={{ "--stem": "var(--color-accent)" } as React.CSSProperties} aria-hidden="true">
           <i data-meter={MASTER_METER} data-channel="0" style={{ "--l": 0 } as React.CSSProperties} />
@@ -49,7 +54,7 @@ export function MasterStrip({ master, onMasterChange, metronome, onExport, peakR
           ))}
         </span>
       </span>
-      <span className="flex flex-col" style={{ gap: "var(--space-2)" }}>
+      <span className="flex flex-col" style={{ gap: "var(--space-2)", flex: compact ? "none" : undefined, width: compact ? 108 : undefined }}>
         <span className="flex justify-between" style={{ font: "400 10.5px/1 var(--font-body)", color: "var(--color-neutral-400)" }}>
           <span>{resultsCopy.output}</span>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{masterText}</span>
@@ -65,7 +70,12 @@ export function MasterStrip({ master, onMasterChange, metronome, onExport, peakR
           <span style={{ color: "var(--color-accent-400)" }}>{metronome ? resultsCopy.on : resultsCopy.off}</span>
         </span>
       </span>
-      <button type="button" className="btn btn-secondary" style={{ width: "100%", fontSize: 11 }} onClick={onExport}>
+      <button
+        type="button"
+        className="btn btn-secondary"
+        style={{ width: "100%", flex: compact ? "1 0 100%" : undefined, fontSize: 11 }}
+        onClick={onExport}
+      >
         {resultsCopy.exportStems}
       </button>
     </div>

@@ -403,11 +403,11 @@ app-authored, and the template's state model in [`design/player.ts`](../../web/s
 The calls that took a decision:
 
 - **Phones follow the written rules, not the harness's phone frame.** The template's responsive
-  rules locked a phone to the Mixer and let the stylesheet stack `.ch-stemrow` with 44 px
-  MUTE/SOLO. The harness's phone frame drew a different screen — stem cards, a compact header with
-  key and tempo, an *Export* chip, two upcoming chords — which the app used to follow. The rules
-  outranked the markup, so a phone now gets the desktop screen reflowed
-  ([what that costs](#narrow-screens-get-the-mixer-view-only)).
+  rules let the stylesheet stack `.ch-stemrow` with 44 px MUTE/SOLO on a phone. The harness's phone
+  frame drew a different screen — stem cards, a compact header with key and tempo, an *Export*
+  chip, two upcoming chords — which the app used to follow. The rules outranked the markup, so a
+  phone now gets the desktop screen reflowed
+  ([what that costs](#narrow-screens-keep-all-three-views-scrolling-instead-of-scaling)).
 - **Two template lines are reworded, because they promise behavior the app doesn't have.** The
   cancelled panel's *"The upload is still in your queue for 24 hours"* reads *"The upload is kept
   until you leave this page"*, since [leaving discards the job](#discard-on-leave); the connection
@@ -544,35 +544,60 @@ unmounts the old view, so its meter ballistics start over, and the choice isn't 
 results always open on Mixer. The payoff is that switching mid-song is immediate and seamless: the
 engine never stops.
 
-## Narrow screens get the Mixer view only
+## Narrow screens keep all three views, scrolling instead of scaling
 
 **Constraint:** Console strips need 112 px each, Analog modules 120 px and its dials 180 px, or
 their controls collapse; a phone is about 360 px wide; and the page must never scroll.
 
-**Choice:** a single breakpoint at 720px and, below it, the template's responsive rules, now
-[Responsive](../conventions/design.md#responsive): lock to the Mixer and
-render no view tabs. The same screen reflows rather than switching to a separate phone layout — the
-stylesheet stacks each `.ch-stemrow` into name, fader with its readout, MUTE/SOLO at 44 px and
-waveform; `MixerView` hides the column labels whose columns are gone, and `AnalysisBar` the
-dividers between its wrapped groups; the analysis bar and the full chord bar stay; and only the
-transport changes markup, to `.ch-m-bar` with play,
-seek and a *Click* metronome chip. **The whole app is one viewport and never scrolls**
+**Choice:** a single breakpoint at 720px, below which the Mixer's rows stack and the transport
+becomes `.ch-m-bar` (play, seek, a *Click* metronome chip) — the template's responsive rules, now
+[Responsive](../conventions/design.md#responsive). The view tabs, though, stay available at every
+width: a phone that locked to the Mixer with no way to reach Console or Analog made two of the
+three views simply unreachable there, which the owner asked to fix. Console and Analog can't
+shrink to a phone's width without breaking the floors above, so `FitToPanel` stays off for them
+below 720px the same as it always was — but rather than leave the strip a horizontal-scrolling row
+(the first cut, which the owner asked to redo), `ConsoleStrip`, `MasterStrip` and `AnalogModule`
+take a `compact`/`isPhone` prop that turns each one from a tall column into a short horizontal bar
+— the Console strip's name, fader-and-meter and value/pan/routing groups side by side instead of
+stacked, wrapping to a second line where they don't all fit; the Analog module's name, knobs and
+routing the same way, routing always forced to its own line with `flex: 1 0 100%` (the Mixer row's
+own phone rule does the same for its routing pair) — and `.ch-striprow` itself switches from a
+horizontal-scrolling row to a `flex-direction: column` stack of these bars, one per stem, each at
+full width and its controls' full floor size. `ConsoleView` renders the master strip first on a
+phone, ahead of the stem stack, instead of beside it. The Console strip and master strip's fader
+column drops to an 84px minimum on a phone (170px off it), with tighter gaps and padding
+(`--space-3` in place of `--space-4`/`--space-6`), since a compact bar has no documented height
+floor to hold — only `.ch-strip`/`.ch-module`'s 112/120px *width* floors and the 44px touch targets
+are load-bearing. Only Analog's *Output level* dial grid keeps a horizontal scroll — it wasn't part
+of the "make it horizontal" ask, and five 180px dials have no shorter form — but it now scrolls
+itself (`.ch-dial-scroll`, its own `overflow-x: auto`) rather than the whole view panel, with a
+right-edge `mask-image` fade so the cut-off reads as "more here" instead of clipped content; the
+view panel no longer needs `overflowX: auto` at all, since nothing else on a phone overflows
+horizontally once the strips stack.
+**The whole app is one viewport and never scrolls**
 ([Responsive](../conventions/design.md#responsive)), by the owner's standing request, and nothing
-in it is cropped or hidden: screens share out the height instead of overflowing, and a results view
+in it is cropped or hidden: screens share out the height instead of overflowing, a results view
 that doesn't fit — too short, or narrower than its floors add up to — is scaled down whole by
-`FitToPanel`; only a phone's stem panel scrolls. An earlier `ScaleToFit` transform-scaled
-fixed-width layouts all the time, text included, and was replaced by reflow, then by a phone layout
-built from the harness's phone frame, which the template's written rules outranked
-([why](#the-ui-was-built-from-a-design-template)). `FitToPanel` brings scaling back only as the
-last resort for a window too small for a view, and never below 720px.
+`FitToPanel`, and below 720px the results view panel scrolls vertically through the stacked bars
+(and horizontally only around the Analog dial grid), so a phone gets Console and Analog at their
+full floor sizes instead of shrunk or sideways-scrolling ones. An earlier `ScaleToFit`
+transform-scaled fixed-width layouts all the time, text included, and was replaced by reflow, then
+by a phone layout built from the harness's phone frame, which the template's written rules
+outranked ([why](#the-ui-was-built-from-a-design-template)). `FitToPanel` brings scaling back only
+as a middle ground for a window too small for a view but not phone-narrow.
 
-**Cost:** in a window too small for a view, that view — its text, knobs and hit targets included —
-is drawn smaller than the design's sizes: the Console view below 1140px wide, Analog below 1020px,
-and any view in a short window. On a narrow screen Pan, Tone, every meter, speed and A–B looping are unreachable — the
-`.ch-m-bar` has no speed or loop chip, and no time readouts. A speed or loop set before the window
-narrowed stays in force with no control to change it. The stacked rows make a long page: six stems,
-four lines each, under the analysis and chord bars. Resizing across the breakpoint switches the
-view to Mixer and back under the user.
+**Cost:** in a window too small for a view but at or above 720px, that view — its text, knobs and
+hit targets included — is drawn smaller than the design's sizes: the Console view below 1140px
+wide, Analog below 1020px, and any view in a short window. Below 720px, a stem's controls now split
+across two or three lines rather than reading as one block, and the dial grid at the top of Analog
+still needs a horizontal swipe to reach the last two or three dials, the fade its only cue that
+there's more. On a narrow screen Pan,
+Tone, every meter, speed and A–B looping are unreachable through the `.ch-m-bar` transport
+regardless of which view is open — it has no speed or loop chip, and no time readouts. A speed or
+loop set before the window narrowed stays in force with no control to change it. Stacking every
+stem's bar, in any view, makes a long page under the analysis and chord bars — longest for Console
+and Analog, whose bars run taller than the Mixer's. Resizing across the breakpoint keeps whichever
+view was open.
 
 ## SQLite, no ORM, hand-rolled additive migrations
 

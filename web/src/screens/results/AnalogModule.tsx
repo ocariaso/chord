@@ -11,10 +11,12 @@ const SMALL_KNOB_HUE = "var(--color-neutral-700)";
 interface AnalogModuleProps {
   stem: StemDisplay;
   controls: StemControls;
+  /** Below 720px: a horizontal bar instead of a tall column, so modules stack instead of scrolling sideways. */
+  compact?: boolean;
 }
 
 /** `.ch-panel.ch-module`: the Level knob and its value, Tone and Pan knobs, MUTE/SOLO. Lifted when soloed, dimmed when muted. */
-export function AnalogModule({ stem, controls }: AnalogModuleProps) {
+export function AnalogModule({ stem, controls, compact = false }: AnalogModuleProps) {
   const { state } = stem;
   const value = fmtDb(state.gain, state.muted);
   // Solo before mute (design.md#state): a soloed module lifts even when it is also muted.
@@ -26,14 +28,18 @@ export function AnalogModule({ stem, controls }: AnalogModuleProps) {
         {
           "--stem": stem.hue,
           display: "flex",
-          flexDirection: "column",
+          flexDirection: compact ? "row" : "column",
+          flexWrap: compact ? "wrap" : undefined,
           alignItems: "center",
           gap: "var(--space-4)",
-          padding: "var(--space-6) var(--space-4)",
+          padding: compact ? "var(--space-4)" : "var(--space-6) var(--space-4)",
         } as React.CSSProperties
       }
     >
-      <span className="flex items-center" style={{ gap: 7 }}>
+      <span
+        className="flex items-center"
+        style={{ gap: 7, flex: compact ? "none" : undefined, width: compact ? 84 : undefined }}
+      >
         <span className="ch-dot" />
         <span style={{ font: "500 12.5px/1 var(--font-body)", color: "var(--color-text)" }}>{stem.name}</span>
       </span>
@@ -78,7 +84,7 @@ export function AnalogModule({ stem, controls }: AnalogModuleProps) {
           <span className="ch-value-sm">{formatPan(state.pan)}</span>
         </span>
       </span>
-      <span className="flex w-full" style={{ gap: "var(--space-2)" }}>
+      <span className={compact ? "flex" : "flex w-full"} style={{ gap: "var(--space-2)", flex: compact ? "1 0 100%" : undefined }}>
         <RoutingToggles
           stem={stem.name}
           muted={state.muted}

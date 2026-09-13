@@ -107,7 +107,7 @@ so on a narrow window the actions drop to a second line rather than squeezing th
 - A meta line `author · m:ss · N stems`. The time is the engine's decoded duration, so it always
   matches the transport's; `N` counts the stems that actually loaded, and one reads `1 stem`.
 - The view tabs: `role="tablist"`, `aria-selected`, a roving `tabIndex`, ArrowLeft/ArrowRight
-  wrapping and Home/End. Not rendered at 720 px and below.
+  wrapping and Home/End. Rendered at every width, including 720 px and below.
 - **Export stems** opens the [export dialog](downloads.md#the-export-dialog).
 - **New track** calls `onBack`. `App` clears the active job, and the `useJobEvents` cleanup sends
   the discard beacon, so the finished job is **deleted on the server**
@@ -251,24 +251,32 @@ though the template's harness drew these two with a label only.
 `ResultsScreen` matches `PHONE_QUERY` — `(max-width: 720px)`, in
 [`design/layout.ts`](../../web/src/design/layout.ts), the width of the one breakpoint in
 [`chord-theme.css`](../../web/src/styles/chord-theme.css) — and below it follows
-[Responsive](../conventions/design.md#responsive): the same screen, locked to the Mixer and
-reflowed by the stylesheet, not a separate phone layout. The template's harness drew one — stem
-cards, a compact header with key and tempo, an *Export* chip — and the app doesn't follow it,
-because the template's written rules outranked the harness
-([why](../architecture/decisions.md#the-ui-was-built-from-a-design-template)).
+[Responsive](../conventions/design.md#responsive): the same screen, reflowed by the stylesheet, not
+a separate phone layout. The template's harness drew one — stem cards, a compact header with key
+and tempo, an *Export* chip — and the app doesn't follow it, because the template's written rules
+outranked the harness
+([why](../architecture/decisions.md#the-ui-was-built-from-a-design-template)). All three views and
+their tabs stay reachable; only the Mixer's rows and the transport actually change shape
+([why](../architecture/decisions.md#narrow-screens-keep-all-three-views-scrolling-instead-of-scaling)).
 
 | Part | At 720 px and below |
 | --- | --- |
-| View | locked to Mixer. `view` itself is left alone, so widening the window returns to the view chosen before. No tabs, and the panel drops `role="tabpanel"` |
-| Topbar | unchanged but for the missing tabs; it wraps, so *Export stems* and *New track* take a line of their own |
+| View | all three still switchable; `view` is unaffected by the width, so nothing changes on resize |
+| Topbar | unchanged, tabs included; it wraps, so the tabs and then *Export stems*/*New track* can take their own lines |
 | Analysis bar | rendered, its four groups wrapping with the dividers between them hidden (`max-[720px]:hidden` in `AnalysisBar`) — key, transpose, tempo and master level all stay |
 | Chord bar | rendered in full: the chord now and the next three, the strip, and the lyric row with its label |
-| Stems | each `.ch-stemrow` stacked by the stylesheet: the name, then the fader with its dB readout, then MUTE and SOLO at 44 px, then the waveform. The column headings are hidden (`max-[720px]:hidden` in `MixerView`), since the columns they head are gone |
-| Transport | `.ch-m-bar`: a 46 px play button, the seek slider and a *Click* metronome chip — no time readouts, **no speed chip and no loop chip** |
+| Mixer stems | each `.ch-stemrow` stacked by the stylesheet: the name, then the fader with its dB readout, then MUTE and SOLO at 44 px, then the waveform. The column headings are hidden (`max-[720px]:hidden` in `MixerView`), since the columns they head are gone |
+| Console strips, master | `FitToPanel` stays disabled, same as always below 720px, so nothing shrinks; each `ConsoleStrip`/`MasterStrip` goes `compact` — a horizontal bar (name, fader-and-meter, value/pan/routing), its fader column down to an 84px minimum, wrapping to a second line where it doesn't fit — and `.ch-striprow` stacks these bars in a column, master first, instead of scrolling them sideways |
+| Analog modules, dials | each `AnalogModule` goes `compact` the same way (name, knobs, routing forced to its own line); the *Output level* dial grid above them is unchanged in size but now scrolls on its own (`.ch-dial-scroll`) instead of the whole view panel, with a right-edge fade marking that there's more — five 180px dials have no shorter form |
+| Transport | `.ch-m-bar`: a 46 px play button, the seek slider and a *Click* metronome chip — no time readouts, **no speed chip and no loop chip** — regardless of which view is open |
 
-The cost of the lock: on a phone there are no meters, no tone or pan, and no way to change speed or
-to set or clear a loop. A speed or loop set before the window narrowed carries over — playback stays
-at that speed, and the loop keeps looping until a seek lands outside it.
+The cost: on a phone there are still no meters, tone or pan controls reachable through the compact
+transport, and no way to change speed or set or clear a loop, in any view. A speed or loop set
+before the window narrowed carries over — playback stays at that speed, and the loop keeps looping
+until a seek lands outside it. Reaching an Analog dial past the first one or two still needs a
+horizontal swipe — a right-edge fade is the only cue that there's more, since nothing else on the
+page scrolls sideways any more. Each Console strip, master strip and Analog module now reads as
+two or three short lines instead of one.
 
 ## Reduced motion
 
@@ -299,7 +307,8 @@ clock read and a compare. The meters take the same route, written straight to th
 
 ## Known gaps
 
-- Phones get the Mixer only: no meters, tone, pan, speed or loop.
+- Phones can reach every view, but never meters, tone, pan, speed or loop — the compact transport
+  has no controls for them regardless of view.
 - A soloed, muted stem reads *Soloed* and lifts on the Console and Analog views, but is silent.
 - No reset gesture: a double-click does nothing, and no key centres Tone or Pan.
 - The page never scrolls, so a window too small for a view scales it down instead — its text and

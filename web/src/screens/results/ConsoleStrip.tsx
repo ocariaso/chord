@@ -12,6 +12,8 @@ interface ConsoleStripProps {
   stem: StemDisplay;
   anySolo: boolean;
   controls: StemControls;
+  /** Below 720px: a horizontal bar instead of a tall column, so strips stack instead of scrolling sideways. */
+  compact?: boolean;
 }
 
 /** Solo before mute (design.md#state): a soloed strip reads Soloed even when it is also muted. */
@@ -26,7 +28,7 @@ function stateLabel(stem: StemDisplay, anySolo: boolean): string {
  * `.ch-panel.ch-strip` (design.md#controls): lifted when soloed, dimmed when muted. Its meter carries
  * `data-meter`, where the Console's frame loop writes `--l`.
  */
-export function ConsoleStrip({ stem, anySolo, controls }: ConsoleStripProps) {
+export function ConsoleStrip({ stem, anySolo, controls, compact = false }: ConsoleStripProps) {
   const { state } = stem;
   const value = fmtDb(state.gain, state.muted);
   const panelClass = state.solo ? "ch-panel ch-strip is-active" : state.muted ? "ch-panel ch-strip is-off" : "ch-panel ch-strip";
@@ -37,19 +39,21 @@ export function ConsoleStrip({ stem, anySolo, controls }: ConsoleStripProps) {
         {
           "--stem": stem.hue,
           display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-4)",
-          padding: "var(--space-6) 14px",
+          flexDirection: compact ? "row" : "column",
+          flexWrap: compact ? "wrap" : undefined,
+          alignItems: compact ? "center" : undefined,
+          gap: compact ? "var(--space-3)" : "var(--space-4)",
+          padding: compact ? "var(--space-3) 14px" : "var(--space-6) 14px",
         } as React.CSSProperties
       }
     >
-      <span className="flex flex-col" style={{ gap: 3 }}>
+      <span className="flex flex-col" style={{ gap: 3, flex: compact ? "none" : undefined, width: compact ? 76 : undefined }}>
         <span style={{ font: "500 12.5px/1 var(--font-body)", color: "var(--color-text)" }}>{stem.name}</span>
         <span className="ch-label" style={{ color: state.solo ? "var(--color-accent-400)" : "var(--color-neutral-600)" }}>
           {stateLabel(stem, anySolo)}
         </span>
       </span>
-      <span className="flex flex-1" style={{ gap: "var(--space-4)", minHeight: 170 }}>
+      <span className="flex flex-1" style={{ gap: "var(--space-4)", minHeight: compact ? 84 : 170 }}>
         <VerticalFader
           value={state.gain}
           onChange={(gain) => controls.onGainChange(state.key, gain)}
@@ -66,7 +70,7 @@ export function ConsoleStrip({ stem, anySolo, controls }: ConsoleStripProps) {
           ))}
         </span>
       </span>
-      <span className="flex flex-col" style={{ gap: "var(--space-2)" }}>
+      <span className="flex flex-col" style={{ gap: "var(--space-2)", flex: compact ? "none" : undefined, width: compact ? 108 : undefined }}>
         <span className="flex justify-between" style={{ font: "400 11px/1 var(--font-body)", color: "var(--color-neutral-400)" }}>
           <span>{resultsCopy.level}</span>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{value}</span>

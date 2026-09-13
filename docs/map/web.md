@@ -44,9 +44,10 @@ web/
 Phones — below 720px, `PHONE_QUERY` in `design/layout.ts` — follow
 [Responsive](../conventions/design.md#responsive). The landing and processing screens branch into
 the phone arrangements the template's harness drew on `useMediaQuery(PHONE_QUERY)`;
-the results screen locks to the Mixer with no view tabs and a compact transport, and otherwise keeps
-the web markup — `chord-theme.css` stacks the stem rows, and `max-[720px]:` utilities hide the
-Mixer's column labels and the analysis bar's dividers.
+the results screen keeps all three views and their tabs, with a compact transport, and otherwise
+keeps the web markup — `chord-theme.css` stacks the stem rows, and `max-[720px]:` utilities hide
+the Mixer's column labels and the analysis bar's dividers. Console and Analog render at full size
+and scroll rather than scale down.
 
 In the entries below, `landing/`, `processing/`, `failure/` and `results/` are the folders under
 `src/screens/`, and `controls/` is `src/components/controls/`.
@@ -621,7 +622,10 @@ taller when the view is; scaled, it keeps its natural height (`flex: none`), and
 ignores the transform, so the view can be measured at any scale. Changes under 0.005 are ignored.
 `minWidth` is the view's stylesheet floors summed (`VIEW_MIN_WIDTH` in `ResultsScreen`), so the
 strips, modules and dials never lay out below them. `enabled={false}` (phones) renders the view
-unscaled and leaves scrolling to the panel. Pointer maths through `getBoundingClientRect` already
+unscaled at its full floor size and leaves scrolling to the panel, which only ever scrolls
+vertically now: `ConsoleStrip`/`MasterStrip`/`AnalogModule` go `compact` and stack in a column below
+720px, and Analog's *Output level* dial grid carries its own horizontal scroll instead of the
+panel's. Pointer maths through `getBoundingClientRect` already
 follows the transform; a `position: fixed` descendant would be positioned against it, and there is
 none. The template's `ScreenCard`, the card every screen once sat on, is gone: every screen now sits
 on the page ground.
@@ -809,10 +813,14 @@ stable `useCallback`s — and each display reads them every frame through `useCl
 changed renders. Under `prefers-reduced-motion` `getTime` floors to whole seconds, so everything
 that reads it (playheads, chord highlight, lyric line, time readouts) steps once a second; the meters
 and needles ignore it. Its own `requestAnimationFrame` loop only pauses the engine when `hasEnded`.
-`handleSeek` dispatches only `playingChanged` once the seek resolves. **Below 720px** the view is forced to the Mixer, the topbar gets no
-`onViewChange` (so no tabs, and the view panel drops its `tabpanel` role) and the transport is
-`compact`; the rest is the web markup, which the stylesheet and `max-[720px]:` utilities adapt. An
-instrumental's silent
+`handleSeek` dispatches only `playingChanged` once the seek resolves. **Below 720px** all three
+views and their tabs stay available and the transport goes `compact`; `FitToPanel` is `enabled`
+only above 720px, so Console and Analog render unscaled there, `isPhone` passes through to both
+(`ConsoleView` for master-first and `compact` strips, `AnalogView` for `compact` modules), and the
+view panel scrolls vertically (`overflowY: isPhone ? "auto" : "hidden"`) through the stacked strips
+and modules — `overflowX` stays `"hidden"` on the panel itself, since Analog's *Output level* dial
+grid carries its own horizontal scroll (`.ch-dial-scroll`) rather than relying on the panel. The
+rest is the web markup, which the stylesheet and `max-[720px]:` utilities adapt. An instrumental's silent
 vocals start muted on the first load; a vocals stem that failed to load isn't treated as silent.
 Seeking outside a set loop ends it, and a second loop press within 0.5 s of A is ignored. Stem
 faders go through `db()` and the master through `masterDb()`; the metronome is offered only for a
@@ -851,8 +859,8 @@ sets it off the page ground: a 44px cover tile, the title as an `h1` (the headin
 undone) over *author · length · N stems*, the view tabs, *Export stems* and *New track*. It wraps, so
 the actions drop to a second line before the title truncates. The subtitle's length is the decoded
 duration, not the server's, so it always matches the transport. The tablist uses roving `tabIndex`
-with Arrow/Home/End keys; tab ids derive from `panelId`. **No tabs render without `onViewChange`**,
-which is how phones get none; there is no other phone arrangement.
+with Arrow/Home/End keys; tab ids derive from `panelId`. `onViewChange` is always supplied — the
+tabs render at every width, `.ch-topbar`'s own `flex-wrap` giving them a second line on a phone.
 
 ### `results/AnalysisBar.tsx` — key, transpose, tempo, master (103 lines)
 **Exports:** `AnalysisBar`
@@ -936,14 +944,16 @@ below their content (`FitToPanel` scales the view instead). Below
 720px the stylesheet stacks it and holds MUTE/SOLO at a 44px hit height, and `max-[720px]:flex-none`
 keeps each stacked row its natural height (the view panel scrolls there).
 
-### `results/ConsoleView.tsx` — strips and metering (78 lines)
+### `results/ConsoleView.tsx` — strips and metering (~100 lines)
 **Exports:** `ConsoleView`
 **Imports from:** `audio/meters`, `audio/playbackEngine`, `design/player`, `hooks/useAnimationFrame`,
 `utils/levels`, `results/ConsoleStrip`, `results/MasterStrip`, `results/types`
 **Used by:** `results/ResultsScreen`
 **Notes:** a `.ch-striprow` of `ConsoleStrip`s, a divider, and the `MasterStrip`, filling any spare
 height in the view panel (`flex-1`), with no hairline of its own — the transport's closes it. Strips
-keep their 112px floor; `FitToPanel` guarantees the width for it. **Meters bypass
+keep their 112px floor; `FitToPanel` guarantees the width for it. **`isPhone`** renders the master
+strip first, ahead of the (now vertically stacked) `.ch-striprow`, both passed `compact` — see
+[Recorded decisions](../conventions/design.md#recorded-decisions). **Meters bypass
 React**: every frame, playing or not, it fills one `MeterReadings` through `readMeters` and writes
 `--l` onto each `[data-meter]` element (collected in a layout effect whenever the stem count
 changes), each with its own `LevelFollower` (24 dB/s release) and mapped through `STEM_METER_SCALE`,
@@ -952,7 +962,7 @@ re-renders never touch the imperatively written value. The master *Peak* is the 
 1.5 s hold, written into `MasterStrip`'s `peakRef` at 8 Hz.
 **See:** [../features/metering.md](../features/metering.md)
 
-### `results/ConsoleStrip.tsx` — one Console stem strip (90 lines)
+### `results/ConsoleStrip.tsx` — one Console stem strip (~95 lines)
 **Exports:** `ConsoleStrip`
 **Imports from:** `controls/Fader`, `controls/RoutingToggles`, `design/copy`, `design/player`,
 `utils/levels`, `results/types`
@@ -964,18 +974,25 @@ readouts and MUTE/SOLO. The label reads *Soloed*, *Muted*, *Silent* (a muted ins
 *Held* (another stem is soloed) or *Playing*. **It shows solo first, not the audio**: a
 soloed strip reads *Soloed* and lifts (`.is-active`) even when it is also muted, though mute wins in
 the engine and in `audible()`; a muted one dims (`.is-off`). The fader column is `flex-1` with a
-170px minimum, so the fader grows with spare height and never collapses.
+170px minimum, so the fader grows with spare height and never collapses (84px, tighter gaps and
+padding, when `compact`). **`compact`** (below 720px) switches the outer flex from a column to a
+wrapping row — name, fader-and-meter, then Level/Pan/routing side by side, wrapping to a second
+line where they don't all fit — turning the strip into a short horizontal bar instead of a tall
+column; `.ch-striprow` stacks these in a column on a phone
+([Recorded decisions](../conventions/design.md#recorded-decisions)).
 
-### `results/MasterStrip.tsx` — the Console's master strip (73 lines)
+### `results/MasterStrip.tsx` — the Console's master strip (~85 lines)
 **Exports:** `MasterStrip`, `MASTER_METER`
 **Imports from:** `controls/Fader`, `design/copy`, `design/player`, `utils/levels`
 **Used by:** `results/ConsoleView`
 **Notes:** a 190px raised panel: a `VerticalFader`, a stereo meter in the accent (`data-meter` =
 `MASTER_METER`, `"master"`), the `0 / −6 / −18 / −∞` `TICKS` that `masterDb()` and
 `MASTER_METER_SCALE` follow, then *Output*, *Peak* and *Metronome* readouts and *Export stems*.
-*Peak* starts at *−∞* and is rewritten by `ConsoleView` through `peakRef`.
+*Peak* starts at *−∞* and is rewritten by `ConsoleView` through `peakRef`. **`compact`** matches
+`ConsoleStrip`'s: a wrapping horizontal row, full width, with *Export stems* forced onto its own
+line (`flex: 1 0 100%`) since it never fits alongside the rest.
 
-### `results/AnalogView.tsx` — needle meters and knob modules (126 lines)
+### `results/AnalogView.tsx` — needle meters and knob modules (~128 lines)
 **Exports:** `AnalogView`
 **Imports from:** `audio/meters`, `audio/playbackEngine`, `design/copy`, `hooks/useAnimationFrame`,
 `utils/levels`, `results/AnalogModule`, `results/OutputDial`, `results/types`
@@ -985,14 +1002,18 @@ in-SVG type at 9px, which `FitToPanel` never lays the view out below — under t
 label, set off by the section's hairline rather than a panel, above a `.ch-striprow` of
 `AnalogModule`s in a section that fills any spare height (`flex-1`) and draws no hairline, since the
 transport's closes it. Both are always shown; a window too small for them scales the view instead of
-hiding or cropping anything. Output L/R (peak, 20 dB/s release), true peak (1.5 s hold),
+hiding or cropping anything. **`isPhone`** passes `compact` to each `AnalogModule` and drops the
+`alignItems: "stretch"` the modules' phone layout doesn't need. The dial grid's own div carries
+`.ch-dial-scroll`, which below 720px becomes its own `overflow-x: auto` region with a right-edge
+`mask-image` fade, independent of the view panel
+([Recorded decisions](../conventions/design.md#recorded-decisions)). Output L/R (peak, 20 dB/s release), true peak (1.5 s hold),
 momentary loudness (300 ms smoothing, *−∞* in silence) and correlation (300 ms smoothing); needles
 are rotated with `setAttribute` every frame and readouts rewritten at 8 Hz, both bypassing React.
 **In silence — paused included — correlation reads *—* and its needle eases back to 0**, since the
 value means nothing there.
 **See:** [../features/metering.md](../features/metering.md)
 
-### `results/AnalogModule.tsx` — one stem's knob module (92 lines)
+### `results/AnalogModule.tsx` — one stem's knob module (~100 lines)
 **Exports:** `AnalogModule`
 **Imports from:** `controls/Knob`, `controls/RoutingToggles`, `design/copy`, `design/player`,
 `utils/levels`, `results/types`
@@ -1001,7 +1022,10 @@ value means nothing there.
 and Pan knobs in `--color-neutral-700` ([Controls](../conventions/design.md#controls): only Level carries the hue), each
 with its value under its label ([Ground rules](../conventions/design.md#ground-rules); the template's
 harness drew them with a label only), and MUTE/SOLO. Like the Console strip it shows solo first: a soloed module lifts
-(`.is-active`) even when muted; a muted one dims.
+(`.is-active`) even when muted; a muted one dims. **`compact`** (below 720px) wraps the outer column
+into a row — name, knobs, then routing forced onto its own line (`flex: 1 0 100%`) — the same
+horizontal-bar treatment as `ConsoleStrip`
+([Recorded decisions](../conventions/design.md#recorded-decisions)).
 
 ### `results/OutputDial.tsx` — one needle meter (116 lines)
 **Exports:** `OutputDial`, `DialScale`, `OUTPUT_DIALS`, `NEEDLE_SWEEP_DEGREES`, `NEEDLE_MID_DEGREES`

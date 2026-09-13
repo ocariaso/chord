@@ -21,6 +21,8 @@ interface AnalogViewProps {
   stems: StemDisplay[];
   controls: StemControls;
   readMeters: (target: MeterReadings, now: number) => void;
+  /** Below 720px: horizontal modules stacked in a column instead of a row that scrolls sideways. */
+  isPhone?: boolean;
 }
 
 function needleDegrees(value: number, scale: DialScale): number {
@@ -33,7 +35,7 @@ function needleDegrees(value: number, scale: DialScale): number {
 }
 
 /** The Analog view: five output dials above a row of knob modules. The dials bypass React (design.md#metering). */
-export function AnalogView({ stems, controls, readMeters }: AnalogViewProps) {
+export function AnalogView({ stems, controls, readMeters, isPhone = false }: AnalogViewProps) {
   const needles = useRef<Partial<Record<DialKey, SVGLineElement | null>>>({});
   const readouts = useRef<Partial<Record<DialKey, HTMLSpanElement | null>>>({});
   const readingsRef = useRef(createMeterReadings());
@@ -87,6 +89,7 @@ export function AnalogView({ stems, controls, readMeters }: AnalogViewProps) {
           <div className="flex min-w-0 flex-1 flex-col" style={{ gap: "var(--space-4)" }}>
             <span className="ch-label">{resultsCopy.outputLevel}</span>
             <div
+              className="ch-dial-scroll"
               style={{
                 display: "grid",
                 // The 180px floor keeps the in-SVG type at 9px or more; FitToPanel never lays the view out narrower.
@@ -115,9 +118,9 @@ export function AnalogView({ stems, controls, readMeters }: AnalogViewProps) {
       </div>
       {/* The transport's top hairline closes this section, so it draws none of its own. */}
       <div className="ch-section flex flex-1" style={{ boxShadow: "none" }}>
-        <div className="ch-striprow" style={{ alignItems: "stretch" }}>
+        <div className="ch-striprow" style={{ alignItems: isPhone ? undefined : "stretch" }}>
           {stems.map((stem) => (
-            <AnalogModule key={stem.state.key} stem={stem} controls={controls} />
+            <AnalogModule key={stem.state.key} stem={stem} controls={controls} compact={isPhone} />
           ))}
         </div>
       </div>

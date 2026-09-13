@@ -311,8 +311,7 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
     silent: state.key === "vocals" && !hasVocals,
     envelope: envelopes[state.key] ?? null,
   }));
-  // Below 720px the results lock to the Mixer and the view tabs aren't rendered (design.md#responsive).
-  const view: ResultView = isPhone ? "mixer" : player.view;
+  const view = player.view;
 
   return (
     <>
@@ -325,7 +324,7 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
           stemCount={stems.length}
           view={view}
           panelId={VIEW_PANEL_ID}
-          onViewChange={isPhone ? undefined : (next) => dispatch({ type: "viewChanged", view: next })}
+          onViewChange={(next) => dispatch({ type: "viewChanged", view: next })}
           onExport={() => setExportOpen(true)}
           onNewTrack={onBack}
         />
@@ -350,14 +349,15 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
           instrumental={stems.some((stem) => stem.silent)}
         />
         {/* The view takes whatever height the bars leave, scaled down when it doesn't fit, so nothing is cropped and the
-            page never scrolls. On a phone six stacked stem rows can't fit and scaling would shrink their touch targets,
-            so this panel alone scrolls instead. */}
+            page never scrolls. On a phone, scaling would shrink touch targets and text below their floors, so scaling
+            is off and this panel scrolls vertically instead, through the stacked Mixer rows, Console strips and Analog
+            modules — each at full size. Analog's dial grid keeps its own horizontal scroll (`.ch-dial-scroll`). */}
         <div
           id={VIEW_PANEL_ID}
           className="flex min-h-0 flex-1 flex-col"
-          style={{ overflowY: isPhone ? "auto" : "hidden" }}
-          role={isPhone ? undefined : "tabpanel"}
-          aria-labelledby={isPhone ? undefined : `${VIEW_PANEL_ID}-${view}-tab`}
+          style={{ overflowY: isPhone ? "auto" : "hidden", overflowX: "hidden" }}
+          role="tabpanel"
+          aria-labelledby={`${VIEW_PANEL_ID}-${view}-tab`}
         >
           <FitToPanel enabled={!isPhone} minWidth={VIEW_MIN_WIDTH[view]}>
             {view === "mixer" && (
@@ -372,9 +372,10 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
                 metronome={player.metronome}
                 onExport={() => setExportOpen(true)}
                 readMeters={readMeters}
+                isPhone={isPhone}
               />
             )}
-            {view === "analog" && <AnalogView stems={stems} controls={controls} readMeters={readMeters} />}
+            {view === "analog" && <AnalogView stems={stems} controls={controls} readMeters={readMeters} isPhone={isPhone} />}
           </FitToPanel>
         </div>
         <Transport

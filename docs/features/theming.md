@@ -3,8 +3,10 @@
 Every accent-family color in Nocturne — `--color-accent`, `--color-accent-2` and their 100–900
 ramps — holds a fixed lightness and chroma per step, but reads its hue from one custom property,
 `--accent-hue`. [`useAccentHue`](../../web/src/hooks/useAccentHue.ts) samples the job's cover art
-once it exists and sets that property on `App`'s root div; with no thumbnail, no job, or a failed
-sample, nothing is set and Nocturne's default (229.6°, the brand blue) applies. See
+once it exists and sets that property on `document.documentElement` — the actual `:root`, since a
+nested element's override never reaches `oklch()` expressions declared at `:root` — with no
+thumbnail, no job, or a failed sample, nothing is set and Nocturne's default (229.6°, the brand
+blue) applies. See
 [A per-track accent hue](../architecture/decisions.md#a-per-track-accent-hue-driven-by-one-custom-property)
 for the mechanism and its cost, and [ground rule 6](../conventions/design.md#ground-rules) for why
 this is the one token family the design check lets a hook drive at runtime.

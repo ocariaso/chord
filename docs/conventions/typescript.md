@@ -69,9 +69,8 @@ disabled={!onToggleMetronome}
 
 The chips are disabled rather than removed, so the transport's layout never shifts. Prefer this
 over a separate `canChangeSpeed` boolean — the callback's absence *is* the condition, and it can't
-disagree with the handler. Below 720px the view tabs work the same way: the template locks the
-view there, so `ResultsScreen` passes no `onViewChange` and `ResultsTopbar` renders no tabs. A
-different *layout* is a prop instead — `Transport`'s `compact` swaps in the template's `.ch-m-bar`.
+disagree with the handler. A different *layout* is a prop instead — `Transport`'s `compact` swaps
+in the template's `.ch-m-bar` below 720px, without touching what the callback props do.
 
 ## State placement
 

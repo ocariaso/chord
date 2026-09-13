@@ -16,13 +16,13 @@ screens look like and say follows the design standard,
 | [Lyrics](lyrics.md) — synced and offset-corrected, or pasted | [`lyrics.py`](../../server/app/pipeline/lyrics.py), [`routes_analysis.py`](../../server/app/api/routes_analysis.py) | [`useLyrics.ts`](../../web/src/hooks/useLyrics.ts), [`LyricsDialog.tsx`](../../web/src/screens/results/LyricsDialog.tsx) |
 | [Transpose](transpose.md) | — | [`AnalysisBar.tsx`](../../web/src/screens/results/AnalysisBar.tsx), [`transpose.ts`](../../web/src/utils/transpose.ts) |
 | [Downloads](downloads.md) — the export dialog, per stem or zip | [`routes_stems.py`](../../server/app/api/routes_stems.py) | [`ExportDialog.tsx`](../../web/src/screens/results/ExportDialog.tsx) |
-| [Theming](theming.md) — the fixed palette, stem hues, cover art | [`thumbnail.py`](../../server/app/pipeline/thumbnail.py) | [`chord-theme.css`](../../web/src/styles/chord-theme.css), [`CoverArt.tsx`](../../web/src/components/CoverArt.tsx) |
+| [Theming](theming.md) — the per-track accent hue, stem hues, cover art | [`thumbnail.py`](../../server/app/pipeline/thumbnail.py) | [`chord-theme.css`](../../web/src/styles/chord-theme.css), [`CoverArt.tsx`](../../web/src/components/CoverArt.tsx) |
 | [Progress, cancellation and resume](../architecture/job-lifecycle.md) | [`routes_jobs.py`](../../server/app/api/routes_jobs.py), [`pipeline.py`](../../server/app/pipeline/pipeline.py) | [`ProcessingScreen.tsx`](../../web/src/screens/processing/ProcessingScreen.tsx), [`FailurePanel.tsx`](../../web/src/screens/failure/FailurePanel.tsx) |
 
 ## The user's path through them
 
 ```
-paste a link ─┐                                                   ┌─► Mixer    default; the only view at ≤720px
+paste a link ─┐                                                   ┌─► Mixer    default; all three reachable at ≤720px
               ├─► processing ──► stems load ──► results screen ───┼─► Console  vertical faders, meters
 drop a file ──┘   live progress,  in the          │               └─► Analog   knobs, needle meters
                   cancel, resume  browser         │

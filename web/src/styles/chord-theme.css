@@ -626,4 +626,18 @@
   .ch-stemrow-routing { order: 4; flex: 1 0 100%; }
   .ch-stemrow-routing .ch-toggle { min-height: 44px; }
   .ch-wave { order: 5; flex: 1 0 100%; }
+
+  /* Console strips, the master strip and Analog modules go horizontal (design.md#recorded-decisions)
+     and this stacks them in a column instead of the row that needs `.ch-striprow`'s own scrollbar. */
+  .ch-striprow { flex-direction: column; overflow-x: visible; }
+  .ch-strip, .ch-module { flex: none; width: 100%; min-width: 0; }
+  .ch-strip .ch-toggle, .ch-module .ch-toggle { min-height: 44px; }
+
+  /* The dial grid alone keeps its own horizontal scroll (five 180px dials never fit a phone), with a
+     right-edge fade so the cut-off reads as "more here" instead of clipped content. */
+  .ch-dial-scroll {
+    overflow-x: auto;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  }
 }

@@ -251,9 +251,18 @@ is `flex-1 min-h-0` and shares out the height it gets instead of overflowing:
   available, their rows filling the width.
 - **Between 720px and a view's floor** it scales down to keep that floor rather than scrolling or
   cropping — in practice this is Console and Analog, since Mixer's floor already holds at 720px.
-- **Below 720px, results** lock to the Mixer, with no view tabs. The stylesheet stacks the
-  `.ch-stemrow` rows with 44px MUTE/SOLO targets, the Mixer's column labels and the analysis bar's
-  dividers are hidden, and the transport becomes `.ch-m-bar`: play, seek and the Click chip.
+- **Below 720px, results** keep all three view tabs. The stylesheet stacks the `.ch-stemrow` rows
+  with 44px MUTE/SOLO targets, the Mixer's column labels and the analysis bar's dividers are
+  hidden, and the transport becomes `.ch-m-bar`: play, seek and the Click chip. Console and Analog
+  can't shrink to a phone's width without breaking their floors, so `FitToPanel` stays off for them
+  there too, and `ConsoleStrip`/`MasterStrip`/`AnalogModule` take a `compact` prop that turns each
+  from a tall column into a short horizontal bar (name, controls and routing side by side, wrapping
+  to a second line where they don't fit, routing always forced to its own line); `.ch-striprow`
+  itself stacks these bars in a column instead of scrolling them sideways, and `ConsoleView` puts
+  the master strip first. Only Analog's *Output level* dial grid still scrolls — horizontally, on
+  its own (`.ch-dial-scroll`), with a right-edge fade — since five 180px dials have no shorter form.
+  Every strip, module and dial still renders at its full floor size; nothing is cropped or shrunk
+  (see [Recorded decisions](#recorded-decisions)).
 - **Below 720px, landing and processing** switch to their own phone arrangements on `PHONE_QUERY`.
 
 ## Accessibility
@@ -327,7 +336,9 @@ taken. *Template* is what the retired files said or drew.
 
 | Where | Template | App | Why |
 | --- | --- | --- | --- |
-| Results below 720px | the harness drew a separate phone frame: stem cards, a compact header | the desktop screen reflowed, locked to the Mixer | the written guide asked for it, and its rules outranked the demo |
+| Results below 720px | the harness drew a separate phone frame: stem cards, a compact header | the desktop screen reflowed; the Mixer stacks its rows, Console and Analog turn each strip/module into a horizontal bar and stack those instead of scaling down | the guide's rules outranked the demo, but locking Console and Analog away entirely made them unreachable on a phone, and a sideways-scrolling row of full-size strips was still awkward to reach; a stacked column of horizontal bars keeps every floor the guide set without either |
+| Console's master strip below 720px | n/a — the harness never drew a phone Console | listed first, above the stem strips | the owner asked for it; on a stacked phone list, master-first reads like a mixing desk's summing bus at the top |
+| Analog's Output level dial grid below 720px | n/a | keeps its own horizontal scroll, with a right-edge fade | the owner didn't want it stacked — five 180px VU dials would waste a lot of vertical space as a read-only list — but the plain cut-off edge read as broken rather than scrollable, so a `mask-image` fade signals there's more |
 | A stacked stem row below 720px | the README: "name + dB on line one, fader on line two" | the name alone on line one, the dB beside its fader on line two | the guide's markup, the harness and the stylesheet all nest the value in `.ch-stemrow-level`; lifting it out would break the 150px level column on the web |
 | Analog Tone and Pan knobs | a label, no value | the value under each label | every control carries a label and a value |
 | A Mixer waveform while another stem is soloed | the harness dimmed a waveform only when its own stem was muted | dimmed whenever the stem isn't `audible()`, held stems included | the guide's markup |

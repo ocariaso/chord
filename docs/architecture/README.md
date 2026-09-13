@@ -125,8 +125,8 @@ App.tsx               no screen state: activeJobId, then the job's status, decid
    ├─ ProcessingScreen    five-stage list, progress, cancel
    ├─ FailurePanel        job error, cancelled (resume), connection lost, job not found
    └─ ResultsScreen       loads the stems; the engine and the design's PlayerState for all three views
-         ├─ ResultsTopbar, AnalysisBar, ChordBar    always mounted; no view tabs below 720px
-         ├─ MixerView | ConsoleView | AnalogView    one at a time; Mixer only below 720px
+         ├─ ResultsTopbar, AnalysisBar, ChordBar    always mounted; tabs available at every width
+         ├─ MixerView | ConsoleView | AnalogView    one at a time; all three reachable below 720px
          ├─ Transport                               play, seek, speed, loop, metronome; play, seek, Click below 720px
          └─ ExportDialog, LyricsDialog              on demand
 
