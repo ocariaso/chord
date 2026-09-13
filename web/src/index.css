@@ -3,11 +3,19 @@
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
 }
 
+html {
+  background: var(--ch-well);
+}
+
+/* The harness's canvas in tokens: a raised glow at the top left falling away to the well. It covers the
+   first screen; a longer page carries on in the well colour the gradient ends at, so there is no seam. */
 body {
   margin: 0;
+  background: radial-gradient(120% 90% at 18% 0%, var(--ch-panel-raised) 0%, var(--color-bg) 55%, var(--ch-well) 100%) top /
+    100% 100vh no-repeat;
 }
 
 button:not(:disabled) {
@@ -16,23 +24,4 @@ button:not(:disabled) {
 
 button:disabled {
   cursor: not-allowed;
-}
-
-@keyframes marquee-loop {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(var(--marquee-distance, 0px));
-  }
-}
-
-@keyframes eq-bounce {
-  0%,
-  100% {
-    transform: scaleY(0.25);
-  }
-  50% {
-    transform: scaleY(1);
-  }
 }

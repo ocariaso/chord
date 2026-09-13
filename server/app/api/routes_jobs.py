@@ -1,5 +1,4 @@
 import asyncio
-import json
 import shutil
 import uuid
 from pathlib import Path
@@ -7,6 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from starlette import status
+from starlette.concurrency import run_in_threadpool
 
 from app.db.database import db_cursor, now_iso
 from app.models.schemas import STEM_NAMES, CreateJobFromUrlRequest, JobResponse, JobStatus
@@ -28,8 +28,10 @@ def _row_to_response(row) -> JobResponse:
         progress=row["progress"],
         stage_message=row["stage_message"],
         error_message=row["error_message"],
+        error_log=row["error_log"],
         stems_model=row["stems_model"],
         duration_seconds=row["duration_seconds"],
+        audio_format=row["audio_format"],
         key_estimate=row["key_estimate"],
         key_confidence=row["key_confidence"],
         tempo_bpm=row["tempo_bpm"],
@@ -41,6 +43,13 @@ def _row_to_response(row) -> JobResponse:
 
 
 ALLOWED_UPLOAD_EXTENSIONS = {".mp3", ".flac"}
+_UPLOAD_COPY_CHUNK_BYTES = 1024 * 1024
+
+
+def _save_upload(file: UploadFile, destination: Path) -> int:
+    with destination.open("wb") as out:
+        shutil.copyfileobj(file.file, out, _UPLOAD_COPY_CHUNK_BYTES)
+    return destination.stat().st_size
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
@@ -54,10 +63,10 @@ async def create_job(file: UploadFile) -> JobResponse:
     directory.mkdir(parents=True, exist_ok=True)
     original_path = directory / f"original{extension}"
 
-    contents = await file.read()
-    if not contents:
+    # Streamed to disk off the event loop: a twelve-minute lossless file is hundreds of MB.
+    if await run_in_threadpool(_save_upload, file, original_path) == 0:
+        shutil.rmtree(directory, ignore_errors=True)
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
-    original_path.write_bytes(contents)
 
     timestamp = now_iso()
     with db_cursor() as cur:
@@ -139,6 +148,27 @@ async def cancel_job(job_id: str) -> JobResponse:
     return _row_to_response(_get_job_row(job_id))
 
 
+@router.post("/{job_id}/resume", status_code=status.HTTP_202_ACCEPTED, response_model=JobResponse)
+async def resume_job(job_id: str) -> JobResponse:
+    """Re-queues a cancelled job. Bumping `attempt` retires the cancelled run, which may still be
+    finishing its current stage, so the two can never write over each other."""
+    row = _get_job_row(job_id)
+    if row["status"] != JobStatus.CANCELLED.value:
+        raise HTTPException(status_code=409, detail="Only a cancelled job can be resumed")
+
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            UPDATE jobs SET status = ?, progress = 0, stage_message = NULL, error_message = NULL,
+                            error_log = NULL, attempt = attempt + 1, updated_at = ?
+            WHERE id = ?
+            """,
+            (JobStatus.QUEUED.value, now_iso(), job_id),
+        )
+    enqueue(job_id)
+    return _row_to_response(_get_job_row(job_id))
+
+
 @router.post("/{job_id}/discard", status_code=status.HTTP_204_NO_CONTENT)
 async def discard_job(job_id: str) -> None:
     """Cancels a still-running job or deletes a finished one, so leaving the page cleans it up."""
@@ -157,6 +187,9 @@ async def discard_job(job_id: str) -> None:
 
 @router.get("/{job_id}/events")
 async def job_events(job_id: str) -> StreamingResponse:
+    # Looked up before the stream opens: once the 200 has gone out, a missing job can only drop the connection.
+    _get_job_row(job_id)
+
     async def event_stream():
         last_payload = None
         while True:

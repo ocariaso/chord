@@ -28,7 +28,6 @@ async def get_stem(job_id: str, stem_name: str) -> FileResponse:
     if not stem_path.exists():
         raise HTTPException(status_code=404, detail="Stem not ready")
 
-    # FileResponse supports HTTP range requests, which <audio> needs to seek.
     return FileResponse(stem_path, media_type="audio/wav")
 
 

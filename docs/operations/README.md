@@ -41,7 +41,12 @@ location /api/ { proxy_pass http://server:8000/; }
 - **Docker** with Compose v2 (`docker compose`, not `docker-compose`).
 - For the GPU path: an NVIDIA driver, `nvidia-smi` on `PATH`, and the NVIDIA Container Toolkit.
   Without them everything still works on CPU, several times slower.
-- Disk: several hundred MB for the Demucs weights, plus ~250 MB per song being worked on.
+- Disk: several hundred MB for the Demucs weights, plus ~250 MB of stems per four-minute song
+  being worked on (~830 MB for a twelve-minute track at 48 kHz).
+- **A browser on a secure origin** for every feature. Pitch-preserving speed runs in an
+  AudioWorklet, which browsers expose only over HTTPS or on `localhost`; reached over plain HTTP
+  by LAN address, everything else works and the speed control is disabled. The tab also holds all
+  six decoded stems — about half a gigabyte for a four-minute song.
 
 ## First run
 

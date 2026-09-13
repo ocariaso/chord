@@ -16,6 +16,10 @@ class Settings(BaseSettings):
 
     enable_chord_detection: bool = True
 
+    # Longer tracks are refused before separation: six decoded stems of a long mix outgrow what a
+    # browser tab can hold. The landing page's "up to 12 minutes" copy assumes the default; 0 disables.
+    max_duration_seconds: float = 720
+
     cors_origins: list[str] = ["http://localhost:5173"]
 
 

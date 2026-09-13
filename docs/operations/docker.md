@@ -79,7 +79,7 @@ services:
 It changes two things at once, and the distinction matters:
 
 - **`TORCH_INDEX_URL` is a build argument** — it selects the CUDA 12.4 torch wheel instead of
-  the CPU one. Changing it requires a **rebuild**, not just a restart.
+  the CPU one. Changing it requires a **rebuild**; a restart isn't enough.
 - **`DEVICE` is runtime** — it tells [`separation.py`](../../server/app/pipeline/separation.py)
   to ask for CUDA. That module falls back to CPU if `torch.cuda.is_available()` is false, so a
   CUDA-built image on a machine with no visible GPU degrades rather than crashing.
@@ -164,10 +164,12 @@ build** — the type check is not skippable in the Docker path.
 
 ## nginx
 
-[`web/nginx.conf`](../../web/nginx.conf) does three jobs:
+[`web/nginx.conf`](../../web/nginx.conf) does four jobs:
 
 ```nginx
 location /api/ {
+    client_max_body_size 512m;           # uploads: nginx's default is 1 MB
+
     proxy_pass http://server:8000/;      # trailing slash strips the /api prefix
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -185,8 +187,12 @@ location / { try_files $uri $uri/ /index.html; }   # SPA fallback
   Removing it would break every route.
 - The three SSE directives are all required. Without `proxy_buffering off` the progress stream
   arrives in one lump at the end; without the timeout it drops mid-separation.
-- `client_max_body_size` is **not set**, so nginx's 1 MB default applies to uploads through the
-  proxy. See [troubleshooting.md](troubleshooting.md#uploads-fail-with-413).
+- **`client_max_body_size 512m`**, scoped to `/api/`, is sized for a twelve-minute lossless
+  upload; nginx's 1 MB default would refuse any real audio file. A larger body gets nginx's own
+  HTML 413 page and never reaches FastAPI; the web client recognizes the status and shows *"That
+  file is larger than the server accepts."* The server sets no limit of its own, so any other
+  proxy put in front needs an equivalent setting. See
+  [troubleshooting.md](troubleshooting.md#uploads-over-512-mb-fail).
 
 ## Common commands
 

@@ -29,6 +29,9 @@ per-frame labels rather than the clean segment boundaries the timeline needs.
 All three processors are lazily constructed module-level singletons, the same pattern as the
 Demucs separator — construction loads model data and is not cheap.
 
+Analysis runs on the original mix after separation and tempo detection, at progress `0.6` with the
+stage message *Detecting chords and key*.
+
 ## Label normalization
 
 madmom's two models disagree with each other *and* with the rest of the app, so both are
@@ -40,7 +43,7 @@ normalized on the way in. Everything downstream of this module deals only in sha
 | --- | --- |
 | `C:maj` | `C` |
 | `C:min` | `Cm` |
-| `N` | `N` (no chord — the UI renders it as `-`) |
+| `N` | `N` (no chord — the UI renders it as `—`) |
 | anything else, e.g. `C:7` | `C7` (root + quality appended verbatim) |
 
 **Key labels**: the key model names some keys with flats (`Db major`). `_FLAT_TO_SHARP` maps all
@@ -80,11 +83,12 @@ Note that `total_duration` matches on **root only**, via `_ROOT_RE` — so `C`, 
 which exact chord.
 
 `confidence` is carried over unchanged even when the key is flipped, so the number does not
-reflect the swap.
+reflect the swap. That now shows: the analysis bar prints it next to the key as *NN% confident*,
+and after a flip that percentage is the model's confidence in the key it originally chose.
 
-This is a heuristic and can be wrong on modal or chromatic material. The UI's answer to that is
-the manual [transpose](transpose.md) control, whose tooltip says so explicitly: *"Adjust the key
-if detected wrong. This will transpose the chords accordingly."*
+This is a heuristic and can be wrong on modal or chromatic material. The UI's answer is the manual
+[transpose](transpose.md) control beside the key, whose hint reads *semitones · chords follow* —
+shifting it moves the key label and every chord together.
 
 ## Outputs, and where each one goes
 
@@ -103,37 +107,70 @@ artifact; it's the only place the structured `{key, mode, confidence}` survives.
 
 `ChordSegment.confidence` is **hardcoded to `1.0`** for every segment. The field exists in the
 schema and crosses the wire, but carries no information — the CRF decoder's per-segment
-likelihood isn't extracted. Nothing in the UI reads it.
+likelihood isn't extracted. Nothing in the UI reads it. (`key_confidence`, by contrast, is
+displayed.)
 
 ## Turning it off
 
 `ENABLE_CHORD_DETECTION=false` makes `run_job` skip the whole block: no `analyzing` status, no
 `analysis/` directory, no `key_estimate`. Jobs still complete with stems and tempo. On the
-client, `getChords` then 404s, the `.catch` leaves `chordSegments` empty, and `ChordTimeline`
-returns `null` early (`if (segments.length === 0) return null`) — so the Simple view simply has
-no timeline and the Studio LCD shows `—`. Nothing errors.
+client, `getChords` then 404s, `ResultsScreen`'s `.catch` stores `null`, and the chord bar replaces
+the strip with *No chord analysis for this track.*; the chord readout shows `—`, and the key reads
+`—` with no confidence. Nothing errors.
 
 This is also the escape hatch if madmom's install breaks; see
 [madmom is patched in place](../architecture/decisions.md#madmom-is-patched-in-place).
 
 ## Client rendering
 
-Fetched once per job in `StemMixer` and passed to both views.
+`ResultsScreen` fetches the segments once per job and holds a three-state value: `undefined` while
+the request is out, `null` when there is no analysis, otherwise the list. Everything is drawn by
+[`ChordBar.tsx`](../../web/src/screens/results/ChordBar.tsx), which renders once above whichever
+[view](results-views.md) is showing; the key is drawn by
+[`AnalysisBar.tsx`](../../web/src/screens/results/AnalysisBar.tsx). Both look the same at every
+width.
 
-- **Simple** — [`ChordTimeline.tsx`](../../web/src/components/ChordTimeline.tsx): the active
-  chord large, the next five progressively dimmed (`UPCOMING_OPACITY`), plus a proportional
-  segment bar where each segment's width is `(end - start) / duration` and the active one takes
-  the accent color. A white playhead is positioned by percentage, and `useSeekDrag` on the bar
-  makes it click-and-drag seekable.
-- **Studio** — [`MasterUnit.tsx`](../../web/src/components/studio/MasterUnit.tsx): the same data
-  on a simulated LCD, in Orbitron with a green text-shadow glow, upcoming chords fading through
-  a hardcoded green ramp (`UPCOMING_COLORS`).
+**The readout row.** The active chord in `.ch-chord-now`, then the next three chords — skipping
+`N` segments — stepping down through the neutral ramp (500, 600, 700), then `m:ss / m:ss` at the end
+of the row. Where no segment is active, or the active segment is `N`, the readout is `—`.
 
-Both find the active chord with the same linear scan:
+**The strip.** `.ch-chordstrip` holds one `.ch-chord` per segment, each with `flex: end − start`,
+so widths are proportional to duration. Spacers before the first segment and after the last keep
+those gaps at their share, since the strip spans the whole track (`max(duration, last end)`). The
+active segment takes `.is-current` (an accent fill) and earlier ones `.is-past`.
+
+A segment shows its label only when there is room: its width in pixels — from the strip's
+`ResizeObserver`-measured width — must be at least `7 px × label length + 8 px`, and `N` segments
+never show one. The reason is in the code: a clipped label would read as a different chord (`C#m7`
+cut to `C#`). Labels are the transposed ones, and so is the length used for the room check. A
+segment carries no hover `title`, so a chord too narrow for its label is a blank on the strip; the
+readout row names it only once it is current or one of the next three.
+
+On the strip sits the playhead (`--p`) and nothing else: an A–B loop isn't marked there (see
+[speed and loop](speed-and-loop.md#ab-loop)). The strip seeks on press and drag through
+[`useSeekDrag`](../../web/src/hooks/useSeekDrag.ts); it is `aria-hidden`, because the transport's
+seek slider is the accessible way to seek.
+
+**The key.** `transposeKeyLabel(key_estimate, transpose)` in 26 px, or `—`, followed by
+`Math.round(key_confidence × 100)% confident` when a confidence exists.
+
+The active segment is found with a linear scan:
 
 ```ts
-segments.findIndex((s) => currentTime >= s.start && currentTime < s.end)
+list.findIndex((segment) => currentTime >= segment.start && currentTime < segment.end)
 ```
 
-Run every animation frame, on a few hundred segments. Fine in practice; the first thing to
-optimize if the timeline ever gets long.
+`ChordBar` re-renders every frame while playing (see
+[rendering cost](results-views.md#rendering-cost)), and each render also rebuilds every segment's
+label and width. Fine for a few hundred segments; the first thing to optimize if the timeline ever
+gets long.
+
+## Known gaps
+
+- `ChordSegment.confidence` is a constant, and `key_confidence` isn't corrected after a relative-key
+  flip.
+- `key.json` is unserved.
+- Outside every segment — before the first or after the last — no segment is active, so the
+  next-three list starts again from the top of the song.
+- A segment too narrow for its label has no hover `title`, so it can't be read on the strip.
+- Sharps only, in both the key and the chords.

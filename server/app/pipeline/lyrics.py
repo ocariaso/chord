@@ -55,6 +55,17 @@ def _parse_synced_lyrics(raw: str) -> list[dict]:
     return lines
 
 
+def parse_lyrics_text(text: str) -> dict | None:
+    """Turns pasted lyrics into a lyrics result: any LRC timestamps make it synced, otherwise it is plain."""
+    text = text.strip()
+    if not text:
+        return None
+    synced = _parse_synced_lyrics(text)
+    if synced:
+        return {"synced": synced, "plain": "\n".join(line["text"] for line in synced)}
+    return {"synced": None, "plain": text}
+
+
 def _vocal_activity(vocals_path: Path) -> np.ndarray | None:
     data, sr = sf.read(str(vocals_path), always_2d=False)
     if data.ndim > 1:

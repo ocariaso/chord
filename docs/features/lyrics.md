@@ -1,18 +1,20 @@
 # Lyrics
 
 Time-synced lyrics from [lrclib.net](https://lrclib.net), a free crowdsourced LRC database with
-no API key, plus an offset correction that aligns them to the separated vocals stem.
+no API key, plus an offset correction that aligns them to the separated vocals stem. When the lookup
+finds nothing, the user can paste lyrics — plain or LRC — and they replace the lookup for that job.
 
 This is the only feature fetched **on demand by an API handler** rather than produced by the
 pipeline — see [why](../architecture/decisions.md#lyrics-are-fetched-by-the-api-not-the-pipeline).
 
 ## Request flow
 
-`GET /jobs/{job_id}/lyrics`, handled by
-[`routes_analysis.py`](../../server/app/api/routes_analysis.py):
+`GET /jobs/{job_id}/lyrics`, handled by `get_lyrics` in
+[`routes_analysis.py`](../../server/app/api/routes_analysis.py) — a plain `def`, so FastAPI runs it
+in its threadpool, and a lookup that takes seconds holds up no other request or event stream:
 
 ```
-analysis/lyrics.json exists?
+analysis/lyrics.json exists?                                ← a lookup's result, or saved by hand
    ├─ yes ─► contents === null ? → 404 "No lyrics found"
    │          otherwise         → return it
    └─ no  ─► read original_filename, author, duration_seconds from the row
@@ -30,7 +32,8 @@ analysis/lyrics.json exists?
 next mount short-circuits to a 404 instead of re-querying lrclib. Without that, every remount
 of the mixer would hit the network for a song that has no lyrics.
 
-The cache has no invalidation: once written, that file is the answer for the life of the job.
+The lookup cache has no invalidation. The one thing that replaces it is
+[saving lyrics by hand](#manual-entry), which overwrites the file — a cached `null` included.
 
 ## Guessing the track and artist
 
@@ -70,15 +73,22 @@ a lrclib outage degrades to "no lyrics", never an error.
 The 10 s timeout is per client, and the retry across candidates means a worst case of roughly
 four sequential requests before giving up.
 
+`duration_seconds` is on the row from the start of separation, well before anyone can open the
+results, so the precise path is available to every lookup.
+
 ## LRC parsing
 
 `_parse_synced_lyrics` matches `[mm:ss.xx] text` with
 `re.compile(r"\[(\d+):(\d+(?:\.\d+)?)](.*)")`, converts to seconds
 (`minutes * 60 + seconds`, rounded to 2 dp), drops lines whose text is empty (LRC files use
-those as spacers), and sorts by time.
+those as spacers), and sorts by time. It parses lrclib's `syncedLyrics` and pasted text alike.
 
 Unparseable lines — including LRC metadata tags like `[ar:...]` and `[by:...]`, which don't match
-the numeric pattern — are skipped silently.
+the numeric pattern — are skipped silently. Two consequences:
+
+- `[offset:...]` is a metadata tag too, so an LRC file's own offset is **ignored**.
+- A line carrying several timestamps (`[00:12.00][00:45.00]Chorus`) keeps only the first time,
+  and the second timestamp stays in the text.
 
 ## Offset correction
 
@@ -129,46 +139,102 @@ Applied in the route, clamped so no line goes negative:
 line["time"] = round(max(0.0, line["time"] + offset), 2)
 ```
 
+Offset correction runs only on the lookup path. Lyrics saved by hand are never shifted.
+
+## Manual entry
+
+`PUT /jobs/{job_id}/lyrics`, JSON body `{"text": "..."}`, handled by `save_lyrics` in
+[`routes_analysis.py`](../../server/app/api/routes_analysis.py):
+
+1. 404 *"Job not found"* when there is no such row. The job's status isn't checked.
+2. `parse_lyrics_text(text)` in [`lyrics.py`](../../server/app/pipeline/lyrics.py) strips the text:
+   - blank → `None` → 400 *"Paste the lyrics before saving"*;
+   - any line with an LRC timestamp → `{"synced": <parsed lines>, "plain": <their text joined by newlines>}`;
+   - otherwise → `{"synced": null, "plain": <the text>}`.
+3. Writes the result to `analysis/lyrics.json`, creating `analysis/` if needed and replacing
+   whatever was there.
+4. Returns it as a `LyricsResponse`.
+
+**No offset correction** is applied to pasted LRC. The person pasting chose that timing, so it is
+kept exactly as given.
+
+The synced rule is all-or-nothing: once any line has a timestamp, lines without one are dropped
+entirely, and `plain` is rebuilt from the timed lines alone. `SaveLyricsRequest` caps the text at
+100 000 characters; a longer paste fails FastAPI's validation with a 422 whose `detail` is a list,
+which the client can't show, so the dialog reads *Failed to save lyrics (422)*.
+
 ## Client side
 
-[`useLyrics(jobId)`](../../web/src/hooks/useLyrics.ts) fetches once per job and returns a
-three-state value, because the UI shows three different things:
+[`useLyrics(jobId)`](../../web/src/hooks/useLyrics.ts) fetches once per job — from the moment
+`ResultsScreen` mounts, in parallel with the stem downloads — and returns `[lyrics, replaceLyrics]`.
+The value has three states, because the UI shows three different things, and it is keyed by job id
+so a new job reads as loading until its own lookup answers:
 
-| Value | Meaning | Displayed |
+| Value | Meaning |
+| --- | --- |
+| `undefined` | still loading |
+| `null` | confirmed none (a 404, or any error) |
+| `Lyrics` | found, or saved by hand |
+
+`replaceLyrics` takes the result of a save. `getLyrics` in
+[`client.ts`](../../web/src/api/client.ts) is the only API function that maps a 404 to a value
+rather than throwing — "this song has no lyrics" is a normal outcome.
+
+### The lyric row
+
+[`ChordBar.tsx`](../../web/src/screens/results/ChordBar.tsx) renders one row under the chord strip,
+the same at every width. Its states and strings are the template's:
+
+| Lyrics | Label | Shows |
 | --- | --- | --- |
-| `undefined` | still loading | `"Looking for lyrics…"` |
-| `null` | confirmed none (404, or an error) | `"No lyrics found"` |
-| `Lyrics` | found | the current line |
+| `undefined` | Lyrics | *Looking for lyrics…* |
+| synced, at least one line | Lyric | the current line as plain text; before the first timed line, the first line, dimmed |
+| plain only | Lyrics | *Found, not synced — no timing available.* and **Open lyric sheet** |
+| `null` | Lyrics | *None found for this track.* and **Add lyrics manually** |
 
-`getLyrics` in [`client.ts`](../../web/src/api/client.ts) is the only API function that maps a
-404 to a value rather than throwing — "this song has no lyrics" is a normal outcome.
-
-[`utils/lyrics.ts`](../../web/src/utils/lyrics.ts) turns that into text, with two entry points:
-
-- `lyricsDisplayLine(lyrics, currentTime)` — always returns a string, including the status
-  messages above and `"Lyrics found (not synced)"` when only plain lyrics exist. Falls back to
-  `"♪ ♪"` before the first timed line. Used by the Studio vocals amp.
-- `currentLyricLine(lyrics, currentTime)` — returns the current line or `null`, with no status
-  text. Used by the Simple view's chord timeline, which shouldn't show plumbing messages.
-
-Both find the line with a linear scan that relies on the sorted order and breaks early:
+`currentLineIndex(lines, time)` in [`utils/lyrics.ts`](../../web/src/utils/lyrics.ts) finds the line
+with a linear scan that relies on the sorted order and breaks early, returning −1 before the first
+line:
 
 ```ts
-for (const line of lines) {
-  if (line.time <= currentTime) current = line.text;
+for (let i = 0; i < lines.length; i++) {
+  if (lines[i].time <= currentTime) index = i;
   else break;
 }
 ```
 
-Called every animation frame. `O(n)` per frame on a few hundred lines with an early exit — fine,
-but the obvious candidate if the render loop ever needs tightening.
+It runs every frame while playing. `O(n)` per frame on a few hundred lines with an early exit —
+fine, but the obvious candidate if the render loop ever needs tightening.
 
-**Both are gated on `hasVocals`** in `StemMixer`, so an instrumental — whose vocals stem is
-near-silent rather than absent — shows no lyric line and no status message at all. Only the
-Studio **vocals** amp receives a `lyricLine` prop; the other five amps never see one.
+**The row renders for every track, instrumentals included.** Judging a vocals stem silent mutes it
+and marks it on the mixer, but leaves the lyric row alone: an instrumental shows whatever the lookup
+found — usually *None found for this track.* with *Add lyrics manually* — like any other song.
 
-## Plain (unsynced) lyrics
+### The lyric sheet and manual entry
 
-If lrclib has only `plainLyrics`, the result carries `plain` with `synced: null`. The UI does
-not render the text — it shows `"Lyrics found (not synced)"` and nothing else. The full plain
-text crosses the wire and is cached but is currently unused by any view.
+[`LyricsDialog.tsx`](../../web/src/screens/results/LyricsDialog.tsx) has two modes, both on the
+shared [dialog](results-views.md#dialogs) at 560 px wide, and each opens from exactly one row state:
+
+| Mode | Opened by | Content | Actions |
+| --- | --- | --- | --- |
+| *Lyric sheet* | **Open lyric sheet**, on the plain-only row | the plain lyrics with their line breaks, scrolling past 60% of the viewport's height | *Close* |
+| *Add lyrics* | **Add lyrics manually**, on the none-found row | an empty, focused textarea and the hint *Paste plain lyrics, or LRC lines such as [01:24.50] to sync them to the track.* | *Cancel*, *Save lyrics* (disabled while saving or while the text is blank) |
+
+*Save lyrics* sends the text to `PUT /jobs/{job_id}/lyrics` through `saveLyrics`. On success,
+`ResultsScreen` stores the result with `replaceLyrics` and closes the dialog, so the row changes
+state at once — pasted plain text gives the sheet button, pasted LRC the synced line. On failure the
+dialog stays open with a *Lyrics weren't saved* alert carrying the server's message.
+
+Plain lyrics were fetched and cached before this dialog existed but never shown; the sheet is now
+where they appear. Synced lyrics have no sheet: their text shows one line at a time, in the row.
+
+## Known gaps
+
+- Lyrics can't be replaced once there are some. *Add lyrics manually* is offered only when none
+  were found, so wrong timing, a wrong match or a mistake in a paste can't be corrected from the
+  page — only by a `PUT` from outside it, which an open results screen doesn't fetch again.
+- Synced lyrics can't be read as a sheet; the sheet opens only for plain lyrics.
+- An LRC file's `[offset:]` tag is ignored, and lines with several timestamps keep the extras in
+  their text.
+- A paste mixing timed and untimed lines silently loses the untimed ones.
+- One line at a time; no word-level timing.

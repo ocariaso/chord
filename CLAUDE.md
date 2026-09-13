@@ -48,11 +48,26 @@ intent — update them when *behavior* changes, not when a file moves.
 - **The API contract is duplicated by hand** between `server/app/models/schemas.py` and
   `web/src/api/client.ts`. Nothing enforces agreement; a rename on one side silently breaks the
   other. See [`docs/api/contract-sync.md`](docs/api/contract-sync.md).
-- **`PlaybackEngine` is the only audio truth.** WaveSurfer instances draw only.
+- **`PlaybackEngine` is the only audio truth.** Meters and dial needles bypass React —
+  `useAnimationFrame` writes them to the DOM every frame — and pitch-preserving speed runs in the
+  `chord-stretch` AudioWorklet (`web/src/audio/stretchProcessor.js`, plain JS), which the engine
+  drives only by `postMessage`.
+- **Styling is the vendored `ch-`/Nocturne classes in `web/src/styles/`.** Runtime values reach
+  them as CSS custom properties (`--v`, `--l`, `--p`, `--stem`), never as inline geometry. Inline
+  styles either repeat the harness's own declarations, with tokens for any value a token carries,
+  or do layout; Tailwind is layout only. No new colors. `npm run lint` checks the mechanical part
+  (`web/scripts/check-design.mjs`).
 - **Comments explain *why*, never *what*.** Empty `catch` blocks are always annotated with the
   reason nothing is done. Match that.
-- The Studio view's six amps are **deliberately duplicated** presentational code — don't
-  refactor them into a shared shell.
+- **`web/template/` is the source of truth for design and UX.** When its parts disagree, the
+  written rules (`web/template/template/INSTRUCTIONS.md`, `README.md`) win, then the vendored
+  stylesheets, then the harness `web/template/CHORD Template.dc.html` — which renders every screen
+  and state at web and phone widths — then the Mockups board. Screens under `web/src/screens/`
+  follow the harness markup element for element, and every string they render lives in
+  `web/src/design/copy.ts`, error text from the API and the event stream aside. The rules, the
+  recorded exceptions and what to do where the template is silent are in
+  [`docs/conventions/design.md`](docs/conventions/design.md). The template is reference only —
+  never imported or shipped, and `npm run lint` ignores it.
 
 ## Commands
 
@@ -61,6 +76,6 @@ intent — update them when *behavior* changes, not when a file moves.
 ./scripts/stop.sh
 cd web && npm run dev       # Vite dev server — note the proxy port mismatch in docs/operations
 cd web && npm run build     # tsc -b && vite build
-cd web && npm run lint      # oxlint
+cd web && npm run lint      # oxlint, then the design-rule check
 docker compose logs -f server
 ```

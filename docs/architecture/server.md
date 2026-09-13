@@ -32,9 +32,10 @@ subclass, so **every field is overridable by an environment variable of the same
 | `db_path` | `<server>/data/db.sqlite3` | not derived from `data_dir` — set both if you move it |
 | `jobs_dir` | `<server>/data/jobs` | same caveat |
 | `models_cache_dir` | `<server>/data/models_cache` | becomes `TORCH_HOME` |
-| `demucs_model` | `htdemucs_6s` | the 6-source model; see [../features/stem-separation.md](../features/stem-separation.md) |
+| `demucs_model` | `htdemucs_6s` | the 6-source model; see [../features/stem-separation.md](../features/stem-separation.md). The processing screen's *Six-source model* label is hardcoded, not read from this |
 | `device` | `cuda` | `DEVICE=cpu` in the CPU Compose path; falls back to CPU if CUDA is absent |
 | `enable_chord_detection` | `True` | set false to skip the madmom stage entirely |
+| `max_duration_seconds` | `720` | longer tracks are refused before separation — a URL job from yt-dlp's metadata, before downloading; `0` disables. The landing page's *"up to 12 minutes"* is hardcoded against this default |
 | `cors_origins` | `["http://localhost:5173"]` | |
 
 The four path fields are independent defaults, not layered on each other. Overriding
@@ -44,23 +45,43 @@ The four path fields are independent defaults, not layered on each other. Overri
 
 Three routers, all under `/jobs`, split by concern rather than by path:
 
-- [`routes_jobs.py`](../../server/app/api/routes_jobs.py) — create, list, read, cancel,
-  discard, and the SSE event stream.
+- [`routes_jobs.py`](../../server/app/api/routes_jobs.py) — create (from an upload or a URL),
+  list, read, cancel, resume, discard, and the SSE event stream.
 - [`routes_stems.py`](../../server/app/api/routes_stems.py) — static artifact serving:
   thumbnail, one stem, all stems as a zip.
-- [`routes_analysis.py`](../../server/app/api/routes_analysis.py) — chords and lyrics.
+- [`routes_analysis.py`](../../server/app/api/routes_analysis.py) — chords, the lyrics lookup,
+  and saving pasted lyrics.
 
 Shared helpers live where they are used rather than in a common module: `job_dir()` comes from
 `pipeline.pipeline`, `THUMBNAIL_FILENAME` from `pipeline.thumbnail`, and `_row_to_response()` /
-`_get_job_row()` / `TERMINAL_STATUSES` are private to `routes_jobs.py`.
+`_get_job_row()` / `TERMINAL_STATUSES` are private to `routes_jobs.py`. (`pipeline.py` has a
+`_get_job_row` of its own, which returns `None` for a missing row where the API's raises 404.)
 
-`_row_to_response()` is where two fields are computed rather than stored:
+`_row_to_response()` maps columns to fields one by one, so a new column is invisible to clients
+until it is added there — `error_log` and `audio_format` are; `attempt` deliberately isn't. Two
+fields are computed rather than stored:
 
 - `stem_names` is `STEM_NAMES` when the job is `done`, `[]` otherwise. It is **not** the actual
   directory listing — it's the constant list from `schemas.py`. A job that somehow produced
   fewer stems would still advertise six.
 - `has_thumbnail` is a filesystem `.exists()` check on every serialization, including every
   0.5s SSE tick.
+
+`create_job` accepts `.mp3` and `.flac` by extension only, then copies the upload into
+`original.<ext>` with `shutil.copyfileobj` in 1 MB chunks, through `run_in_threadpool`: the
+handler is `async`, and a blocking copy of a file that can run to hundreds of MB would otherwise
+stall the event loop, every open SSE stream included. The body has already arrived by then —
+nginx buffers request bodies before proxying, and Starlette spools the multipart file to a
+temporary file — so the chunked copy keeps the upload out of process memory rather than streaming
+it off the network. An empty file is a 400, and the job directory is removed with it. Nothing
+here checks the audio's duration; the pipeline does.
+
+`GET /jobs/{id}/lyrics` blocks for longer still, so it is a plain `def` and FastAPI runs the
+whole handler in its threadpool. On a cache miss it calls lrclib through a synchronous
+`httpx.Client` (10 s timeout per request, up to two requests per title guess) and, when it finds
+synced lyrics, reads the whole vocals WAV to estimate their offset — seconds of work that would
+stall every other request, SSE streams included, if it ran on the event loop.
+`PUT /jobs/{id}/lyrics` only parses the pasted text and writes the cache file, and stays `async`.
 
 See [../api/README.md](../api/README.md) for the endpoint-by-endpoint reference.
 
@@ -88,9 +109,14 @@ def start_worker():        # idempotent; one thread per process
 Consequences you need to hold in mind:
 
 - **The queue is in-process and in-memory.** Restarting the server loses every queued job.
-  Rows left in `queued`/`separating` are never picked up again — they are simply stale, and
-  nothing reaps them.
+  Rows left in `queued`/`separating` are never picked up again, and nothing reaps them. Resume
+  accepts only `cancelled`, so such a row can be revived only from a page that still has it open,
+  by cancelling and then resuming it.
 - **Strictly serial.** One Demucs pass at a time. Concurrency would need a real broker.
+- **Enqueueing isn't idempotent.** `enqueue` doesn't know whether the id is already waiting, so a
+  job resumed while its first entry still waits is in the queue twice. `run_job` makes that
+  harmless by starting only on a `queued` row: whichever entry reaches the worker second finds the
+  job already run and returns. See [job-lifecycle.md](job-lifecycle.md#resuming).
 - **`daemon=True`** means the thread dies with the process, mid-job if necessary.
 - Because uvicorn runs a single process by default, one worker exists. Running multiple
   uvicorn workers would create one queue *per process* and route enqueues arbitrarily —
@@ -99,60 +125,109 @@ Consequences you need to hold in mind:
 ## The pipeline
 
 [`app/pipeline/pipeline.py`](../../server/app/pipeline/pipeline.py) `run_job(job_id)` is the
-orchestrator. It is the only module that writes job status, and the only one that knows the
-stage order. Every other pipeline module is a leaf: pure-ish function in, artifact or value out,
-no database access.
+orchestrator (~215 lines). It is the only module that writes job status, and the only one that
+knows the stage order. Every other pipeline module is a leaf: pure-ish function in, artifact or
+value out, no database access. [`errors.py`](../../server/app/pipeline/errors.py) holds the
+exception types that carry a user-facing message across that boundary.
 
-```
+```text
 run_job
- ├─ _is_cancelled?                                    ← checkpoint
- ├─ if source_url:  source.download_audio()            → original.mp3, title, author
- │  else:           metadata.extract_author()           → author from ID3
- ├─ _is_cancelled?                                    ← checkpoint
+ ├─ row missing, or not queued? → return; attempt = row["attempt"]
+ ├─ if source_url:  source.download_audio()             → original.mp3, title, author
+ │                  _record_track_identity()            → title, author (unscoped)
+ │                  (both skipped when original.mp3 already exists)
+ │  else:           metadata.extract_author()            → author from ID3
+ ├─ _is_superseded?                                     ← checkpoint
  ├─ thumbnail.extract_embedded_cover()   (if none yet)
- ├─ soundfile: duration_seconds
- ├─ separation.separate()                              → stems/*.wav
- ├─ _is_cancelled?                                    ← checkpoint
- ├─ tempo.detect_tempo()                               → tempo_bpm
- ├─ _is_cancelled?                                    ← checkpoint
- ├─ if enable_chord_detection: chords.analyze_audio()  → chords.json, key.json
- ├─ _is_cancelled?                                    ← checkpoint
- └─ _update_job(**done_fields)                         one UPDATE: status, progress,
-                                                       stage_message, duration, tempo, key
+ ├─ metadata.read_audio_info()                          → duration, format label
+ │     over max_duration_seconds → raise TrackTooLongError
+ ├─ _update_job(status=separating, duration_seconds, audio_format)
+ ├─ separation.separate(on_progress=…)   (unless stems/ is complete)
+ │     on_progress: a progress write per 1%; _is_superseded every ≥ 2 s → raise _Superseded
+ ├─ _is_superseded?                                     ← checkpoint
+ ├─ tempo.detect_tempo()                                → tempo_bpm, null for 0 BPM
+ ├─ _is_superseded?                                     ← checkpoint
+ ├─ if enable_chord_detection: chords.analyze_audio()   → chords.json, key.json
+ ├─ _is_superseded?                                     ← checkpoint
+ └─ _update_job(**done_fields)                          one UPDATE: status, progress,
+                                                        stage_message, tempo, key
 ```
 
-Two details that are easy to misread:
+Details that are easy to misread:
 
-- **Results are batched into the final write.** `tempo_bpm`, `key_estimate`, `key_confidence`
-  and `duration_seconds` accumulate in a local `done_fields` dict and land in the *same*
-  `UPDATE` that sets `status=done`. So no client ever observes a job with a tempo but no
-  status change — which is exactly why the SSE stream can stop at the first terminal status
-  without missing data.
+- **Every write is scoped to the attempt — but one.** `_update_job(job_id, attempt, **fields)`
+  issues `UPDATE jobs SET … WHERE id = ? AND attempt = ? AND status != 'cancelled'` and never checks
+  how many rows matched, so a run that was cancelled, deleted or superseded by a resume writes
+  nothing, silently. `_is_superseded(job_id, attempt)` is the matching read: the row is missing,
+  `cancelled`, or on a different `attempt`. The exception is `_record_track_identity`, which writes
+  a download's title and author by id alone: a resume skips the download, so a run cancelled
+  mid-download must still leave them on the row. It touches no other column.
+- **A run starts only on a `queued` row.** A job cancelled while it waited and then resumed is in
+  the queue twice; the check keeps the second entry from running it again.
+- **Results are batched into the final write — except duration and format.** `tempo_bpm`,
+  `key_estimate` and `key_confidence` accumulate in a local `done_fields` dict and land in the
+  *same* `UPDATE` that sets `status=done`. `duration_seconds` and `audio_format` go out earlier,
+  with `status=separating`, so the processing screen can show them. Either way no client ever
+  observes `done` without every result field — which is exactly why the SSE stream can stop at the
+  first terminal status without missing data.
 - **Tempo detection happens under `status=separating`.** Only `progress` (0.5) and
-  `stage_message` ("Detecting tempo") change. There is no `TEMPO` status.
+  `stage_message` ("Detecting tempo") change. There is no `TEMPO` status. librosa reports 0 BPM
+  when it finds no beat at all, and `run_job` stores that as null (`detect_tempo(...) or None`).
+- **The Demucs `Separator` is a process-wide singleton**, built on first use.
+  [`separation.py`](../../server/app/pipeline/separation.py) swaps its `callback` per job with
+  `update_parameter` rather than fixing it at construction. The callback fires as each chunk
+  starts; with Demucs' default `jobs=0` chunks run in order, so the starting chunk's offset is the
+  share of the pass already done. An exception raised from the callback unwinds out of Demucs and
+  abandons the pass — that is how `_Superseded` interrupts separation.
+- **Stems are all-or-nothing on disk.** `separate()` writes into `stems.partial/`, then removes
+  any old `stems/` and renames the scratch directory into place. `_stems_complete` (all six
+  `STEM_NAMES` WAVs present) is therefore enough for a resume to skip separation.
+- **Stems keep a 44.1 or 48 kHz source's rate.** Demucs always works at the model's own rate
+  (44.1 kHz for `htdemucs_6s`); stems from a 48 kHz source are resampled back with
+  `julius.resample_frac`, and any other source rate keeps the model's. `julius` is imported
+  directly, so `requirements.txt` lists it, although Demucs would install it anyway.
 
-`_update_job(job_id, **fields)` builds its `SET` clause by interpolating the **keys** of
-`fields` into SQL. Values are bound parameters, so this is safe as written — every call site
-passes literal keyword names — but it means a caller-supplied key would be injected verbatim.
-Keep call sites literal.
+`_update_job` builds its `SET` clause by interpolating the **keys** of `fields` into SQL. Values
+are bound parameters, so this is safe as written — every call site passes literal keyword names —
+but it means a caller-supplied key would be injected verbatim. Keep call sites literal.
 
 ### Error handling
 
-`run_job` wraps everything in one `except Exception`, and:
+`run_job` has two handlers:
 
-1. Re-checks cancellation first — a cancelled job that blew up mid-stage stays `cancelled`
-   rather than being overwritten with `error`.
-2. Logs with `logger.exception`.
-3. Writes `status=error, error_message=str(exc)`.
+1. `except _Superseded: return` — the signal the separation callback raises.
+2. `except Exception`: re-check `_is_superseded` first — a cancelled or resumed job that blew up
+   mid-stage is left alone rather than overwritten with `error`. Otherwise log with
+   `logger.exception` (the traceback reaches stderr and nowhere else) and write `status=error`
+   with the `error_message` and `error_log` that `_describe_failure(stage, exc)` returns.
 
-`str(exc)` goes straight to the browser. [`source.py`](../../server/app/pipeline/source.py)
-takes advantage of this: `SourceDownloadError` carries a message written for a user
-("Couldn't download audio from that link…"). Other exception types leak whatever their
-`str()` is — a stack-free but internal-sounding message.
+`stage` is a local the run updates as it advances — `downloading` (a link job's yt-dlp pass),
+`reading` (metadata, cover art, duration), `separating`, `tempo`, `analyzing`. `_describe_failure`
+splits on the exception's type:
+
+- A `UserFacingError` — `SourceDownloadError` from [`source.py`](../../server/app/pipeline/source.py),
+  or `TrackTooLongError` from `source.py` or `run_job` — is written for a person. Its `str()`
+  becomes `error_message` verbatim, and the exception it was raised `from` becomes `error_log`:
+  yt-dlp's own error text, for a failed download.
+- Anything else gets `_STAGE_FAILURE_MESSAGES[stage]` — *"Stem separation stopped with an
+  error."* and the like — as the message, and `"TypeName: text"` as the log.
+
+So an unexpected exception's text never reaches the browser as the message; it arrives as the log,
+which the failure panel shows in a monospace block with *Copy log*. Making a new failure
+user-facing means subclassing `UserFacingError` and chaining the cause with `raise … from exc`.
+
+Either way the error write leaves `stage_message` alone, except when the run failed while
+`reading`. Reading falls between stages, so that write sets the message to null rather than leave a
+finished download's *Downloading audio* naming a stage that succeeded. The client doesn't read it
+on a failed job: every failure panel is titled *Separation failed*.
+
+`metadata.read_audio_info` deliberately raises on a file libsndfile can't open — nothing after it
+can run without a duration — while `metadata.extract_author` and the thumbnail helpers degrade to
+`None` or `False`.
 
 ## The database layer
 
-[`app/db/database.py`](../../server/app/db/database.py), 64 lines, no ORM.
+[`app/db/database.py`](../../server/app/db/database.py), 71 lines, no ORM.
 
 ```python
 @contextmanager
@@ -175,6 +250,11 @@ def db_cursor():
   whatever is missing. To add a column: put it in `SCHEMA` *and* append it to
   `MIGRATED_COLUMNS`, so both fresh and existing databases get it. There is no down-migration,
   no version table, and no support for altering or dropping a column.
+- Every column in `MIGRATED_COLUMNS` is also in `SCHEMA`, so a fresh database never needs the
+  migration step. On a database that predates a column, `ADD COLUMN` appends it after `updated_at`,
+  wherever `SCHEMA` places it; rows are read by name, so the order never matters. `attempt` is
+  `INTEGER NOT NULL DEFAULT 0`, which SQLite accepts in `ADD COLUMN` only because the default is
+  not null.
 
 Schema and the on-disk layout are documented in [../data/README.md](../data/README.md).
 
@@ -183,14 +263,19 @@ Schema and the on-disk layout are documented in [../data/README.md](../data/READ
 - **SSE** (`GET /jobs/{id}/events`) is an `async` generator inside a `StreamingResponse` that
   re-reads the row every 0.5s and yields only when the serialized payload changed, then breaks
   on a terminal status. It is polling, not push — there is no notification from the worker.
+  The handler looks the job up once before building the response, so an unknown id is a plain
+  404; a job deleted mid-stream can only end the connection, because the `200` is already out.
   Note the generator calls the synchronous `_get_job_row` (and thus blocking SQLite) from the
   event loop; fine at this scale, a real concern under load.
-- **Stems** are served with `FileResponse`, which implements HTTP range requests. The `<audio>`
-  element and WaveSurfer both need ranges to seek.
+- **Stems** are served with `FileResponse`, which sends `Content-Length` and implements HTTP range
+  requests. Nothing in the client uses ranges — `PlaybackEngine` fetches each stem whole and reads
+  `Content-Length` to report download progress — so that support goes unused.
 - **The zip** (`GET /jobs/{id}/download`) is built entirely in memory in a `BytesIO` and
   returned as one `Response`. Six WAVs of a full-length song is a few hundred MB of
   uncompressed audio; this endpoint is `def`, not `async def`, so FastAPI runs it in a
-  threadpool and it doesn't block the loop — but it does hold the whole archive in RAM.
+  threadpool and it doesn't block the loop — but it does hold the whole archive in RAM. Its
+  `Content-Disposition` names the file `<job_id>_stems.zip`, but the client saves it through a
+  blob URL under its own name, so that header is never what the user sees.
 
 ## The madmom problem
 

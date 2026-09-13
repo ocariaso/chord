@@ -1,7 +1,8 @@
 # Audio playback
 
 The mixer's defining constraint: six separate WAV files must play as one piece of music, with
-sample-accurate alignment, while the user mutes, solos and re-levels them live.
+sample-accurate alignment, while the user mutes, solos, re-levels, pans and tilts them live —
+and loops a region, or changes speed without changing pitch.
 
 ## Why not `<audio>` elements
 
@@ -15,73 +16,172 @@ same `when` with the same `offset` are sample-locked by construction — there i
 drift.
 
 The cost is that every stem must be fully downloaded and decoded into an `AudioBuffer` before
-playback can start. That's the "Loading stems…" screen.
+playback can start. That's the *Loading stems…* screen, which holds at 100% with *Decoding six
+stems in your browser* until the last stem has arrived and decoded.
 
 ## `PlaybackEngine`
 
-[`web/src/audio/playbackEngine.ts`](../../web/src/audio/playbackEngine.ts) — a plain class, no
-React. It owns the `AudioContext` and is the single source of truth for audio state.
+[`web/src/audio/playbackEngine.ts`](../../web/src/audio/playbackEngine.ts) (~635 lines) — a
+plain class, no React. It owns the `AudioContext` and is the single source of truth for audio
+state. The DSP helpers behind its meters live in
+[`audio/meters.ts`](../../web/src/audio/meters.ts); the time-stretch runs on the audio thread in
+[`audio/stretchProcessor.js`](../../web/src/audio/stretchProcessor.js).
 
 ### Graph
 
-```
-          AudioBufferSourceNode (per stem, recreated on every play)
-                     │
-                  GainNode  ──── per-stem gain: volume, mute, solo
-                     │
-                 masterGain  ──── master volume
-                     │
-              destination ◄──── metronomeGain ◄── OscillatorNode + envelope GainNode
-                                  (one pair per scheduled click)
+```text
+  AudioBufferSourceNode             chord-stretch AudioWorkletNode
+  at 1×: one per stem,        or    at any other rate: one node,
+  recreated on every play           one stereo output per stem
+               └────────────────┬────────────────┘
+                                ▼                                   ── per stem ──
+                     lowshelf → highshelf       Tone: tilt around the stem's pivot
+                                ▼
+                            GainNode            fader gain, or 0 when muted / not soloed
+                                ▼
+                        StereoPannerNode        Pan
+                                ├──► splitter ─► 2 × Analyser (1024)      stem meter
+                                ▼                                   ── shared ──
+                           masterGain           master fader
+                                ├──► splitter ─► 2 × Analyser (4096)      peak, true peak, correlation
+                                ├──► IIR shelf ─► IIR high-pass ─► splitter ─► 2 × Analyser (32768)
+                                │    (K-weighting)                        momentary loudness
+                                ▼
+                           destination ◄──── metronomeGain ◄── Oscillator + envelope Gain
+                                                                 (one pair per click)
 ```
 
-The metronome bypasses `masterGain` and connects straight to `destination`, so the master
-volume fader does not attenuate the click. Whether that's desirable is a design choice, but
-it's deliberate: the click is a practice aid, not part of the mix.
+Each stem's chain is built in `addStem` as its buffer decodes and outlives every play; only the
+sources in front of it are replaced.
+
+- **Tone** is a tilt. `setTone(name, shelfDb)` sets the high shelf to `+shelfDb` and the low
+  shelf to `−shelfDb`, both at the stem's pivot (`TONE_PIVOT_HZ` in
+  [`design/stems.ts`](../../web/src/design/stems.ts): bass 250 Hz, piano and other 1 kHz, guitar
+  1.2 kHz, vocals 1.5 kHz, drums 2 kHz). The knob's ends are ±6 dB.
+- **Pan** is a `StereoPannerNode`; the knob's 0…1 becomes −1…1.
+- **Analysers are dead ends** — nothing is connected after them — and every tap sits after the
+  fader and panner, so every meter is post-fader. The two IIR filters exist only for the loudness
+  tap: BS.1770 K-weighting, with coefficients derived for the context's sample rate by
+  `kWeightingFilters`, because the standard tabulates them only at 48 kHz.
+
+The metronome bypasses `masterGain` and connects straight to `destination`, so the master fader
+does not attenuate the click and no meter sees it. Whether that's desirable is a design choice,
+but it's deliberate: the click is a practice aid, not part of the mix.
 
 ### Transport
 
-State is three fields:
+State is a handful of fields:
 
 ```ts
-private offsetSeconds = 0;          // track position at the moment playback last started
-private startedAtContextTime = 0;   // audioContext.currentTime at that moment
+private anchorTrackTime = 0;     // track position at the anchor
+private anchorContextTime = 0;   // audioContext.currentTime at which that position is heard
+private rate = 1;
+private loop: LoopRegion | null = null;
 private playing = false;
+private transportToken = 0;      // bumped whenever output stops
 ```
 
 and the clock is derived, never stored:
 
 ```ts
-getCurrentTime() {
-  if (!this.playing) return this.offsetSeconds;
-  return this.offsetSeconds + (this.audioContext.currentTime - this.startedAtContextTime);
+getCurrentTime(): number {
+  if (!this.playing) return this.anchorTrackTime;
+  const elapsed = Math.max(0, this.audioContext.currentTime - this.anchorContextTime) * this.rate;
+  return Math.min(this.wrap(this.anchorTrackTime + elapsed), this.duration);
 }
 ```
 
-- **`play()`** resumes the context if suspended (browsers start it suspended until a user
-  gesture), then creates a *fresh* `AudioBufferSourceNode` per stem and starts each at the same
-  `startTime` with the same `offsetSeconds`. Source nodes are single-use by spec — this is why
-  they're recreated rather than reused.
-- **`pause()`** captures `getCurrentTime()` into `offsetSeconds`, stops all sources, clears the
-  metronome schedule.
-- **`seek(s)`** stops everything, sets `offsetSeconds` clamped to `[0, duration]`, and replays
-  if it was playing. There is no partial-seek path.
+`wrap` folds any position past `loop.end` back into `[loop.start, loop.end)`. The `max(0, …)`
+holds the position still during the short delay between scheduling a stretched start and
+hearing it.
+
+- **`play()`** takes a new transport token and resumes the context if it is suspended (browsers
+  start it suspended until a user gesture). If a pause, seek or rate change bumped the token
+  while it awaited, it abandons the start. Playing from the end restarts at the loop start, or
+  zero. At 1× it creates a *fresh* `AudioBufferSourceNode` per stem and starts every one at the
+  same `currentTime` with the same offset — source nodes are single-use by spec, which is why
+  they're recreated rather than reused. At any other rate it starts the stretch processor
+  instead; if the worklet can't be loaded, playback falls back to 1×.
+- **`pause()`** captures `getCurrentTime()` into the anchor and stops output. With a start still
+  pending, it only bumps the token, which abandons that start.
+- **`seek(s)`** stops output, sets the anchor clamped to `[0, duration]`, and replays if it was
+  playing. There is no partial-seek path: a seek is a restart.
+- **`hasEnded`** turns true once playback without a loop reaches `duration`. The engine doesn't
+  stop itself; `ResultsScreen`'s frame loop sees the flag and pauses.
 
 `duration` is the **max** of all buffer durations, not the first — stems can differ by a frame
-or two.
+or two. Decoding resamples to the context's rate and can leave a stem a frame short of its written
+length — a 36-second track decodes to 35.99998 s at 44.1 kHz — so
+[`formatTime`](../../web/src/utils/time.ts) adds 5 ms before flooring, or the readouts would call
+it `0:35`.
+
+### Loops
+
+`setLoop({start, end})` stores the region and seeks to `start`. At 1× the buffer sources loop
+natively (`loop`, `loopStart`, `loopEnd`), so each cycle wraps sample-accurately with no work on
+the main thread; the stretch processor wraps its read position with the same arithmetic as
+`wrap`.
+
+`clearLoop()` at 1× during playback sets `loop = false` on the running sources and re-anchors at
+the current position: the sources carry on from wherever they are, so leaving a loop is
+seamless. While stretching, it seeks instead, which restarts output.
+
+The A–B press cycle, and ending a loop by seeking outside it, belong to `ResultsScreen`; the engine
+only ever sees a complete region. See [../features/speed-and-loop.md](../features/speed-and-loop.md).
+
+### Speed: the stretch worklet
+
+`setPlaybackRate(rate)` stops output, stores the rate, re-anchors at the current position, and
+replays if it was playing. At 1× the buffer sources play as above. At any other rate one
+`AudioWorkletNode` running the `chord-stretch` processor produces every stem's audio — one
+stereo output per stem, connected to that stem's low shelf — so the rest of the graph, meters
+included, is unchanged.
+
+The processor is WSOLA (waveform-similarity overlap-add):
+
+- Output advances in 30 ms hops. Each hop overlap-adds the tail of the previous 60 ms
+  Hann-windowed frame with the head of a new one. The new frame's nominal input position
+  advances by `hop × rate`, and a ±15 ms search around it (every fourth offset, then refined
+  sample by sample) picks the position whose head best continues the previous frame. Speed comes
+  from how far the input advances per hop; pitch is untouched because every frame plays at its
+  original rate.
+- Similarity is judged once per hop, on a mix of the stems weighted by their current gain —
+  muted and unsoloed stems weigh nothing — and **every stem is cut at the same input
+  positions**, so the stems stay sample-aligned with each other at any speed, as the buffer
+  sources do at 1×. `applyGains` posts new weights whenever a gain, mute or solo changes.
+- The processor holds no song. It posts `need` messages for one-second blocks around where it
+  will read, looking 3 s ahead and asking again after a second without an answer; the engine
+  slices those seconds out of each decoded buffer and transfers them. It keeps about a dozen
+  blocks and plays silence over any block that hasn't arrived.
+- The start message carries `when`, 80 ms after `currentTime`, so it reaches the audio thread in
+  time and output begins at a known sample. The blocks around the start position are sent
+  ahead of it, so that first output isn't silence. The engine anchors at the same `when`.
+
+`supportsTimeStretch` is false when `AudioWorkletNode` or `audioContext.audioWorklet` is
+missing — browsers expose both only to secure origins, HTTPS or `localhost` — and once the
+module has failed to load. The module is added on the first play at a rate other than 1×.
+`ResultsScreen` withholds the speed handler while it is false, so the web transport renders the
+speed chip disabled, titled *"Speed control needs HTTPS or localhost"*. The phone transport has no
+speed chip at all.
+
+The costs — a restart with an 80 ms gap for every rate change and every seek while stretched,
+silence when the main thread can't answer in time, and artifacts on transients — are weighed in
+[decisions.md](decisions.md#pitch-preserving-speed-in-an-audioworklet).
 
 ### Mute, solo and volume
 
 All three funnel into one method, which recomputes every gain from scratch:
 
 ```ts
-private applyGains() {
-  for (const [name, gainNode] of this.gainNodes) {
-    const isAudible = this.soloed.size > 0
-      ? this.soloed.has(name) && !this.muted.has(name)
-      : !this.muted.has(name);
-    gainNode.gain.value = isAudible ? (this.volumes.get(name) ?? 1) : 0;
+private applyGains(): void {
+  for (const [name, chain] of this.chains) {
+    this.setParam(chain.gain.gain, this.isAudible(name) ? (this.volumes.get(name) ?? 1) : 0);
   }
+  this.stretchNode?.port.postMessage({ type: "weights", weights: this.stretchWeights() });
+}
+
+private isAudible(name: string): boolean {
+  return this.soloed.size > 0 ? this.soloed.has(name) && !this.muted.has(name) : !this.muted.has(name);
 }
 ```
 
@@ -89,106 +189,148 @@ Semantics that fall out of this:
 
 - **Solo is additive** — a `Set`, so multiple stems can be soloed at once.
 - **Any solo silences all non-soloed stems.**
-- **Mute beats solo** — a stem that is both soloed and muted is silent.
-- Gains are set directly (`gain.value = …`), not ramped, so toggles are instantaneous. At
-  these amplitudes the click is inaudible in practice.
+- **Mute beats solo** — a stem that is both soloed and muted is silent. The Console and Analog
+  views don't show it that way: they follow the template's harness, which draws a soloed stem as
+  *Soloed* and lifted even when it is also muted. That one combination is where a strip and the
+  audio disagree.
+- **Changes are smoothed, not stepped.** `setParam` calls `setTargetAtTime` with a 15 ms time
+  constant: long enough that toggling a gain doesn't click, short enough to follow a fader drag.
+  Pan, tone and the master fader go through the same helper.
+
+The engine takes linear gain; the fader law lives with the UI, in
+[`design/player.ts`](../../web/src/design/player.ts) under the template's own names. `db()` maps a
+stem fader's position linearly onto −36…0 dB, with position 0 silent, and `ResultsScreen` converts
+with `dbToGain` from [`utils/levels.ts`](../../web/src/utils/levels.ts) before calling `setVolume`.
+The master fader follows its own tick marks instead: `masterDb` passes the position through −36,
+−18, −6 and 0 dB at each third of the travel, the bottom again silent, and `dbToGain` turns the
+result into what `setMasterVolume` takes. See
+[decisions.md](decisions.md#the-fader-law-is-db-linear-over-36-db).
 
 Volume state is duplicated: the engine keeps `volumes`/`muted`/`soloed` as its own truth, and
-`StemMixer` keeps `channelStates`/`soloedStems` for rendering. Every handler writes both. The
-engine's `getStemState()` exists for reading back but is not currently called — React state is
-what renders.
+`ResultsScreen` keeps the template's `StemState`s — control positions, not gains — for rendering.
+Every handler writes both. The engine's `getStemState()` exists for reading back but is not called
+anywhere; React state is what renders.
+
+### Metering
+
+`readMeters(target, now)` reads every analyser into scratch arrays allocated once, and fills a
+`MeterReadings` object the caller owns:
+
+| Reading | From | Computed as |
+| --- | --- | --- |
+| `stems[name]` | the stem's analysers, 1024 samples | sample peak per channel |
+| `master` | the master analysers, 4096 samples | sample peak per channel |
+| `truePeak` | the newest 2048 of those samples | peak including the 4× oversampled positions, from 12-tap Hann-windowed sinc kernels |
+| `correlation` | all 4096 master samples | ΣLR / √(ΣL²·ΣR²); `null` when the output is too quiet to judge |
+| `loudness` | the loudness analysers, newest 400 ms — the whole 32768-sample buffer above 81.9 kHz, where 400 ms no longer fits | BS.1770 momentary loudness in LUFS, recomputed at most every 100 ms |
+
+Each read is a snapshot of an analyser's newest samples, not a stream. At 60 fps the stem
+window (about 21 ms at 48 kHz) covers every sample between two frames; below roughly 45 fps it no
+longer does, and a short peak that falls between reads is never seen. Only `ConsoleView` and
+`AnalogView` call `readMeters`, once per animation frame, so the Mixer view costs nothing here.
+
+Ballistics belong to the views, not the engine: `LevelFollower` (instant attack, linear release
+in dB per second, optional hold) and `Smoother` (exponential), both in `meters.ts`. See
+[../features/metering.md](../features/metering.md) and
+[decisions.md](decisions.md#metering-from-analysernodes-on-the-main-thread).
 
 ### Metronome
 
-Enabled only when `job.tempo_bpm` is non-null (`StemMixer` passes `onToggleMetronome` as
-`undefined` otherwise, and the button simply doesn't render).
+Enabled only when the job has a tempo: `ResultsScreen` passes `onToggleMetronome` only for a truthy
+`job.tempo_bpm`, and otherwise the chip renders disabled, titled *"No tempo was detected for this
+track"*. The server stores null rather than 0 when librosa finds no beat, and the scheduler skips a
+zero tempo as well.
 
-`scheduleMetronomeClicks(startTime, offsetSeconds)` schedules **every remaining beat in the
-track at once** — no look-ahead window, no scheduler loop:
+Clicks come from a **lookahead scheduler**. While playing with the metronome on, a 25 ms
+`setInterval` schedules every click that falls in the next 120 ms of context time, and remembers
+how far it got:
 
 ```ts
-const beatInterval = 60 / this.tempoBpm;
-let beatIndex = Math.ceil(offsetSeconds / beatInterval);
-let trackTime = beatIndex * beatInterval;
-while (trackTime < this.duration) {
-  this.scheduleClick(startTime + (trackTime - offsetSeconds));
-  beatIndex++; trackTime = beatIndex * beatInterval;
+const beat = 60 / this.tempoBpm;
+const from = Math.max(this.clicksScheduledUntil, now);
+const to = now + METRONOME_LOOKAHEAD_SECONDS;
+for (const piece of this.trackPieces(from, to)) {
+  for (let k = Math.ceil(piece.trackStart / beat); k * beat < piece.trackEnd; k++) {
+    this.scheduleClick(piece.contextStart + (k * beat - piece.trackStart) / this.rate);
+  }
 }
+this.clicksScheduledUntil = to;
 ```
 
-Each click is a 1000 Hz `OscillatorNode` with a 50 ms exponential decay envelope. A four-minute
-song at 120 BPM is ~480 oscillators created up front. That's acceptable for a one-shot
-schedule, and every oscillator is tracked in `metronomeOscillators` so
-`clearMetronomeSchedule()` can stop them on pause, seek or disable.
+`trackPieces` splits the window into the stretches of track time it will play — cut where a loop
+wraps, stopped at the end of the track — using the same anchor and rate as `getCurrentTime`. A
+beat is a track position, converted to context time through the current transport, which is what
+lets the click follow loops and speed. Play, seek, rate changes and loop changes all restart the
+scheduler from the new anchor, and pause stops every oscillator already scheduled.
+
+Each click is a 1000 Hz `OscillatorNode` with a 50 ms exponential decay envelope. Only the clicks
+inside the current window exist at any moment, and each one removes itself when it ends.
+
+The window starts at `now` whenever the timer fires late, so a main-thread stall longer than the
+120 ms lookahead **drops** the clicks it spanned rather than playing them late.
 
 Beat one is aligned to *time zero of the track*, not to a detected downbeat — librosa's
 `beat_track` gives a tempo, and CHORD doesn't use the beat positions. So the click is
-rhythmically correct but not necessarily phase-aligned to the music.
+rhythmically correct but not necessarily phase-aligned to the music, and a loop whose start isn't
+on a multiple of the beat hears clicks offset from its own start. See
+[../features/tempo-and-metronome.md](../features/tempo-and-metronome.md).
 
 ### Lifecycle and disposal
 
-`load()` fetches and decodes all stems in parallel via `Promise.all`. Each task checks
-`this.disposed` after its `await` and bails out, because in React `StrictMode` the mount effect
-runs twice in development — the first engine is disposed while its fetches are still in flight,
-and without the guard those would populate a dead engine's buffer map.
+`load(stems)` fetches and decodes all stems in parallel via `Promise.all`. Each response is read
+whole with `arrayBuffer()` and handed to `decodeAudioData`; a non-2xx response fails that stem with
+its status and the server's `detail`, as in `404 Stem not ready`. There is no progress callback —
+the loading screen shows the template's fixed 100% state instead. `load` **never rejects**: it
+resolves with a `{name, url, message}` for each stem that failed, having added every stem that
+succeeded — its filter chain and analyser tap included — to the graph. Calling it again with the
+failures is the retry, which is what *Retry download* on the *Stems failed to load* panel does.
 
-`dispose()` sets `disposed`, stops all sources and clicks, and closes the `AudioContext`.
-Browsers limit how many contexts a page may have open, so failing to close one leaks a real
-resource. `StemMixer`'s effect cleanup calls it on unmount and on any `job.id` change.
+Each task checks `this.disposed` after every `await` and bails out, because in React `StrictMode`
+the mount effect runs twice in development — the first engine is disposed while its fetches are
+still in flight, and without the guard those would populate a dead engine.
 
-## The split with WaveSurfer
+`dispose()` sets `disposed`, stops output and clicks, closes the stretch processor's port, and
+closes the `AudioContext`. Browsers limit how many contexts a page may have open, so failing to
+close one leaks a real resource. `ResultsScreen`'s effect cleanup calls it on unmount and whenever
+`job.id` changes or the template stems in `job.stem_names` do — compared as a joined string, because
+every job update carries a new `stem_names` array even when it lists the same stems.
 
-WaveSurfer.js is used **only to draw**. It never plays audio.
+## Waveforms
 
-Each waveform is created with:
+There is no waveform library. Once a stem is decoded,
+[`waveformPolygon`](../../web/src/utils/peaks.ts) walks the buffer in 160 bins, takes the peak of
+every 8th sample across all channels in each bin, lifts it with a square root so quiet passages
+still read as a shape, floors it at 2% so silence stays visible, and returns a CSS `polygon()` —
+the top edge left to right, then the bottom edge back.
+[`StemWaveform`](../../web/src/components/controls/StemWaveform.tsx) sets that as the
+`clip-path` of a `.ch-wave` element, whose background is a repeating bar pattern in the stem's
+`--stem` hue, so the bars show only inside the stem's real envelope.
 
-```ts
-WaveSurfer.create({
-  container, height, waveColor, progressColor,
-  cursorColor, cursorWidth,
-  interact: false,              // clicks do not seek — useSeekDrag handles that
-  url: downloadHref,            // a real media element, for a genuine duration
-  peaks: [buffer.getChannelData(0)],   // reuse the already-decoded samples
-  duration: buffer.duration,
-})
-```
+Consequences:
 
-Three of those options are load-bearing:
-
-- **`interact: false`** — if WaveSurfer handled clicks it would try to seek its own media
-  element, which is not what the user hears. Seeking is instead attached as pointer handlers
-  from `useSeekDrag` on the container, which computes a fraction of element width and calls the
-  engine.
-- **`peaks`** — passing the already-decoded channel data means WaveSurfer does not re-decode
-  the WAV to draw it. The decode already happened in `PlaybackEngine.load()`; doing it twice
-  would double both time and peak memory.
-- **`url`** *and* **`duration`** — supplying `peaks` alone leaves WaveSurfer without a real
-  duration to position its cursor against, so a media element is still loaded from the same URL.
-  This is why the browser fetches each stem twice (once as an `ArrayBuffer` for the engine, once
-  as a media element for WaveSurfer). Both hit the same URL, so the second is usually served
-  from cache.
-
-Instances register themselves with `StemMixer` through `onWaveSurferReady(name, instance)`,
-which stores them in `waveSurfersRef`. The animation-frame loop then pushes `setTime(time)` into
-each one. Every instance is destroyed in its creating effect's cleanup.
-
-Two components create waveforms, with the same options and different colors:
-[`StemChannel`](../../web/src/components/StemChannel.tsx) inline for the Simple view, and
-[`useStemWaveform`](../../web/src/components/studio/useStemWaveform.ts) for the Studio amps.
-`StemChannel` additionally re-applies `progressColor` in a separate effect, because the accent
-color arrives asynchronously (after the thumbnail loads and is sampled) and would otherwise be
-frozen at whatever it was when the instance was created.
-
-Both waveform effects intentionally depend on `[buffer]` alone, with the exhaustive-deps lint
-rule disabled — re-creating a WaveSurfer instance on a color or callback change would flicker
-the waveform for no reason.
+- **One fetch per stem.** The envelope comes from the buffer the engine already decoded; nothing
+  downloads or decodes a second time to draw.
+- **The shape is computed when a load finishes**, in `ResultsScreen`'s `applyLoad` on the main
+  thread, for every stem that loaded — again after a retry — and doesn't change with the mix. A
+  stem that isn't heard is dimmed (`.is-off`), not redrawn.
+- **160 bins, whatever the length**, so detail per bin shrinks as tracks get longer: a
+  twelve-minute track is 4.5 s per bin. The bars inside are decoration, not samples.
+- **No per-row playhead, and no seeking.** Position is shown on the chord strip and the transport's
+  seek slider, and those are the two places to seek; a waveform is `aria-hidden`.
+- **Phones draw them too.** Below 720px the stylesheet stacks each Mixer row and gives the
+  waveform a full-width line of its own, last.
 
 ## Silence detection
 
-[`utils/hasVocals.ts`](../../web/src/utils/hasVocals.ts) computes RMS over every 8th sample of
-the decoded vocals buffer and compares against `0.01`. Instrumental tracks separate into a
-vocals stem that is near-silent rather than absent, and `hasVocals` gates the lyrics UI so an
-instrumental doesn't display a "No lyrics found" line or a stale lyric.
+[`utils/hasVocals.ts`](../../web/src/utils/hasVocals.ts) computes RMS over every 8th sample of the
+decoded vocals buffer's first channel and compares it against `0.01`. Instrumental tracks
+separate into a vocals stem that is near-silent rather than absent. When it is, `ResultsScreen`
+mutes the vocals stem on load and marks it — a hint under the Mixer's stems, and *Silent* as the
+Console strip's state label while the stem stays muted and unsoloed. Nothing else changes: the
+lyric row still renders, so an instrumental shows whatever the lyrics lookup found.
 
 The stride of 8 is a ~8× speedup on a full-length buffer with no meaningful accuracy cost for a
 binary loud-or-silent decision.
+
+If the vocals stem itself failed to load and the user chose *Open anyway*, there is no buffer to
+test. A stem that didn't arrive says nothing about the song, so `hasVocals` stays true.

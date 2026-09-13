@@ -8,6 +8,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     original_filename TEXT NOT NULL,
+    author TEXT,
     status TEXT NOT NULL,
     progress REAL NOT NULL DEFAULT 0,
     stage_message TEXT,
@@ -18,6 +19,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     key_confidence REAL,
     source_url TEXT,
     tempo_bpm REAL,
+    error_log TEXT,
+    audio_format TEXT,
+    attempt INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -27,6 +31,9 @@ MIGRATED_COLUMNS = [
     ("source_url", "TEXT"),
     ("tempo_bpm", "REAL"),
     ("author", "TEXT"),
+    ("error_log", "TEXT"),
+    ("audio_format", "TEXT"),
+    ("attempt", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

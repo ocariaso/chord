@@ -1,29 +1,53 @@
 # Map: `web/`
 
-React 19 + TypeScript + Vite SPA, served by nginx. Dependencies: `react`, `react-dom`,
-`wavesurfer.js`. Every icon is hand-written inline SVG.
+React 19 + TypeScript + Vite SPA, served by nginx. Runtime dependencies: `react` and `react-dom` —
+nothing else. The look is the Nocturne design system's token sheet plus the `ch-` component layer,
+both vendored from [`template/`](../../web/template/); Tailwind 4 supplies layout utilities only.
+Every icon is hand-written inline SVG. The rest of what the template defines — its copy, player
+state model, stems, stage list and breakpoint — lives in [`src/design/`](../../web/src/design/), and
+[`scripts/check-design.mjs`](../../web/scripts/check-design.mjs) checks the template's ground rules
+on every `npm run lint` (see [../conventions/design.md](../conventions/design.md)).
 
 ```
 web/
-├── Dockerfile  nginx.conf  index.html
+├── Dockerfile  .dockerignore  nginx.conf  index.html
 ├── package.json  vite.config.ts  tsconfig*.json  .oxlintrc.json
 ├── public/      favicon.svg  icons.svg
+├── scripts/     check-design.mjs
+├── template/    the design reference — harness, mockups, stylesheet sources (never built)
 └── src/
     ├── main.tsx  App.tsx  index.css  vite-env.d.ts
     ├── api/          client.ts
-    ├── audio/        playbackEngine.ts
-    ├── hooks/        useJobEvents  useLyrics  useDominantColor  useMediaQuery  useClickTooltip
-    ├── utils/        time  transpose  lyrics  hasVocals  download
+    ├── audio/        playbackEngine.ts  meters.ts  stretchProcessor.js
+    ├── styles/       nocturne.css  chord-theme.css
+    ├── design/       copy  player  stems  stages  layout
+    ├── hooks/        useJobEvents  useLyrics  useMediaQuery  usePopover  useSeekDrag
+    │                 useSliderControl  useAnimationFrame  useElementWidth
+    ├── utils/        time  tempo  transpose  lyrics  hasVocals  download  levels  peaks
+    │                 clipboard
     ├── assets/       hero.png  react.svg  vite.svg
-    └── components/
-        ├── UploadPanel  ProcessingScreen  StemMixer
-        ├── ChordTimeline  TransportBar  StemChannel  Footer  DecorativeIcons
-        └── studio/   StudioCabinet  StudioMixer  MasterUnit  MasterCloseup  AmpCloseup
-                      ZoomOverlay  ScaleToFit  Knob  ScallopedKnob  LevelRing  DownloadLed
-                      icons  types  constants  ampComponents
-                      useKnobDrag  useSeekDrag  useStemWaveform  useDownload
-                      amps/  VocalsAmp  GuitarAmp  BassAmp  DrumsAmp  PianoAmp  OtherAmp
+    ├── components/   ScreenCard  CoverArt  Dialog  Footer  icons
+    │   └── controls/  Fader  Knob  RoutingToggles  StemWaveform
+    └── screens/
+        ├── landing/     LandingScreen
+        ├── processing/  ProcessingScreen
+        ├── failure/     FailurePanel
+        └── results/     ResultsScreen  playerReducer  types
+                         ResultsTopbar  AnalysisBar  ChordBar  Transport
+                         MixerView  StemRow
+                         ConsoleView  ConsoleStrip  MasterStrip
+                         AnalogView  AnalogModule  OutputDial
+                         ExportDialog  LyricsDialog
 ```
+
+Phones — below 720px, `PHONE_QUERY` in `design/layout.ts` — follow the harness's phone frames. The
+landing and processing screens branch into their phone arrangements on `useMediaQuery(PHONE_QUERY)`;
+the results screen locks to the Mixer with no view tabs and a compact transport, and otherwise keeps
+the web markup — `chord-theme.css` stacks the stem rows, and `max-[720px]:` utilities hide the
+Mixer's column labels and the analysis bar's dividers.
+
+In the entries below, `landing/`, `processing/`, `failure/` and `results/` are the folders under
+`src/screens/`, and `controls/` is `src/components/controls/`.
 
 ---
 
@@ -32,25 +56,34 @@ web/
 ### `Dockerfile` — multi-stage build
 **Notes:** `node:20-alpine` runs `npm ci` (before the source copy, so a code change doesn't
 reinstall deps) then `npm run build`; `nginx:1.27-alpine` receives `dist/` and `nginx.conf`.
-Because the build is `tsc -b && vite build`, **a type error fails the image build**.
+Because the build is `tsc -b && vite build`, **a type error fails the image build** — lint, and so
+the design check, never runs there. `COPY . .` also copies `template/` and `scripts/` into the build
+stage; nothing imports either, so neither reaches `dist/`.
 
-### `nginx.conf` — static serving + API proxy (22 lines)
-**Notes:** three jobs. (1) `try_files $uri $uri/ /index.html` — SPA fallback. (2)
+### `.dockerignore` — keeps `node_modules/` and `dist/` out of the build context
+**Notes:** without it, `COPY . .` would lay the host's `node_modules` over the image's own `npm ci`
+install.
+
+### `nginx.conf` — static serving + API proxy (25 lines)
+**Notes:** four jobs. (1) `try_files $uri $uri/ /index.html` — SPA fallback. (2)
 `proxy_pass http://server:8000/` — **the trailing slash strips the `/api` prefix**, which is why
 server routes are mounted at `/jobs`. (3) SSE survival: `proxy_buffering off`,
 `proxy_set_header Connection ""`, `proxy_http_version 1.1`, `proxy_read_timeout 1h` — all four
-required, or progress arrives in one lump or times out. `client_max_body_size` is **not set**,
-so nginx's 1 MB default rejects real uploads.
+required, or progress arrives in one lump or times out. (4) `client_max_body_size 512m` on
+`/api/` — without it nginx's 1 MB default answers real uploads with a 413 (which `createJob` turns
+into a sentence, since the body is HTML).
 **See:** [../operations/docker.md](../operations/docker.md#nginx)
 
 ### `index.html` — the shell
-**Notes:** `#root` div, module script, `/favicon.svg`, and a Google Fonts stylesheet loading
-**Dancing Script, Orbitron, Oswald, Rock Salt, Share Tech Mono** with `preconnect` hints. The
-Studio view depends on these heavily; offline they fall back to system sans.
+**Notes:** `#root` div, module script, `/favicon.svg`, and a Google Fonts stylesheet for **Inter
+400/500/600** with `preconnect` hints — the only typeface the design uses. Offline, the token
+stacks fall back to `system-ui`.
 
 ### `package.json`
 **Notes:** `version` is injected into the app as `__APP_VERSION__` and rendered in the footer.
-Scripts: `dev`, `build` (`tsc -b && vite build`), `lint` (oxlint), `preview`.
+Scripts: `dev`, `build` (`tsc -b && vite build`), `lint` (`oxlint && node scripts/check-design.mjs`
+— the design check runs only when oxlint exits cleanly), `preview`. Dependencies are `react` and
+`react-dom` only.
 
 ### `vite.config.ts`
 **Notes:** `react()` + `tailwindcss()` (Tailwind 4 as a Vite plugin, **not** PostCSS).
@@ -58,133 +91,328 @@ Scripts: `dev`, `build` (`tsc -b && vite build`), `lint` (oxlint), `preview`.
 `rewrite` stripping `/api`, mirroring nginx. **The target port 8787 disagrees with the server's
 documented 8000** — see
 [../operations/local-development.md](../operations/local-development.md#the-vite-proxy-port-mismatch).
+The `?url` import that loads the stretch worklet needs no configuration: Vite emits the file as a
+hashed asset.
 
 ### `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`
 **Notes:** project references. `tsconfig.app.json` covers `src` with `verbatimModuleSyntax`
-(type imports must be marked `type`), `noUnusedLocals` and `noUnusedParameters` — **an unused
-variable fails the build**, and the build runs inside Docker.
+(type imports must be marked `type`), `erasableSyntaxOnly` (no parameter properties or enums),
+`noUnusedLocals` and `noUnusedParameters` — **an unused variable fails the build**, and the build
+runs inside Docker. `allowJs` is off, so `audio/stretchProcessor.js` is **not type-checked**.
 
 ### `.oxlintrc.json`
-**Notes:** plugins `react`, `typescript`, `oxc`; only two rules configured —
-`react/rules-of-hooks` (error) and `react/only-export-components` (warn).
+**Notes:** plugins `react`, `typescript`, `oxc`; two rules configured —
+`react/rules-of-hooks` (error) and `react/only-export-components` (warn, constants allowed) — on
+top of oxlint's defaults, which include the React compiler-derived checks (`refs`,
+`set-state-in-effect`, `purity`). `ignorePatterns: ["template/**"]` keeps the vendored harness
+runtime out of the report. The design system's own adherence config is written as ESLint selectors
+oxlint doesn't implement; those rules run as `scripts/check-design.mjs` instead.
 
-### `.gitignore` (web-local), `README.md` (the unmodified Vite/React template readme),
-`public/favicon.svg`, `public/icons.svg`, `src/assets/*` (`hero.png` plus the unused Vite/React
-scaffold logos).
+### `scripts/check-design.mjs` — the design template's ground rules as a lint step (202 lines)
+**Exports:** — (a Node script: prints `path:line  message` for each violation and exits 1)
+**Imports from:** — (reads `src/` from disk)
+**Used by:** `package.json`'s `lint` script, after oxlint
+**Notes:** the rules the design system ships as ESLint `no-restricted-syntax` selectors
+(`template/_ds/…/_adherence.oxlintrc.json`), plus the parts of `INSTRUCTIONS.md` §0 and §10 a
+script can see. It first reads `src/styles/`, collecting every custom property, class and
+`--space-N` px value the two vendored sheets define, then walks every other `.ts`, `.tsx`, `.js` and
+`.css` file under `src/` and reports: a hex colour; a colour function other than a plain-black
+`rgba(0, 0, 0, a)` shadow; a spacing token's px value written out (`8.4px` rather than
+`var(--space-3)`); a `var(--…)` neither sheet defines, or one built at runtime; an inline custom
+property other than `--v`, `--l`, `--p` and `--stem`; a class in an owned family (`ch-*`, `is-*`,
+`btn*`, `dialog*`, `field`,
+`input`, `lighten`) neither sheet defines; a font other than `var(--font-body)` or
+`var(--font-heading)`; and any class defined in app CSS, where every selector up to a `{` is
+checked, one-line rules included. **It scans string literals and template-literal text, not an
+AST**: a number in a `style` object is never checked, a regex literal or JSX text can trip it, and a
+template literal is checked piece by piece around its substitutions — so a `var(--…)` name ending
+in `-` is the head of one built at runtime (`` `var(--ch-${key})` ``), and it is reported, because
+what it completes to can't be checked. `scripts/` is in neither tsconfig project, so the script
+isn't type-checked.
+**See:** [../conventions/design.md](../conventions/design.md)
+
+### `template/` — the design reference
+**Notes:** everything the redesign was built from, kept for comparison. At the top of
+`web/template/`: the working harness `CHORD Template.dc.html` (every scenario at web and phone
+widths, routed by `#/<scenario-id>`), the static board `CHORD Mockups.dc.html`, `support.js` (the
+runtime those two files need), `_ds/nocturne-…/` (the Nocturne design system: `styles.css`,
+`readme.md`, a manifest, its adherence lint config — which `scripts/check-design.mjs`
+re-implements — and `_ds_bundle.js`), `uploads/` (review screenshots and the build of the previous
+design's review demo) and a `.thumbnail`. Under `web/template/template/`: `chord-theme.css` and
+`vendor/nocturne-styles.css` (the sources of `src/styles/`), `README.md` and `INSTRUCTIONS.md`
+(class inventory, state model, responsive rules, QA checklist), and `reference/` (copies of the two
+HTML files). **Nothing here is built, served or linted.** It is the layout source of truth: open the
+harness in a browser beside the app when changing a screen; the screens' doc comments and
+`failureCopy`'s keys use its scenario ids. Where its written rules and its phone frames disagree —
+`INSTRUCTIONS.md` stacks the mixer rows below 720px, the phone frame shows stem cards — the app
+follows the written rules, so `.ch-m-stem` goes unused.
+
+### `.gitignore`, `README.md`, `package-lock.json`, `public/`, `src/assets/` — everything else
+**Notes:** `.gitignore` is web-local; `README.md` is the unmodified create-vite React + TypeScript
+readme; `package-lock.json` pins the tree `npm ci` installs. `public/favicon.svg` is the tab icon;
+`public/icons.svg` and all three `src/assets/` files (`hero.png`, `react.svg`, `vite.svg`) are
+scaffold leftovers nothing references.
 
 ---
 
 ## Entry points
 
-### `src/main.tsx` — mounts `<App/>` in `StrictMode`, imports `index.css`. Vite scaffold style
-(single quotes, no semicolons).
+### `src/main.tsx` — mounts `<App/>` in `StrictMode`
+**Imports from:** `App`, `styles/nocturne.css`, `styles/chord-theme.css`, `index.css`
+**Notes:** the three stylesheets are imported in that order because `chord-theme.css` reads
+Nocturne's variables. Vite scaffold style (single quotes, no semicolons). `StrictMode` double-invokes mount effects in development, so under `npm run dev`
+`ResultsScreen` downloads its stems twice.
 
-### `src/index.css` — global styles (38 lines)
-**Notes:** `@import "tailwindcss"`. Full-height `html/body/#root`, zero body margin, button
-cursor rules, and the two keyframe animations the app uses: **`marquee-loop`** (driven by a
-`--marquee-distance` custom property set per element) and **`eq-bounce`**.
-
-### `src/vite-env.d.ts` — `vite/client` types and the `__APP_VERSION__` declaration.
-
-### `src/App.tsx` — screen router and job identity (84 lines)
-**Exports:** `App` (default)
-**Imports from:** `api/client`, `components/Footer`, `components/ProcessingScreen`,
-`components/StemMixer`, `components/UploadPanel`, `hooks/useJobEvents`
+### `src/index.css` — global styles (27 lines)
 **Used by:** `main.tsx`
-**Notes:** the entire router — `useState<"upload" | "processing" | "results">`. Owns only
-`screen`, `activeJobId`, `isSubmitting`, `uploadError`; everything else derives from
-`useJobEvents(activeJobId)`. The effect watching `job.status === "done"` seeds
-`localStorage["chord:viewMode"] = "simple"` so a new song always opens Simple. **`handleBack`
-deletes the job** — clearing `activeJobId` unmounts the mixer, whose cleanup fires the discard
-beacon.
-**See:** [../architecture/web.md](../architecture/web.md#screen-flow)
+**Notes:** `@import "tailwindcss"`; `min-height: 100%` on `html`, `body` and `#root` (the page's
+full height comes from `min-h-screen` in `App.tsx`); the page ground; and button cursors (`pointer`,
+or `not-allowed` when disabled). The ground is the harness's canvas in tokens: `html` in
+`--ch-well`, and on `body` a radial glow from `--ch-panel-raised` at the top left through
+`--color-bg` to `--ch-well`, sized to the first screen (`100% 100vh`, no repeat), so a longer page
+carries on in the well colour without a seam. It defines no class and no keyframes — app CSS that
+defines a class fails `check-design.mjs`. Tailwind's preflight **and utilities** sit in cascade
+layers while the vendored sheets are unlayered, so **a Tailwind class can't override a property a
+`ch-` or Nocturne class sets** — use an inline style.
+
+### `src/vite-env.d.ts` — ambient types
+**Notes:** `vite/client` types (which also declare `*?url` imports) and the `__APP_VERSION__`
+declaration.
+
+### `src/App.tsx` — screen router and job identity (199 lines)
+**Exports:** `App` (default)
+**Imports from:** `api/client`, `components/Footer`, `design/copy`, `hooks/useJobEvents`,
+`failure/FailurePanel`, `landing/LandingScreen`, `processing/ProcessingScreen`,
+`results/ResultsScreen`, `utils/clipboard`
+**Used by:** `main.tsx`
+**Notes:** there is no screen state. `activeJobId === null` shows `LandingScreen`; otherwise
+`renderJob` lets the job decide, in this order — `done` → `ResultsScreen`, handed `stageSnapshots`
+for its loading screen and checked first, so a finished job never shows a connection failure; a
+connection that isn't `live` → `FailurePanel`: *Job not found* on a
+404 (with *New track* only), otherwise *Connection lost* (the retry count, or that retries stopped,
+with *Reconnect now* and *New track*); `error` → *Separation failed*, with `error_message` as its
+body, `error_log` as its log, *Try another source* and *Copy log* (which copies the log, or the
+message when there is none, and reads *Copied* for 2 s); `cancelled` → *Cancelled* with *Resume
+job* (`resumeJob`, then `reconnect(latest)`; a failure shows as the panel's log) and *Discard*;
+anything else → `ProcessingScreen`. **The failed row's `stage_message` isn't read** — every job
+failure has the same title, whichever stage failed. Titles, bodies and labels come from
+`failureCopy` and `landingCopy`. `createdJob` (the POST response) fills the gap before the stream's
+first update. Owns the in-flight submission (`Submission`, which picks the button that reads
+*Submitting…*) and its `SubmitError` — a `landingCopy` title over the thrown message — plus the
+cancel, resume and copy-log handlers; a cancel that fails is ignored (a job that finished meanwhile
+answers 409), since the stream reports the real state. **Leaving a job discards it**: `handleBack`
+— *New track*, *Try another source* and *Discard* — clears `activeJobId`, and `useJobEvents`'
+cleanup fires the beacon: the server cancels a job still running (keeping its files) and deletes a
+finished one. Lays the screens out like the harness canvas: 28px top, `--space-8` (22.4px) sides
+and 40px bottom around a 1120px column, with 12px side gutters from a `max-[720px]:` utility below
+720px.
+**See:** [../architecture/web.md](../architecture/web.md)
 
 ---
 
 ## `src/api/`
 
-### `src/api/client.ts` — the only module that knows the API exists (116 lines)
-**Exports:** types `JobStatus`, `Job`, `ChordSegment`, `LyricsLine`, `Lyrics`; functions
-`createJob`, `createJobFromUrl`, `getJob`, `cancelJob`, `getChords`, `getLyrics`; URL builders
-`jobEventsUrl`, `cancelJobUrl`, `discardJobUrl`, `stemUrl`, `thumbnailUrl`, `downloadAllUrl`
+### `src/api/client.ts` — the only module that knows the API exists (161 lines)
+**Exports:** types `JobStatus`, `Job`, `ChordSegment`, `LyricsLine`, `Lyrics`; class `ApiError`;
+functions `createJob`, `createJobFromUrl`, `getJob`, `cancelJob`, `resumeJob`, `getChords`,
+`getLyrics`, `saveLyrics`; URL builders `jobEventsUrl`, `cancelJobUrl`, `discardJobUrl`, `stemUrl`,
+`thumbnailUrl`, `downloadAllUrl`
 **Imports from:** —
-**Used by:** `App`, `StemMixer`, `ProcessingScreen`, `ChordTimeline` (type only),
-`useJobEvents`, `useLyrics`, `studio/StudioMixer` + `studio/MasterUnit` (type only)
-**Notes:** `API_BASE` is the literal `"/api"` — no configurable host. Two export shapes on
-purpose: `async` wrappers that check `res.ok` and prefer the server's `detail` message, and URL
-builders returning plain strings for consumers that aren't `fetch` (`EventSource`,
-`sendBeacon`, `<img src>`, WaveSurfer's `url`, `downloadFile`). **`getLyrics` maps 404 → `null`**
-rather than throwing, because "no lyrics" is a normal outcome. Every interface here is
-hand-mirrored from `server/app/models/schemas.py`.
+**Used by:** `App`, `useJobEvents`, `useLyrics`, `components/CoverArt`, `design/stages` (type),
+`utils/lyrics` (type), `processing/ProcessingScreen` (type), `results/ResultsScreen`,
+`results/ResultsTopbar` (type), `results/ChordBar` (types), `results/ExportDialog`,
+`results/LyricsDialog`
+**Notes:** `API_BASE` is the literal `"/api"`. **`createJob` is a plain multipart `fetch`, so an
+upload reports no progress** — the landing screen reads *Submitting…* until the response. Both
+create calls go through the private `post`, which turns a `fetch` that rejects (no response at all)
+into an `ApiError` with status 0 and a sentence; a 413 comes from nginx as HTML, so `createJob` maps
+it to a sentence too. `ApiError` carries the HTTP status (`useJobEvents` needs to
+tell a 404 from a 502). `detailOf` accepts only a string `detail` — FastAPI's 422 carries a list.
+**`getLyrics` maps 404 → `null`** rather than throwing, because "no lyrics" is a normal outcome.
+`cancelJobUrl` has no caller outside `cancelJob`. Every interface here is hand-mirrored from
+`server/app/models/schemas.py`.
 **See:** [../api/contract-sync.md](../api/contract-sync.md)
 
 ---
 
 ## `src/audio/`
 
-### `src/audio/playbackEngine.ts` — the audio truth (231 lines)
-**Exports:** `StemInput`, `StemState`, `PlaybackEngine`
-**Imports from:** —
-**Used by:** `StemMixer`
-**Notes:** a plain class, no React. Owns one `AudioContext`; six `AudioBufferSourceNode`s
-started at the same `when` with the same `offset` are **sample-locked by construction**. Graph:
-source → per-stem `GainNode` → `masterGain` → destination, with `metronomeGain` wired
-**directly to destination** so master volume doesn't attenuate the click. Position is derived,
-never stored (`offsetSeconds + (currentTime - startedAtContextTime)`); `duration` is the **max**
-of all buffers. `applyGains()` recomputes every gain from scratch — **solo is additive, any solo
-silences non-soloed stems, and mute beats solo**. `load()` checks `this.disposed` after each
-`await` because `StrictMode` double-invokes the mount effect. The metronome schedules **every
-remaining beat at once** (~480 oscillators for a 4-min song at 120 BPM), tracked so they can be
-stopped; beat one is anchored to track time zero, not a detected downbeat. `dispose()` must be
-called — browsers limit open `AudioContext`s.
+### `src/audio/playbackEngine.ts` — the audio truth (633 lines)
+**Exports:** `StemInput`, `StemLoadFailure`, `LoopRegion`, `MeterReadings`,
+`createMeterReadings`, `PlaybackEngine`
+**Imports from:** `audio/meters`, `audio/stretchProcessor.js` (as a URL, via `?url`)
+**Used by:** `results/ResultsScreen`; `results/ConsoleView` and `results/AnalogView`
+(`createMeterReadings` and the `MeterReadings` type)
+**Notes:** a plain class, no React. One `AudioContext`. Per stem: source → lowshelf → highshelf (the
+Tone tilt, around `StemInput.tonePivotHz`) → gain (fader × mute/solo) → `StereoPannerNode` → master,
+with a splitter and two `AnalyserNode`s tapped after the panner. The master feeds the destination, a
+peak/correlation/true-peak analyser pair, and a K-weighting `IIRFilterNode` chain into a loudness
+pair; `metronomeGain` connects **straight to the destination**, bypassing master volume.
+**`load()` resolves with the stems that failed** (`{name, url, message}` — the HTTP status and any
+string `detail`, or the decode error) instead of rejecting, and **reports no progress**: each stem
+is fetched whole, then decoded. A retry calls it again with inputs rebuilt from the failures, since
+a failure carries no `tonePivotHz`. It checks `disposed` after every await (`StrictMode`
+double-invokes the mount effect). Position is derived, never stored:
+`anchorTrackTime + (currentTime − anchorContextTime) × rate`, wrapped into the loop;
+`transportToken` makes an overtaken asynchronous `play()` abandon itself. At 1× stems are
+`AudioBufferSourceNode`s (sample-locked by construction; loops use their native `loop` points, so
+`clearLoop()` is seamless). At any other rate a `chord-stretch` `AudioWorkletNode` is created lazily
+with one output per stem — its stem list is fixed at creation — and fed one-second blocks: ahead of
+every start (from 1 s before the position to 4 s × rate after it, plus around a loop's start), then
+whenever the worklet asks. **`supportsTimeStretch` requires `AudioContext.audioWorklet`, which
+browsers expose only to secure origins**; it also turns false if the module fails to load, and
+`play()` then falls back to 1×. The metronome is a lookahead scheduler (a 25 ms timer booking clicks
+120 ms ahead) over `trackPieces`, which cuts context time at loop wraps — so clicks follow loops and
+speed; beat one is still track time zero. Momentary loudness measures the last 400 ms of a
+32768-sample analyser buffer; above 81.9 kHz that is more than the buffer holds, so it measures the
+whole buffer. Every gain, pan and tone change goes through `setTargetAtTime` (15 ms). `dispose()`
+must be called — browsers limit open contexts. `getStemState()`, `loopRegion` and
+`isMetronomeEnabled` have no callers.
 **See:** [../architecture/audio-playback.md](../architecture/audio-playback.md)
+
+### `src/audio/meters.ts` — measurement math and ballistics (177 lines)
+**Exports:** `IirCoefficients`, `kWeightingFilters`, `peakOf`, `meanSquareOf`, `truePeakOf`,
+`correlationOf`, `loudnessFromMeanSquares`, `LevelFollower`, `Smoother`
+**Imports from:** `utils/levels`
+**Used by:** `audio/playbackEngine`, `results/ConsoleView` (`LevelFollower`), `results/AnalogView`
+(`LevelFollower`, `Smoother`)
+**Notes:** pure functions and two small stateful classes, no audio nodes. `kWeightingFilters`
+derives the BS.1770 shelf and RLB high-pass for **any** sample rate (the spec tabulates 48 kHz only)
+the way libebur128 does. `truePeakOf` interpolates three in-between positions with 12-tap
+Hann-windowed sinc kernels — display-grade, not a certified true-peak meter. `correlationOf` returns
+`null` below an energy floor, where the value would be noise. `LevelFollower.update` takes a
+**linear** peak and returns dB: instant attack, linear release in dB/s, optional hold, and anything
+under −90 dB reads as −∞. `Smoother` leaves its value alone on a `null` input.
+**See:** [../features/metering.md](../features/metering.md)
+
+### `src/audio/stretchProcessor.js` — the time-stretch worklet (286 lines)
+**Exports:** — (registers the `chord-stretch` processor in `AudioWorkletGlobalScope`)
+**Imports from:** —
+**Used by:** `audio/playbackEngine` (loaded by URL with `audioWorklet.addModule`)
+**Notes:** **plain JavaScript** — it runs in the worklet scope, is not bundled, and `tsc` never sees
+it. WSOLA: 60 ms frames on a 30 ms hop with a periodic Hann window, ±15 ms similarity search
+(every 4th offset, then refined). Similarity is measured on a gain-weighted mix of the audible
+stems and **every stem is cut at the same positions**, which is what keeps them sample-aligned at
+any speed. It holds no song: every 8th hop it works out the one-second blocks the next 3 s will
+read, posts `need` for the missing ones (asking again after 1 s), and — only once more than 12 are
+cached — drops the blocks it no longer needs; needed blocks and arrivals are never capped. A block
+that hasn't arrived plays as silence. The `start` message carries an absolute `when`, so output
+begins on an exact frame. Messages in: `blocks`, `weights`, `start`, `stop`. `process()`'s
+per-quantum path allocates nothing — indexed loops rather than `for…of` or `subarray()`, because
+garbage collection on the audio thread is heard as dropouts; working out and posting a `need`
+request every 8th hop is the one place that allocates.
+**See:** [../features/speed-and-loop.md](../features/speed-and-loop.md)
+
+---
+
+## `src/styles/`
+
+### `src/styles/nocturne.css` — the design system's tokens and base components (295 lines)
+**Used by:** `main.tsx`
+**Notes:** vendored from `template/template/vendor/nocturne-styles.css`, **minus its Google Fonts
+`@import`** — bundled after other CSS it would be invalid, so `index.html` loads Inter instead.
+Defines `--color-*` (the neutral and accent ramps), `--font-*`, `--space-*`, `--radius-*`,
+`--shadow-*`, global element rules (box-sizing, heading scale, the `:focus-visible` accent ring,
+`::selection`), and the classes `.btn`, `.input`/`.field`, `.tag`, `.card`, `.dialog*`, `.hr`,
+`.radio`, `.seg*`, `.nav*`, `.table`, `.elev-*`, `.text-muted` and `.lighten`. Colors, type and
+spacing go through these tokens; geometry the harness writes inline (paddings, column widths) is
+copied into the components as literals, the way the harness has it. With `chord-theme.css` it is
+the vocabulary `scripts/check-design.mjs` checks against: a token or owned class neither sheet
+defines fails lint.
+
+### `src/styles/chord-theme.css` — the `ch-` component layer (611 lines)
+**Used by:** `main.tsx`
+**Notes:** vendored **unmodified** from `template/template/chord-theme.css` — byte-identical; keep it
+that way, or record the divergence here. Every `ch-` class the screens use; the stem hues
+`--ch-vocals` … `--ch-other` and the two status hues; the panel and well surfaces. Components pass
+runtime state through custom properties — **`--v`** (control position), **`--l`** (meter level),
+**`--p`** (playback position), **`--stem`** (hue), the only four `check-design.mjs` lets a component
+set — though some geometry is still set inline (chord segments' `flex`, the waveform's
+`clip-path`). Its one breakpoint, `@media (max-width: 720px)`, stacks `.ch-stemrow` — the name on
+the first line, then level, routing (toggles at a 44px hit height) and waveform on lines of their
+own — which is the phone Mixer; **`PHONE_QUERY` uses the same width**. Unused by the app: `.ch-nav*`
+(harness chrome), `.ch-scale`, `.ch-wave-a/-b/-c` (placeholder envelopes, replaced by
+`utils/peaks`), `.ch-m-stem` (the phone frame's stem card) and `.ch-lyric-past`.
+**See:** [../features/theming.md](../features/theming.md)
 
 ---
 
 ## `src/hooks/`
 
-### `src/hooks/useJobEvents.ts` — one job's live status (70 lines)
-**Exports:** `useJobEvents`
-**Imports from:** `api/client`
+### `src/hooks/useJobEvents.ts` — one job's live status (162 lines)
+**Exports:** `useJobEvents`, `ConnectionState`, `MAX_RECONNECT_ATTEMPTS`
+**Imports from:** `api/client`, `design/stages`
 **Used by:** `App`
-**Notes:** the most side-effect-heavy hook. `getJob()` once immediately (so first paint has
-data), then an `EventSource`, closed on a terminal status. **`onerror` closes and does not
-reconnect** — a blip freezes the UI while the job continues. Registers a `pagehide` listener
-firing `navigator.sendBeacon(discardJobUrl(...))`, and calls the same function from the effect
-cleanup — which is why leaving the mixer deletes the job, and why `StrictMode`'s double-invoke
-can spuriously cancel a job in development. `TERMINAL_STATUSES` here must match the server's set.
+**Notes:** returns `{ job, connection, stageSnapshots, reconnect }`. The discard beacon lives in
+**its own effect keyed on `jobId` alone**, so reconnecting can never fire it; it runs on `pagehide`
+and on cleanup, once an update for the job has been delivered. The server cancels a still-running
+job and deletes a finished one — which is why leaving a job cleans it up, and why Fast Refresh
+re-running effects in development can discard the job on screen. The subscription effect
+(`[jobId, generation, deliver]`; `deliver` is stable) calls `getJob` then opens an `EventSource`; a
+stream error on a non-terminal job schedules a retry with backoff (1 s doubling to 10 s,
+`MAX_RECONNECT_ATTEMPTS = 10`), a 404 fails at once with `notFound`, and any message resets the
+count. `stageSnapshots` keeps the first update seen in each processing stage (indexed by
+`processingStage`); `reconnect(latest)` shows a just-returned job at once and restarts the
+snapshots. State is stored with its job id and filtered on read, instead of being reset in an
+effect. `TERMINAL_STATUSES` here must match the server's set.
+**See:** [../architecture/web.md](../architecture/web.md)
 
-### `src/hooks/useLyrics.ts` — fetch lyrics once (24 lines)
+### `src/hooks/useLyrics.ts` — fetch lyrics once (29 lines)
 **Exports:** `useLyrics`
 **Imports from:** `api/client`
-**Used by:** `StemMixer`
-**Notes:** returns `Lyrics | null | undefined` — **`undefined` = loading, `null` = confirmed
-none**, documented in a doc comment. Standard `cancelled` guard; a rejection maps to `null`.
-
-### `src/hooks/useDominantColor.ts` — accent colors from artwork (160 lines)
-**Exports:** `AccentColor`, `AccentColors`, `DEFAULT_ACCENT_COLORS`, `useDominantColors`
-**Imports from:** —
-**Used by:** `StemMixer`, `ProcessingScreen`
-**Notes:** draws the image to a **32×32** canvas (the downsample is what makes this cheap enough
-to run synchronously in `onload`), then a hand-rolled 2-means: seed the second centroid at the
-pixel furthest from the first, six Lloyd iterations, return the larger cluster as `primary`.
-`toAccentColor` keeps the hue, clamps saturation to `[0.5, 0.85]`, and **pins lightness to 42** —
-so any artwork yields a fill that carries white text. A tainted canvas (cross-origin without
-CORS) is caught and ignored. Returns `null` on no URL or load error; callers coalesce to
-`DEFAULT_ACCENT_COLORS`. **Resolves after first paint**, which is why WaveSurfer needs an
-explicit color-sync effect.
-**See:** [../features/theming.md](../features/theming.md)
+**Used by:** `results/ResultsScreen`
+**Notes:** returns `[lyrics, replaceLyrics]` where `lyrics` is `Lyrics | null | undefined` —
+**`undefined` = loading, `null` = none**, documented in its doc comment. A lookup that fails for any
+other reason (a network error, a 5xx) also becomes `null`, so it reads as *None found for this
+track.* with *Add lyrics manually*. The result is stored with its job id, so another job reads as
+loading until its own lookup answers. The setter takes lyrics saved from `LyricsDialog`.
 
 ### `src/hooks/useMediaQuery.ts` — live `matchMedia` boolean (16 lines)
 **Exports:** `useMediaQuery`
-**Used by:** `StemMixer`, `studio/StudioMixer` — both with `"(max-width: 639px)"` (Tailwind's
-`sm`), so the two views agree on one definition of "mobile".
+**Used by:** `landing/LandingScreen`, `processing/ProcessingScreen`, `results/ResultsScreen` — all
+with `PHONE_QUERY` from `design/layout`. `ResultsScreen` also asks
+`"(prefers-reduced-motion: reduce)"`.
 
-### `src/hooks/useClickTooltip.ts` — tap-toggled tooltip (25 lines)
-**Exports:** `useClickTooltip<T>`
-**Used by:** `ChordTimeline`, `studio/MasterUnit`
-**Notes:** returns `{open, setOpen, containerRef}`. Click/tap rather than hover so it works on
-touch; closes on outside `pointerdown` or Escape, with listeners attached only while open.
+### `src/hooks/usePopover.ts` — click-toggled popover state (25 lines)
+**Exports:** `usePopover<T>`
+**Used by:** `results/Transport` (the speed chip)
+**Notes:** returns `{open, setOpen, containerRef}`; closes on an outside `pointerdown` or Escape,
+with listeners attached only while open. Destructure it — reading `.open` off the returned object
+trips the React refs lint.
+
+### `src/hooks/useSeekDrag.ts` — click-or-drag seeking (35 lines)
+**Exports:** `useSeekDrag`
+**Used by:** `results/ChordBar`, `results/Transport`
+**Notes:** the element it's attached to defines 0–100%. Ignores non-primary buttons,
+`preventDefault()`s to stop text selection, captures the pointer for the drag, handles
+`pointercancel`, and does nothing while `duration <= 0`.
+
+### `src/hooks/useSliderControl.ts` — pointer and keyboard for 0…1 controls (95 lines)
+**Exports:** `useSliderControl`, `SliderAxis`
+**Imports from:** —
+**Used by:** `controls/Fader`, `controls/Knob`
+**Notes:** returns pointer handlers and `onKeyDown`, spread onto the element. `horizontal` maps
+pointer x across the element, `vertical` maps `(bottom − y) / height` (the formula
+`INSTRUCTIONS.md` gives), `knob` is **vertical drag, 160 px for the full range** — rotational drag
+is unusable with a mouse — and doesn't jump on press. Keys: arrows ±0.01, Shift ±0.1,
+PageUp/PageDown ±0.1, Home/End. **There is no default value and no double-click reset.** Values are
+rounded to 0.001 so arrow steps don't accumulate float noise into `aria-valuenow`. A press focuses
+the element, because its `preventDefault()` would otherwise cancel the focus keyboard control needs.
+
+### `src/hooks/useAnimationFrame.ts` — a rAF loop while active (24 lines)
+**Exports:** `useAnimationFrame`
+**Used by:** `results/ConsoleView`, `results/AnalogView` — both pass `active = true`, so their loops
+run whenever the view is mounted, paused or not
+**Notes:** calls the latest `onFrame` (held in a ref) every frame while `active`. The loop depends
+only on `active`, so a new callback on every render never restarts it. For displays that write
+straight to the DOM: a custom-property write per frame is cheap, a re-render per frame of a whole
+view is not.
+
+### `src/hooks/useElementWidth.ts` — an element's width (15 lines)
+**Exports:** `useElementWidth<T>`
+**Used by:** `results/ChordBar`
+**Notes:** returns a **callback ref** (with React 19's cleanup return) plus the width a
+`ResizeObserver` reports — a callback ref, so it works on elements that mount later.
 
 ---
 
@@ -192,262 +420,536 @@ touch; closes on outside `pointerdown` or Escape, with listeners attached only w
 
 Pure functions, one subject per file.
 
-### `src/utils/time.ts` — `formatTime(seconds)` → `"3:51"`, `"0:00"` for non-finite.
-**Used by:** `TransportBar`, `studio/MasterUnit`
+### `src/utils/time.ts` — `formatTime(seconds)` (11 lines)
+**Used by:** `processing/ProcessingScreen`, `results/ResultsTopbar`, `results/ChordBar`,
+`results/Transport`
+**Notes:** `"3:51"` (`"0:00"` for non-finite), with 5 ms of slack before flooring: decoding at a
+device rate other than a stem's own can leave it a frame short — a 36-second track decodes to
+35.99998 s at 44.1 kHz — which would otherwise read 0:35. The processing screen's time-left wording
+isn't here; it is `processingCopy.estimate` in `design/copy.ts`.
+
+### `src/utils/tempo.ts` — `formatBpm(bpm)` (4 lines)
+**Used by:** `results/AnalysisBar`
+**Notes:** a whole tempo without a decimal, anything else to one.
 
 ### `src/utils/transpose.ts` — `transposeChord`, `transposeKeyLabel` (24 lines)
-**Used by:** `ChordTimeline`, `studio/MasterUnit`
+**Used by:** `results/AnalysisBar` (`transposeKeyLabel`), `results/ChordBar` (`transposeChord`)
 **Notes:** `NOTE_NAMES` here **duplicates** the array in `server/app/pipeline/chords.py` — both
-must stay sharps-only. `transposeChord` returns `"-"` for `"N"` **regardless of the offset**,
-which is how the no-chord marker is displayed, and is why it's called even at `transpose === 0`.
-The `((i + n) % 12 + 12) % 12` double modulo is required because JS `%` keeps the sign. Suffixes
-are opaque, so any chord quality works.
+must stay sharps-only. `transposeChord` shifts only a label that has a root, so `"N"` (no chord)
+comes back unchanged; `results/ChordBar` checks for `N` itself, showing *—* as the current chord and
+no label on the strip. The `((i + n) % 12 + 12) % 12` double modulo is required
+because JS `%` keeps the sign.
 **See:** [../features/transpose.md](../features/transpose.md)
 
-### `src/utils/lyrics.ts` — `lyricsDisplayLine`, `currentLyricLine` (24 lines)
-**Imports from:** `api/client` (types)
-**Used by:** `StemMixer`
-**Notes:** two entry points for the same scan. `lyricsDisplayLine` always returns a string,
-including status text (`"Looking for lyrics…"`, `"No lyrics found"`,
-`"Lyrics found (not synced)"`, `"♪ ♪"`) — used by the Studio vocals amp. `currentLyricLine`
-returns the line or `null` with no status text — used by the Simple timeline. Linear scan
-relying on sorted order with an early `break`, run every animation frame.
+### `src/utils/lyrics.ts` — `currentLineIndex(lines, time)` (11 lines)
+**Imports from:** `api/client` (type)
+**Used by:** `results/ChordBar`
+**Notes:** −1 before the first line. A linear scan relying on sorted times with an early `break`,
+run on every render of the chord bar — every animation frame while playing.
 
 ### `src/utils/hasVocals.ts` — `detectHasVocals(buffer)` (14 lines)
-**Used by:** `StemMixer`
-**Notes:** RMS over every 8th sample (`SAMPLE_STRIDE`) against `SILENCE_RMS_THRESHOLD = 0.01`.
-Instrumentals separate into a **near-silent** vocals stem rather than an absent one; this gates
-the whole lyrics UI.
+**Used by:** `results/ResultsScreen`
+**Notes:** the RMS of channel 0 over every 8th sample (`SAMPLE_STRIDE`), against
+`SILENCE_RMS_THRESHOLD = 0.01`. Instrumentals separate into a **near-silent** vocals stem rather
+than an absent one; a silent one starts muted and is marked by the Mixer's hint line and, while it
+stays muted, the Console strip's *Silent* label. The lyric row still renders.
 
 ### `src/utils/download.ts` — `downloadFile(url, filename)` (14 lines)
-**Used by:** `StemChannel`, `StemMixer`, `studio/useDownload`
-**Notes:** fetch → blob → object URL → synthetic `<a download>` → revoke. Chosen over a plain
-link so the client can **rename the file** (the server suggests the raw job id), **detect
-failure** (a non-ok response throws), and **show a spinner**. Buffers the whole file in memory.
+**Used by:** `results/ExportDialog`
+**Notes:** fetch → blob → object URL → synthetic `<a download>` → revoke. Chosen over a plain link
+so the client can **name the file** (stems arrive with no `Content-Disposition`, and the zip's
+names the raw job id), **detect failure** (a non-ok response throws), and show an in-flight label.
+Buffers the whole file in memory.
+
+### `src/utils/levels.ts` — level, pan and tone math and formatting (67 lines)
+**Exports:** `MINUS`, `dbToGain`, `gainToDb`, `formatDb`, `formatSigned`, `Anchors`,
+`mapThroughAnchors`, `PAN_CENTER`, `panToStereo`, `formatPan`, `TONE_FLAT`, `TONE_RANGE_DB`,
+`toneToShelfDb`, `formatTone`
+**Imports from:** —
+**Used by:** `audio/meters`, `design/player`, `results/ResultsScreen`, `results/AnalysisBar`,
+`results/ConsoleView`, `results/ConsoleStrip`, `results/MasterStrip`, `results/AnalogView`,
+`results/AnalogModule`
+**Notes:** generic math only — the fader tapers, `FADER_RANGE_DB` and the meter scales are the
+design's, and live in `design/player.ts`. Those scales are anchor lists for `mapThroughAnchors`, a
+clamped piecewise-linear map whose `!(value > first)` test also catches −∞. `formatDb` uses
+**U+2212** (`MINUS`), not a hyphen, so readouts align on tabular numerals, and folds `-0.0` to
+`0.0`; `formatSigned` does the same for readouts whose sign matters (transpose, correlation, tone).
+Pan positions read `C`/`L14`/`R8`; the Tone knob's extremes shelve highs by ±6 dB (`TONE_RANGE_DB`)
+and lows by the opposite.
+
+### `src/utils/peaks.ts` — `waveformPolygon(buffer, bins = 160)` (37 lines)
+**Used by:** `results/ResultsScreen`
+**Notes:** a CSS `polygon()` — top edge left→right, bottom edge right→left — used as `clip-path` on
+`.ch-wave`, replacing the template's placeholder envelopes. Peaks over every 8th sample, lifted with
+a square root so quiet stems still show a shape, with a 2% half-height floor so silence reads as a
+thin band. Recomputed for every loaded stem each time a load finishes, a retry included.
+
+### `src/utils/clipboard.ts` — `copyText(text)` (18 lines)
+**Used by:** `App`
+**Notes:** `navigator.clipboard`, falling back to a hidden textarea and `execCommand("copy")` —
+the async Clipboard API is missing on plain-HTTP origins other than localhost.
 
 ---
 
-## `src/components/` — screens and Simple view
+## `src/design/` — the template's vocabulary in code
 
-### `src/components/UploadPanel.tsx` — the upload screen (106 lines)
-**Imports from:** `components/DecorativeIcons`
-**Used by:** `App`
-**Notes:** URL form + drag-and-drop zone with a hidden
-`<input accept=".mp3,.flac,audio/mpeg,audio/flac">`. Only `files[0]` is used. Hardcodes the
-brand accent `#307E9F` / `hsl(198,54%,58%)` because there's no job yet and therefore no artwork
-to sample.
+Everything the design template defines that isn't CSS. Screens and controls take their words, state
+shapes, tapers and stem identities from here rather than writing their own;
+[../conventions/design.md](../conventions/design.md) explains the rules.
 
-### `src/components/ProcessingScreen.tsx` — live progress (205 lines)
-**Imports from:** `api/client`, `components/DecorativeIcons`, `hooks/useDominantColor`
-**Used by:** `App`, **and `StemMixer`** (reused as its stem-loading screen)
-**Notes:** four early-return states — connection error, no job, `error`, `cancelled` — then the
-progress layout: a pulsing accent ring around the thumbnail, a marquee title, a progress bar,
-`stage_message` (falling back to `STAGE_LABELS`), and Cancel. The optional **`onCancel` prop
-overrides the default `cancelJob` call**, which is what lets `StemMixer` reuse it for a
-client-side load where there's no server job to cancel. Samples the thumbnail itself, so the
-theme is live during processing.
+### `src/design/copy.ts` — every rendered string (233 lines)
+**Exports:** `countWord`, `brand`, `stemNames`, `landingCopy`, `processingCopy`, `resultsCopy`,
+`failureCopy`, `dialogCopy`, `footerCopy`
+**Imports from:** —
+**Used by:** `App`, `components/Footer`, `controls/RoutingToggles`, `design/stages`,
+`design/stems`, `landing/LandingScreen`, `processing/ProcessingScreen`, `results/ResultsScreen`,
+`results/ResultsTopbar`, `results/AnalysisBar`, `results/ChordBar`, `results/Transport`,
+`results/MixerView`, `results/StemRow`, `results/ConsoleStrip`, `results/MasterStrip`,
+`results/AnalogView`, `results/AnalogModule`, `results/OutputDial`, `results/ExportDialog`,
+`results/LyricsDialog`
+**Notes:** strings are verbatim from `CHORD Template.dc.html` unless they sit under an
+*App-authored* comment — states the template doesn't draw: empty files, busy and failure states,
+accessible names, both dialogs and the footer. Two template lines are **reworded by decision**,
+each marked: the *Cancelled* body (the template promised a 24-hour queue) and *Connection lost*'s
+secondary action, *New track* in place of *Work offline*. Grouped by screen; values that need data
+are functions (`rejectedBody(fileName)`, `levelLabel(stem, value)`) — `processingCopy.estimate`
+takes seconds and rounds them itself, to the nearest 5 s with a 5 s floor under a minute and to whole
+minutes above, because the estimate is rough — and `failureCopy` is keyed by the template's scenario
+ids. **Some strings restate server facts and must change with them:**
+`processingCopy.stages` is `PROCESSING_STAGES`, whose last four labels are the server's
+`stage_message` strings; *up to 12 minutes* (`dropHint`, `phoneDropHint`) is
+`max_duration_seconds`' default; *44.1 / 48 kHz preserved* is `_PRESERVED_SAMPLE_RATES`; *MP3 or
+FLAC* and the rejection copy are `ALLOWED_UPLOAD_EXTENSIONS`; and *six* stems (`intro`,
+`stemsHint`, `processingCopy.model`, `estimate`, `decoding`) is the Demucs model. `stemNames` is
+read by key, through `stemName` in `design/stems`. `countWord` spells counts up to six only (the
+stem-failure body); `footerCopy.copyright` hardcodes the author's name.
+**See:** [../conventions/design.md](../conventions/design.md)
 
-### `src/components/StemMixer.tsx` — the state hub (510 lines)
-**Imports from:** `api/client`, `audio/playbackEngine`, `hooks/useDominantColor`,
-`hooks/useLyrics`, `hooks/useMediaQuery`, `utils/download`, `utils/hasVocals`, `utils/lyrics`,
-`components/ChordTimeline`, `components/ProcessingScreen`, `components/StemChannel`,
-`components/TransportBar`, `studio/icons`, `studio/StudioCabinet`, `studio/StudioMixer`
-**Used by:** `App`
-**Notes:** owns **all** playback state — `engineRef`, `waveSurfersRef`, `rafRef`,
-`channelStates`, `soloedStems`, `masterVolume`, `metronomeEnabled`, `chordSegments`, `hasVocals`,
-`viewMode`, `transpose`, `currentTime`, `isPlaying` — and threads it into both views as props.
-**The single `requestAnimationFrame` loop here drives every playhead in the app**, calling
-`setCurrentTime` and `ws.setTime(time)` on each registered WaveSurfer, unconditionally (even when
-paused). Both views are built as local variables in the same render and one is chosen at the
-end, so **neither holds playback state** and switching mid-song is seamless. `changeViewMode`
-staggers fade-out → swap → 200 ms mount delay → fade-in, guarded by `viewTransitionTokenRef` so
-rapid toggling can't stick. Derives `cardBg`/`cardBorder` via `color-mix`. `SIMPLE_STEM_ORDER`
-differs from the Studio view's order. **Known bug:** `handleDownloadAll` strips only
-`/\.mp3$/i`, so a FLAC upload downloads as `song.flac_stems.zip`.
-**See:** [../architecture/web.md](../architecture/web.md#state-ownership), [../features/simple-view.md](../features/simple-view.md)
+### `src/design/player.ts` — the template's state model and what derives from it (88 lines)
+**Exports:** types `StemKey`, `StemState`, `ResultView`, `PlayerState`; `MIN_TRANSPOSE`,
+`MAX_TRANSPOSE`, `FADER_RANGE_DB`, `db`, `masterDb`, `fmtDb`, `audible`, `STEM_METER_SCALE`,
+`MASTER_METER_SCALE`
+**Imports from:** `utils/levels`
+**Used by:** `design/stems` (type), `results/ResultsScreen`, `results/playerReducer`,
+`results/types` (types), `results/ResultsTopbar` (type), `results/AnalysisBar`, `results/StemRow`,
+`results/ConsoleView`, `results/ConsoleStrip`, `results/MasterStrip`, `results/AnalogModule`
+**Notes:** `INSTRUCTIONS.md` §3 as types. `StemState` and `PlayerState` hold **0…1 UI positions,
+not dB** (gain, tone, pan, master); everything else is derived, never stored, under the template's
+own function names. `StemKey` is the six template stems. **Two fader tapers, each matching its
+strip's ticks.** `db()` maps a stem position linearly onto −36…0 dB with the bottom silent — the
+scale of the `0 / −12 / −24 / −∞` `TICKS` in `results/ConsoleStrip`, so change `FADER_RANGE_DB`
+and those labels together (the template's demo uses −12…0 and asks for the audio graph's own
+taper). `masterDb()` goes through `MASTER_TICKS`, the master strip's `0 / −6 / −18 / −∞`, giving the
+top of the travel more room; `MASTER_METER_SCALE` is those anchors inverted, so master fader, meter
+and ticks can't drift apart, while `STEM_METER_SCALE` is written out to match the stem ticks.
+`fmtDb(v, muted)` reads *−∞* for a muted stem. `audible()` — not muted, and nothing soloed or this
+one — puts **mute over solo**, as `isAudible()` in the engine does; it dims the Mixer's waveforms,
+but the Console strip's label and the strip and module panels follow the harness instead (see
+`results/ConsoleStrip`). `MIN_TRANSPOSE` / `MAX_TRANSPOSE` are ±11: twelve semitones is the same
+pitch class.
 
-### `src/components/ChordTimeline.tsx` — chord readout + global controls (246 lines)
-**Imports from:** `api/client` (type), `hooks/useClickTooltip`, `utils/transpose`,
-`studio/useSeekDrag`
-**Used by:** `StemMixer`
-**Notes:** **returns `null` when `segments.length === 0`**, so a job without chord detection has
-no timeline. Composes named fragments (`chordGroup`, `keySpan`, `transposeGroup`, `volumeGroup`,
-`metronomeButton`) and arranges them **twice** — once for mobile, once for desktop — because the
-groupings genuinely differ. Active chord large, next five stepped through `UPCOMING_OPACITY`.
-Segment bar widths are `(end - start) / duration`; `useSeekDrag` makes it seekable. Declares its
-own `MIN_TRANSPOSE`/`MAX_TRANSPOSE` and `formatTranspose`, **duplicated** in `studio/MasterUnit`.
+### `src/design/stems.ts` — stem identity (46 lines)
+**Exports:** `STEM_KEYS`, `templateStems`, `stemName`, `stemHue`, `tonePivotHz`
+**Imports from:** `design/copy`, `design/player` (type)
+**Used by:** `results/ResultsScreen`
+**Notes:** `STEM_KEYS` is vocals, drums, bass, guitar, piano, other — the template's order, and
+`STEM_NAMES`'. **`templateStems(names)` keeps only the job's stems that are in `STEM_KEYS`, in that
+order, so a stem outside the six is never loaded**, played or offered for single download (the zip
+still carries it): the design has no name or hue for it. Change `STEM_KEYS` with the Demucs model.
+`stemHue` reads `STEM_HUES`, which writes each `var(--ch-<key>)` out: it's a `Record<StemKey, string>`,
+so a key without a hue doesn't compile, and `check-design.mjs` fails a hue token `chord-theme.css`
+doesn't define. Each stem's Tone pivots near the middle of
+its instrument's range (bass 250 Hz, piano and other 1 kHz, guitar 1.2 kHz, vocals 1.5 kHz, drums
+2 kHz).
 
-### `src/components/StemChannel.tsx` — one stem row (153 lines)
-**Imports from:** `studio/useSeekDrag`, `utils/download`
-**Used by:** `StemMixer`
-**Notes:** name + M/S buttons, a 56 px WaveSurfer, a volume range (`style={{ accentColor }}`
-themes the native slider), and a download button. Creates its WaveSurfer inline with
-`interact: false` and an effect keyed on `[buffer]` (exhaustive-deps disabled). **Carries the
-`progressColor` sync effect** for the asynchronously-resolved accent color — the canonical
-example of that pattern. Has a local `DownloadIcon` rather than importing one.
+### `src/design/stages.ts` — the processing stage contract (30 lines)
+**Exports:** `PROCESSING_STAGES`, `QUEUED_STAGE`, `SEPARATING_STAGE`, `DETECTING_CHORDS_STAGE`,
+`processingStage`
+**Imports from:** `api/client` (type), `design/copy`
+**Used by:** `processing/ProcessingScreen`, `useJobEvents`
+**Notes:** `PROCESSING_STAGES` is `processingCopy.stages`: five labels, of which the last four
+double as the server's `stage_message` strings — a queued row has no stage message, so *Queued*
+exists only here. `processingStage` maps a job to an index (`fetching` is a bare `1`, with no
+constant) and returns the list's length for any status past processing. Tempo detection runs under
+`separating`, so only its stage message tells *Detecting tempo* apart — rename that label and the
+stage is never recognised. Adding a status means updating this switch. `DETECTING_TEMPO_STAGE` is
+module-private.
 
-### `src/components/TransportBar.tsx` — play/pause, times, scrubber (53 lines)
-**Imports from:** `utils/time`
-**Used by:** `StemMixer`
-**Notes:** local `PlayIcon`/`PauseIcon`. Native range input clamped with
-`Math.min(currentTime, duration)`.
-
-### `src/components/Footer.tsx` — fixed footer (49 lines)
-**Notes:** GitHub, bug-report `mailto:`, and Ko-fi links with inline SVG icons, plus
-`© <year> Ormin Cariaso · v{__APP_VERSION__}`. Hardcodes the author's URLs and email. **Leaf.**
-
-### `src/components/DecorativeIcons.tsx` — shared animated icons (30 lines)
-**Exports:** `EqualizerBars` (staggered `eq-bounce` bars), `MusicNoteIcon`
-**Used by:** `UploadPanel`, `ProcessingScreen`
+### `src/design/layout.ts` — the breakpoint (7 lines)
+**Exports:** `PHONE_QUERY`
+**Imports from:** —
+**Used by:** `landing/LandingScreen`, `processing/ProcessingScreen`, `results/ResultsScreen`
+**Notes:** `"(max-width: 720px)"`, the template's one breakpoint. Its comment names every place that
+must agree: `@media (max-width: 720px)` in `chord-theme.css`, and the `max-[720px]:` utilities in
+`App.tsx`, `results/MixerView` (its column labels) and `results/AnalysisBar` (its dividers).
 
 ---
 
-## `src/components/studio/`
+## `src/components/` — the pieces the screens share
 
-### `studio/constants.ts` — the view's geometry (30 lines)
-**Exports:** `AMP_WIDTH` (480), `AMP_MOBILE_WIDTH` (340), `GRID_GAP` (24), `MASTER_WIDTH`,
-`MASTER_MOBILE_WIDTH` (340), the `CABINET_*` dimensions, `CABINET_INTERIOR_COLOR/IMAGE`
-**Notes:** derived rather than restated — `MASTER_WIDTH = AMP_WIDTH * 2 + GRID_GAP` (984), and
-`CABINET_WIDTH` is computed from every piece of chrome, so changing a post width keeps the
-cabinet wrapping the grid exactly. Mobile variants exist because the desktop chrome would
-consume most of a phone's width. Every constant carries a comment explaining why it exists.
+### `src/components/ScreenCard.tsx` — the screen surface (21 lines)
+**Exports:** `ScreenCard`
+**Used by:** `landing/LandingScreen`, `processing/ProcessingScreen`, `failure/FailurePanel`,
+`results/ResultsScreen`
+**Notes:** `.ch-app` with the harness's 10px radius, ring and shadow, and an optional `maxWidth`
+(520 for the processing and failure cards). `overflow: hidden` clips everything to the radius — and
+makes the card a scroll container, so a `position: sticky` child would stick to the card, not the
+viewport. Nothing inside is sticky today.
 
-### `studio/types.ts` — `AmpProps` (24 lines)
-**Notes:** the contract all six amps share. **`controlsOnly`** skips the decorative shell;
-**`isMobile`** selects the narrower design width — deliberately independent, because the closeup
-passes `controlsOnly` but wants full desktop width (it does its own scaling). **`lyricLine`** is
-only ever passed to the vocals amp. All three are documented in doc comments on the interface.
+### `src/components/CoverArt.tsx` — the artwork tile (42 lines)
+**Exports:** `CoverArt`
+**Imports from:** `api/client`
+**Used by:** `processing/ProcessingScreen`, `results/ResultsTopbar`
+**Notes:** the accent-gradient tile from the harness, with the thumbnail drawn through Nocturne's
+`.lighten` (dark artwork falls into the gradient). Hides the image if it fails to load. The hairline
+edge is an overlay, so the image can't cover it, and is drawn only when `outlined` (the default) —
+the phone processing screen passes `false`, as the harness's phone tile has none.
 
-### `studio/ampComponents.ts` — the stem→component registry (18 lines)
-**Exports:** `AMP_COMPONENTS`, `STEM_ORDER`
-**Notes:** `AMP_COMPONENTS[name] ?? OtherAmp` means an unknown stem still renders. `STEM_ORDER`
-differs from the Simple view's `SIMPLE_STEM_ORDER` (drums/piano swapped).
+### `src/components/Dialog.tsx` — modal (89 lines)
+**Exports:** `Dialog`
+**Used by:** `results/ExportDialog`, `results/LyricsDialog`
+**Notes:** Nocturne's `.dialog` over `.dialog-backdrop`, given `z-index: 50` inline (the speed
+popover sits at 20). Focuses `[data-autofocus]` or the first focusable element, traps Tab, closes on
+Escape or a press on the backdrop, and restores focus on unmount. `onClose` is read through a ref so
+the focus effect runs once. `width` widens it past Nocturne's 440px.
 
-### `studio/StudioCabinet.tsx` — the walnut rack shell (94 lines)
-**Imports from:** `studio/constants`
-**Used by:** `StemMixer`
-**Notes:** pure decoration — `WALNUT`/`BRASS`/`LEATHER`/`RIVET` gradients, two brass rails with a
-"CHORD Rig Cabinet" plate in Oswald, leather posts with rivets, velvet interior. Takes only
-`children` and `isMobile`; knows nothing about audio.
+### `src/components/Footer.tsx` — footer links (66 lines)
+**Exports:** `Footer`
+**Imports from:** `design/copy`
+**Used by:** `App`
+**Notes:** the template has no footer; this one is kept by decision. GitHub, a bug-report `mailto:`
+and Ko-fi as Nocturne ghost icon buttons (`.btn-icon`), plus `footerCopy.copyright` —
+`© <year> Ormin Cariaso · v{__APP_VERSION__}`. In the page flow, not fixed. Hardcodes the author's
+URLs and email.
 
-### `studio/StudioMixer.tsx` — layout and closeup state (216 lines)
-**Imports from:** `api/client` (type), `hooks/useMediaQuery`, `studio/AmpCloseup`,
-`studio/ampComponents`, `studio/amps/OtherAmp`, `studio/MasterCloseup`, `studio/MasterUnit`,
-`studio/ScaleToFit`, `studio/constants`
-**Used by:** `StemMixer`
-**Notes:** ~40-line props interface, all pass-through. Assembles `masterProps` **once** and
-spreads it into both `MasterUnit` and `MasterCloseup` so they can't drift. `MasterUnit` renders
-sticky on a cabinet-interior background so it occludes cleanly; amps go in a 2-column grid
-(1 column on mobile). Both click handlers check `target.closest("button, .touch-none")` and bail,
-so dragging a knob or scrubbing doesn't open a closeup. Passes `controlsOnly={isMobile}`.
+### `src/components/icons.tsx` — shared inline SVG (55 lines)
+**Exports:** `UploadIcon`, `PlusIcon`, `PlayIcon`, `PauseIcon`, `MetronomeIcon`, `CheckIcon`
+**Used by:** `landing/LandingScreen` (`UploadIcon`), `processing/ProcessingScreen` (`CheckIcon`),
+`results/ResultsTopbar` (`PlusIcon`), `results/Transport` (`PlayIcon`, `PauseIcon`,
+`MetronomeIcon`)
+**Notes:** the harness's paths, drawn in `currentColor` except `CheckIcon`, whose stroke is the
+`color` it is given — the accent for a done stage, transparent otherwise.
 
-### `studio/MasterUnit.tsx` — the Studio control surface (483 lines)
-**Imports from:** `api/client` (type), `hooks/useClickTooltip`, `utils/transpose`, `utils/time`,
-`studio/icons`, `studio/LevelRing`, `studio/useKnobDrag`, `studio/useSeekDrag`,
-`studio/constants`
-**Used by:** `studio/StudioMixer`, `studio/MasterCloseup`
-**Exports:** `MasterUnit`, `MasterUnitProps`, `ViewMode`
-**Notes:** the Studio counterpart to `ChordTimeline` + `TransportBar` combined. Simulated LCD
-(Orbitron, `#4ade80` with a text-shadow glow, upcoming chords through a hardcoded
-`UPCOMING_COLORS` ramp), thumbnail title plate with marquee, transport with `useSeekDrag`, a
-local `GainRing` (knob + `LevelRing`) for master volume, transpose, metronome, download-all,
-upload-another, and two view-mode LED buttons. Re-declares `MIN_TRANSPOSE`/`MAX_TRANSPOSE`,
-`formatTranspose` and `activeSegmentIndex` — all **duplicated** from `ChordTimeline`.
+---
 
-### `studio/MasterCloseup.tsx` (16 lines) — `ZoomOverlay` + a second `MasterUnit` from the same
-`masterProps`. **Leaf.**
+## `src/components/controls/` — the instrument controls
 
-### `studio/AmpCloseup.tsx` — magnified amp (30 lines)
-**Imports from:** `studio/ampComponents`, `studio/amps/OtherAmp`, `studio/types`,
-`studio/ZoomOverlay`
-**Used by:** `studio/StudioMixer`
-**Notes:** renders **the same amp component** with `controlsOnly`, so the zoomed controls are
-real and live. Its WaveSurfer is **not** registered in `waveSurfersRef`, so it can't be driven by
-the shared tick loop — instead an effect pushes `setTime(currentTime)` from the prop.
+### `controls/Fader.tsx` — `Fader` and `VerticalFader` (54 lines)
+**Exports:** `Fader`, `VerticalFader`
+**Imports from:** `hooks/useSliderControl`
+**Used by:** `results/AnalysisBar` and `results/StemRow` (`Fader`, always `thin`);
+`results/ConsoleStrip` and `results/MasterStrip` (`VerticalFader`)
+**Notes:** `.ch-fader` (optionally `.ch-fader-thin`) and `.ch-vfader` with its cap child, positioned
+by `--v` alone. `role="slider"` with `aria-valuetext` and a label that carries the value. No
+default value: only a drag or the keyboard moves a fader. Both assume a flex parent — the classes
+set no `display`.
 
-### `studio/ZoomOverlay.tsx` — the zoom-from-origin transition (95 lines)
-**Used by:** `studio/AmpCloseup`, `studio/MasterCloseup`
-**Notes:** FLIP-style, entirely imperative style writes. `useLayoutEffect` measures the card's
-natural rect, computes the rest scale as
-`min(maxZoomScale, innerWidth*0.9/w, innerHeight*0.9/h)`, sets the starting transform mapping
-the card onto `originRect`, **forces a reflow** (`void getBoundingClientRect()`) so the browser
-commits it, then animates in a `requestAnimationFrame`. Without the reflow the two style writes
-coalesce and there's nothing to animate from. 280 ms both ways; closing reverses and calls
-`onClose` after the transition.
+### `controls/Knob.tsx` — `.ch-knob` (35 lines)
+**Exports:** `Knob`
+**Imports from:** `hooks/useSliderControl`
+**Used by:** `results/AnalogModule`
+**Notes:** the class draws cap, pointer and arc from `--v`; `small` is `.ch-knob-sm`, the 34px
+Tone/Pan size, and `hue` overrides `--stem`, so only a Level knob carries the stem color. No default
+value or reset.
 
-### `studio/ScaleToFit.tsx` — shrink-to-fit wrapper (52 lines)
-**Used by:** `studio/StudioMixer`
-**Notes:** measures the child's natural `offsetWidth` (unaffected by transforms), computes
-`min(1, available / natural)`, applies a CSS `transform: scale()`, and sizes the wrapper to the
-scaled box so surrounding layout stays correct. **Never scales above 1**, so desktop is a no-op.
-`ResizeObserver` on both outer and inner elements.
+### `controls/RoutingToggles.tsx` — MUTE / SOLO (36 lines)
+**Exports:** `RoutingToggles`
+**Imports from:** `design/copy`
+**Used by:** `results/StemRow`, `results/ConsoleStrip`, `results/AnalogModule`
+**Notes:** a fragment of two text buttons (`.is-on-muted` / `.is-on`) with `aria-pressed`; each
+parent supplies the element they sit in. `stem` is the display name, used only for the accessible
+names (*Mute Vocals*), which contain the visible text.
 
-### `studio/Knob.tsx` — the general knob (81 lines)
-**Imports from:** `studio/LevelRing`, `studio/useKnobDrag`
-**Used by:** all six amps
-**Notes:** SVG in a `56×56` viewBox centered at `(28,28)`. Configurable `stops` (chrome tone),
-`pointerColor`, `ribbed` (recessed dashed socket), `ring`, `label`, `disabled`. `useId` for
-gradient ids so multiple instances don't collide.
+### `controls/StemWaveform.tsx` — `.ch-wave` (17 lines)
+**Exports:** `StemWaveform`
+**Imports from:** —
+**Used by:** `results/StemRow`
+**Notes:** the bar pattern clipped (`clip-path`) to the stem's real envelope from `utils/peaks`,
+`.is-off` while the stem isn't heard, and `aria-hidden`. **Display only** — it doesn't seek; the
+chord strip and the transport do.
 
-### `studio/ScallopedKnob.tsx` — Bass's knob only (64 lines)
-**Notes:** a two-layer scalloped chrome knob, kept separate **so Bass's identity isn't reused
-elsewhere** — stated in its own doc comment. Same `56×56` convention.
+---
 
-### `studio/LevelRing.tsx` — green→amber→red arc (34 lines)
-**Exports:** `RING_RADIUS`, `LevelRing`
-**Used by:** `Knob`, `ScallopedKnob`, `MasterUnit`'s `GainRing`
-**Notes:** expects to be drawn inside a `56×56` viewBox at `(28,28)`. The arc is a
-`strokeDasharray` of `value * RING_SWEEP` (270/360 of the circumference), rotated `126°` so the
-gap sits at the bottom.
+## `src/screens/` — one folder per template screen
 
-### `studio/DownloadLed.tsx` — save indicator lamp (28 lines)
-**Used by:** all six amps
-**Notes:** lit in the amp's own `idleColor` at rest, switching to a shared busy amber
-(`#f97316`) while downloading.
+Each screen follows its scenarios in `CHORD Template.dc.html` element for element and takes every
+string from `design/copy`.
 
-### `studio/icons.tsx` — `DownloadTrayIcon`, `UploadTrayIcon`
-**Used by:** `StemMixer`, `studio/MasterUnit`
+### `src/screens/landing/LandingScreen.tsx` — the landing screen (250 lines)
+**Exports:** `LandingScreen`, `Submission`, `SubmitError`
+**Imports from:** `components/icons`, `components/ScreenCard`, `design/copy`, `design/layout`,
+`hooks/useMediaQuery`
+**Used by:** `App`
+**Notes:** the template's `upload`, `upload-submitting` and `upload-error` scenarios, in two
+arrangements: web, and the phone frame below 720px — no *Choose file* button (the column dropzone is
+itself the control: `role="button"`, Enter or Space), a full-width *Fetch track*, no intro paragraph
+or divider. Client-side rejection of anything but `.mp3`/`.flac` (`ACCEPTED_EXTENSIONS`, plus the
+input's `accept`), and of empty files, **before any request**: the dropzone turns `.is-rejected`
+and names the file, and an alert explains. Server failures arrive through `error`; a rejection's
+alert takes the place of a server error's. *Submitting…* replaces the label of the button that sent
+the request (`Submission`) — on phones the one *Fetch track* button shows it for a file too — and
+every control is disabled while busy; there is no upload progress. The URL input is `required`, so
+the button stays enabled like the harness's. `Track URL` renders at 12px because Nocturne's
+`.field > label` outranks `.ch-label` — as it does in the harness.
+**See:** [../features/ingest.md](../features/ingest.md)
 
-### `studio/useKnobDrag.ts` — vertical drag → 0…1 (32 lines)
-**Exports:** `useKnobDrag`, `valueToRotation`
-**Used by:** `Knob`, `ScallopedKnob`, `MasterUnit`
-**Notes:** `setPointerCapture` so the drag keeps tracking after the pointer leaves the small
-SVG — essential for a 26 px target. `sensitivity = 200` px for the full range; drag up
-increases. `valueToRotation` → `-135 + value * 270`, the sweep a real potentiometer travels.
+### `src/screens/processing/ProcessingScreen.tsx` — live progress (186 lines)
+**Exports:** `ProcessingScreen`
+**Imports from:** `api/client` (type), `components/CoverArt`, `components/icons`,
+`components/ScreenCard`, `design/copy`, `design/layout`, `design/stages`, `hooks/useMediaQuery`,
+`utils/time`
+**Used by:** `App`, **and `results/ResultsScreen`** (as its stem-loading screen, via `loading`)
+**Notes:** the template's `processing-*` scenarios. The fixed five-stage list: stages before the
+current one are `.is-done`, and a skipped stage shows done rather than disappearing. A done stage's
+time is the gap between the server `updated_at` of the first update seen in it and in the next
+stage seen (`stageSnapshots`) — *Queued* starts at `job.created_at` — so **no client clock is
+involved** and render stays pure. The separation estimate (*Six-source model · about 40 seconds
+left*, worded by `processingCopy.estimate`) extrapolates the progress gained since separation's
+first update, once 3 s of it have passed, to `SEPARATION_PROGRESS_END = 0.5` — the end of
+`_SEPARATION_PROGRESS` in `server/app/pipeline/pipeline.py`, hand-copied. The phone frame shows no
+stage times or ticks, a 52px tile without its hairline, and a full-width *Cancel* at the foot. With
+`loading` it shows *Loading stems…* at 100% with the last stage current and *Decoding six stems in
+your browser* — no download progress, since the engine reports none — and `ResultsScreen` passes on
+the same `stageSnapshots`, so the done stages keep their times; its *Cancel* is then
+`ResultsScreen`'s `onBack`, which discards the finished job.
+**See:** [../architecture/job-lifecycle.md](../architecture/job-lifecycle.md)
 
-### `studio/useSeekDrag.ts` — click-or-drag seeking (34 lines)
-**Used by:** `ChordTimeline`, `StemChannel`, `MasterUnit`, all six amps
-**Notes:** the element it's attached to defines 0–100%. `preventDefault()` on pointerdown to
-stop text selection, pointer capture for the drag, and a `duration <= 0` guard.
+### `src/screens/failure/FailurePanel.tsx` — failure states (59 lines)
+**Exports:** `FailurePanel`, `FailureTone`, `FailureAction`
+**Imports from:** `components/ScreenCard`
+**Used by:** `App`, `results/ResultsScreen`
+**Notes:** the template's `job-error`, `job-cancelled`, `connection-error` and `results-load-error`:
+`.ch-alert` + optional `.ch-log` (newlines kept — a stem failure logs one request per line) + a
+primary and optional secondary action, in a 520px card. The tone picks **only the dot color** —
+`--ch-danger`, `--ch-warn` or `--color-neutral-600` — and the panel itself is never tinted. Every
+template state has a secondary action; only *Job not found* leaves it out. The words come from the
+caller. `role="alert"` announces it on mount.
 
-### `studio/useStemWaveform.ts` — one themed WaveSurfer (38 lines)
-**Used by:** all six amps
-**Notes:** the Studio equivalent of `StemChannel`'s inline creation. `interact: false`, `peaks`
-from the already-decoded buffer (no re-decode), plus `url` **and** `duration` so WaveSurfer has a
-real media element for cursor math. Effect depends on `[buffer]` alone with exhaustive-deps
-disabled and a comment; `destroy()` in cleanup.
+---
 
-### `studio/useDownload.ts` — `{isDownloading, download}` (19 lines)
-**Imports from:** `utils/download`
-**Used by:** all six amps
-**Notes:** packages the pattern `StemChannel` and `StemMixer` hand-roll. Empty `catch` with the
-standard comment.
+## `src/screens/results/` — the results screen
 
-### `studio/amps/` — six bespoke amp components
+### `results/ResultsScreen.tsx` — the results state hub (387 lines)
+**Exports:** `ResultsScreen`
+**Imports from:** `api/client`, `audio/playbackEngine`, `components/ScreenCard`, `design/copy`,
+`design/layout`, `design/player`, `design/stems`, `hooks/useLyrics`, `hooks/useMediaQuery`,
+`utils/hasVocals`, `utils/levels`, `utils/peaks`, `failure/FailurePanel`,
+`processing/ProcessingScreen`, `results/AnalogView`, `results/AnalysisBar`, `results/ChordBar`,
+`results/ConsoleView`, `results/ExportDialog`, `results/LyricsDialog`, `results/MixerView`,
+`results/playerReducer`, `results/ResultsTopbar`, `results/Transport`, `results/types`
+**Used by:** `App`
+**Notes:** owns the engine and **all** playback state: the template's `PlayerState` through
+`useReducer(playerReducer)` — view, playing, time, duration, master, transpose, metronome and each
+stem's gain, mute, solo, tone and pan — plus what the template leaves to the app: load phase and
+failures, waveform envelopes, speed and whether it's supported, loop, chords (`undefined` loading /
+`null` after any failed fetch), `hasVocals`, lyrics, and which dialog is open. Every view gets the
+same `StemDisplay[]` and `StemControls`, so switching views mid-song is seamless. Loads only
+`templateStems(job.stem_names)`. Three phases: `loading` (`ProcessingScreen` with `loading` and the
+`stageSnapshots` prop `App` passes through), `failed` (*Stems failed to load* — *Retry download*
+reloads only the failures, *Open anyway* shows what loaded, even when nothing did), `ready`. **One `requestAnimationFrame` loop dispatches the
+engine's time every frame**; the reducer drops an unchanged time, so a paused screen doesn't
+re-render, but while playing the whole results screen re-renders every frame. Under
+`prefers-reduced-motion` that time is floored to whole seconds for everything that reads it
+(playheads, chord highlight, lyric line, time readouts); the meters and needles ignore it. It pauses
+the engine when `hasEnded`. **Below 720px** the view is forced to the Mixer, the topbar gets no
+`onViewChange` (so no tabs, and the view panel drops its `tabpanel` role) and the transport is
+`compact`; the rest is the web markup, which the stylesheet and `max-[720px]:` utilities adapt. An
+instrumental's silent
+vocals start muted on the first load; a vocals stem that failed to load isn't treated as silent.
+Seeking outside a set loop ends it, and a second loop press within 0.5 s of A is ignored. Stem
+faders go through `db()` and the master through `masterDb()`; the metronome is offered only for a
+non-zero tempo, speed only when `supportsTimeStretch`. The load effect depends on the stems by value
+(`stemList`, the kept names joined), so a job update that carries a new array of the same stems
+doesn't download them again.
+**See:** [../features/results-views.md](../features/results-views.md)
 
-`VocalsAmp` (169), `BassAmp` (174), `GuitarAmp` (144), `DrumsAmp` (115), `PianoAmp` (114),
-`OtherAmp` (102).
+### `results/playerReducer.ts` — every `PlayerState` change (62 lines)
+**Exports:** `PlayerAction`, `INITIAL_PLAYER`, `playerReducer`
+**Imports from:** `design/player`
+**Used by:** `results/ResultsScreen`
+**Notes:** the one place `PlayerState` changes. `INITIAL_PLAYER` is the Mixer, stopped, the master
+at the top of its travel (0 dB), and no stems. `stemsLoaded` keeps the settings of stems already on
+the mixer, so a retry that adds the stems that failed leaves the rest alone. `transposeChanged`
+clamps to ±11. `playingChanged` and `timeChanged` return the same state object when nothing changed
+— which is what makes the per-frame time dispatch free while paused.
 
-**Each imports:** `studio/DownloadLed`, `studio/Knob` (Bass also `ScallopedKnob`),
-`studio/types`, `studio/useDownload`, `studio/useSeekDrag`, `studio/useStemWaveform`,
-`studio/constants`
-**Used by:** `studio/ampComponents`, `studio/StudioMixer`, `studio/AmpCloseup`
+### `results/types.ts` — shared shapes (30 lines)
+**Exports:** `StemDisplay`, `StemControls`, `LoopState`
+**Imports from:** `design/player` (types)
+**Used by:** `results/ResultsScreen`, `results/MixerView`, `results/StemRow`, `results/ConsoleView`,
+`results/ConsoleStrip`, `results/AnalogView`, `results/AnalogModule`, `results/Transport`
+(`LoopState`), `results/ExportDialog` (`StemDisplay`)
+**Notes:** `StemDisplay` is one stem as the views draw it: its `StemState` plus what the results
+screen derives — display name, `--stem` hue, `audible`, `silent` (an instrumental's vocals) and the
+waveform `envelope`. `StemControls` is the per-stem callback set, keyed by `StemKey`.
 
-**Notes:** all six share the same six lines of logic — a container ref, `useDownload`,
-`useSeekDrag`, and `useStemWaveform` with per-amp wave/progress colors and height — followed by
-a large amount of purely presentational JSX (cabinet texture, hardware, local icon components).
-**The duplication is deliberate**; a shared shell would collapse the visual identities that are
-the point of the view. `OtherAmp` doubles as the fallback for unrecognized stems.
-`VocalsAmp` is the only one that renders `lyricLine`.
-**Skip these on a first read** — ~800 lines of SVG over one small interface.
-**See:** [../features/studio-view.md](../features/studio-view.md#why-six-bespoke-amps)
+### `results/ResultsTopbar.tsx` — title, view tabs, actions (86 lines)
+**Exports:** `ResultsTopbar`
+**Imports from:** `api/client` (type), `components/CoverArt`, `components/icons`, `design/copy`,
+`design/player` (type), `utils/time`
+**Used by:** `results/ResultsScreen`
+**Notes:** `.ch-topbar`: a 44px cover tile, the title as an `h1` (the heading rule's letter-spacing
+undone) over *author · length · N stems*, the view tabs, *Export stems* and *New track*. It wraps, so
+the actions drop to a second line before the title truncates. The subtitle's length is the decoded
+duration, not the server's, so it always matches the transport. The tablist uses roving `tabIndex`
+with Arrow/Home/End keys; tab ids derive from `panelId`. **No tabs render without `onViewChange`**,
+which is how phones get none; there is no other phone arrangement.
+
+### `results/AnalysisBar.tsx` — key, transpose, tempo, master (103 lines)
+**Exports:** `AnalysisBar`
+**Imports from:** `controls/Fader`, `design/copy`, `design/player`, `utils/levels`, `utils/tempo`,
+`utils/transpose`
+**Used by:** `results/ResultsScreen`
+**Notes:** rendered once above all three views, as the template requires (`INSTRUCTIONS.md` §8) —
+on phones too, where its groups wrap into a column and the dividers between them hide
+(`max-[720px]:hidden`). The key label follows transpose, with *N% confident* when the server sent a
+confidence; the − / + buttons stop at `MIN_TRANSPOSE` / `MAX_TRANSPOSE`. Tempo shows one decimal
+only when it isn't whole, and *—* when there is none. The master fader is thin and its readout
+follows `masterDb()`.
+
+### `results/ChordBar.tsx` — chords and the lyric row (137 lines)
+**Exports:** `ChordBar`
+**Imports from:** `api/client` (types), `design/copy`, `hooks/useElementWidth`, `hooks/useSeekDrag`,
+`utils/lyrics`, `utils/time`, `utils/transpose`
+**Used by:** `results/ResultsScreen`
+**Notes:** `INSTRUCTIONS.md` §4.5: the current chord — *—* before the first chord, in a gap or in a
+no-chord (`N`) segment — plus the next three (skipping `N`, the later two each a ramp step dimmer)
+and the time. The strip spans the whole track: segments take `flex: <duration>`, with spacers for
+any gap before the first or after the last so the playhead's `--p` lines up. An `N` segment has no
+label, and **a segment narrower than its label shows none** (7 px per character plus 8 px, from the
+measured width) — clipped text reads as another chord. The strip is an `aria-hidden` pointer
+shortcut for seeking; the transport's slider is the accessible seek. It draws no loop markers. The
+lyric row's four states: looking, synced (the current line, or the first line dimmed before it
+starts), plain (*Open lyric sheet*), none (*Add lyrics manually*); it renders for instrumentals too.
+**The synced line is plain text** — nothing opens a synced track's lyrics in the sheet or replaces
+them. Any failed chords fetch shows *No chord analysis for this track.*
+**See:** [../features/chords-and-key.md](../features/chords-and-key.md)
+
+### `results/Transport.tsx` — playback controls (214 lines)
+**Exports:** `Transport`
+**Imports from:** `components/icons`, `design/copy`, `hooks/usePopover`, `hooks/useSeekDrag`,
+`utils/time`, `results/types`
+**Used by:** `results/ResultsScreen`
+**Notes:** `.ch-transport` — play, both times, seek, speed, loop and metronome — closing the results
+card; **not sticky**. `compact` renders the template's `.ch-m-bar` instead: play, seek and *Click*
+only, so phones have no speed or loop control. The 4px `.ch-seek` sits in a transparent full-height
+wrapper that takes the pointer; the slider keeps the keyboard (±5 s, Shift ±30 s, PageUp/PageDown
+±30 s, Home/End). The speed chip opens a popover of `SPEED_OPTIONS` (0.5–1.25×) and is disabled with
+an explanation when `onSpeedChange` is absent (no AudioWorklet). The loop chip cycles *Loop off* →
+*Loop A m:ss* → *Loop m:ss–m:ss* → off, and reads as pressed only once B is set. The metronome chip
+is disabled, not hidden, without a tempo, so the layout doesn't shift. A disabled chip gets
+Nocturne's 45% opacity inline, since `.ch-chip` has no disabled style.
+**See:** [../features/speed-and-loop.md](../features/speed-and-loop.md)
+
+### `results/MixerView.tsx` — the default view (39 lines)
+**Exports:** `MixerView`
+**Imports from:** `design/copy`, `results/StemRow`, `results/types`
+**Used by:** `results/ResultsScreen`
+**Notes:** column labels over fixed 96 / 150 / 92px columns and the waveform, one `StemRow` per
+stem, and the instrumental hint after the rows when any stem is `silent`. Phones get the same rows,
+stacked by `chord-theme.css`; the labels hide below 720px through `max-[720px]:hidden`, one of the
+places `PHONE_QUERY`'s comment lists.
+**See:** [../features/results-views.md](../features/results-views.md)
+
+### `results/StemRow.tsx` — one Mixer row (47 lines)
+**Exports:** `StemRow`
+**Imports from:** `controls/Fader`, `controls/RoutingToggles`, `controls/StemWaveform`,
+`design/copy`, `design/player`, `results/types`
+**Used by:** `results/MixerView`
+**Notes:** `.ch-stemrow` (`INSTRUCTIONS.md` §4.1) in the stem's `--stem` hue: dot and name, a thin
+level fader with its `fmtDb` value, MUTE/SOLO, and the waveform, dimmed while the stem isn't
+`audible`. Below 720px the stylesheet stacks it and holds MUTE/SOLO at a 44px hit height.
+
+### `results/ConsoleView.tsx` — strips and metering (83 lines)
+**Exports:** `ConsoleView`
+**Imports from:** `audio/meters`, `audio/playbackEngine`, `design/player`, `hooks/useAnimationFrame`,
+`utils/levels`, `results/ConsoleStrip`, `results/MasterStrip`, `results/types`
+**Used by:** `results/ResultsScreen`
+**Notes:** a `.ch-striprow` of `ConsoleStrip`s, a divider, and the `MasterStrip`. **Meters bypass
+React**: every frame, playing or not, it fills one `MeterReadings` through `readMeters` and writes
+`--l` onto each `[data-meter]` element (collected in a layout effect whenever the stem count
+changes), each with its own `LevelFollower` (24 dB/s release) and mapped through `STEM_METER_SCALE`,
+or `MASTER_METER_SCALE` for `data-meter="master"`. The strips' JSX keeps `--l: 0` constant, so
+re-renders never touch the imperatively written value. The master *Peak* is the true peak with a
+1.5 s hold, written into `MasterStrip`'s `peakRef` at 8 Hz.
+**See:** [../features/metering.md](../features/metering.md)
+
+### `results/ConsoleStrip.tsx` — one Console stem strip (90 lines)
+**Exports:** `ConsoleStrip`
+**Imports from:** `controls/Fader`, `controls/RoutingToggles`, `design/copy`, `design/player`,
+`utils/levels`, `results/types`
+**Used by:** `results/ConsoleView`
+**Notes:** `.ch-panel.ch-strip` (`INSTRUCTIONS.md` §4.2): name and state label, a `VerticalFader`, a
+stereo `.ch-meter` (`data-meter` = the stem key, `data-channel` 0 and 1) beside the
+`0 / −12 / −24 / −∞` `TICKS` that `db()` and `STEM_METER_SCALE` are spaced for, then Level and Pan
+readouts and MUTE/SOLO. The label reads *Soloed*, *Muted*, *Silent* (a muted instrumental vocals),
+*Held* (another stem is soloed) or *Playing*. **It follows the harness's order, not the audio**: a
+soloed strip reads *Soloed* and lifts (`.is-active`) even when it is also muted, though mute wins in
+the engine and in `audible()`; a muted one dims (`.is-off`).
+
+### `results/MasterStrip.tsx` — the Console's master strip (73 lines)
+**Exports:** `MasterStrip`, `MASTER_METER`
+**Imports from:** `controls/Fader`, `design/copy`, `design/player`, `utils/levels`
+**Used by:** `results/ConsoleView`
+**Notes:** a 190px raised panel: a `VerticalFader`, a stereo meter in the accent (`data-meter` =
+`MASTER_METER`, `"master"`), the `0 / −6 / −18 / −∞` `TICKS` that `masterDb()` and
+`MASTER_METER_SCALE` follow, then *Output*, *Peak* and *Metronome* readouts and *Export stems*.
+*Peak* starts at *−∞* and is rewritten by `ConsoleView` through `peakRef`.
+
+### `results/AnalogView.tsx` — needle meters and knob modules (125 lines)
+**Exports:** `AnalogView`
+**Imports from:** `audio/meters`, `audio/playbackEngine`, `design/copy`, `hooks/useAnimationFrame`,
+`utils/levels`, `results/AnalogModule`, `results/OutputDial`, `results/types`
+**Used by:** `results/ResultsScreen`
+**Notes:** five `OutputDial`s in a `repeat(5, minmax(180px, 1fr))` grid that scrolls rather than
+shrinking — `INSTRUCTIONS.md` calls the 180px floor load-bearing for the in-SVG type — above a
+`.ch-striprow` of `AnalogModule`s. Output L/R (peak, 20 dB/s release), true peak (1.5 s hold),
+momentary loudness (300 ms smoothing, *−∞* in silence) and correlation (300 ms smoothing); needles
+are rotated with `setAttribute` every frame and readouts rewritten at 8 Hz, both bypassing React.
+**In silence — paused included — correlation reads *—* and its needle eases back to 0**, since the
+value means nothing there.
+**See:** [../features/metering.md](../features/metering.md)
+
+### `results/AnalogModule.tsx` — one stem's knob module (92 lines)
+**Exports:** `AnalogModule`
+**Imports from:** `controls/Knob`, `controls/RoutingToggles`, `design/copy`, `design/player`,
+`utils/levels`, `results/types`
+**Used by:** `results/AnalogView`
+**Notes:** `.ch-panel.ch-module`: dot and name, a Level knob in the stem hue with its dB value, Tone
+and Pan knobs in `--color-neutral-700` (`INSTRUCTIONS.md` §4.3: only Level carries the hue), each
+with its value under its label (§0.3; the harness draws them with a label only), and MUTE/SOLO. Like
+the Console strip it follows the harness's order: a soloed module lifts
+(`.is-active`) even when muted; a muted one dims.
+
+### `results/OutputDial.tsx` — one needle meter (116 lines)
+**Exports:** `OutputDial`, `DialScale`, `OUTPUT_DIALS`, `NEEDLE_SWEEP_DEGREES`, `NEEDLE_MID_DEGREES`
+**Imports from:** `design/copy`
+**Used by:** `results/AnalogView`
+**Notes:** the template's SVG on a `0 0 200 140` viewBox, the needle pivoting at `(100, 108)` over
+±70°. Each scale is three anchors — left end, the mid label at −10°, right end — so the spacing is
+non-linear, like a VU face. The accent arcs, as the harness draws them, start at +56° on L/R and
+true peak (about −2.1 dB and −1.6 dB), +40° on loudness (about −14 LUFS) and +30° on correlation
+(+0.5). Colors go through `style` so SVG strokes can take tokens. The needle and readout elements
+are handed back through `needleRef` and `valueRef` for `AnalogView` to write.
+
+### `results/ExportDialog.tsx` — downloads (97 lines)
+**Exports:** `ExportDialog`
+**Imports from:** `api/client`, `components/Dialog`, `design/copy`, `utils/download`, `results/types`
+**Used by:** `results/ResultsScreen`
+**Notes:** the template draws no export dialog, so this composes Nocturne's dialog with `.ch-stemrow`
+rows: one per stem on the mixer, plus *Download all (.zip)*. Files are named
+`"<title> - <stem key>.wav"` and `"<title>_stems.zip"`, with `.mp3`/`.flac` stripped from an
+upload's title. Each download shows its own in-flight label; a failed one shows a one-line note
+instead of being swallowed.
+**See:** [../features/downloads.md](../features/downloads.md)
+
+### `results/LyricsDialog.tsx` — lyric sheet and manual lyrics (104 lines)
+**Exports:** `LyricsDialog`, `LyricsDialogMode`
+**Imports from:** `api/client`, `components/Dialog`, `design/copy`
+**Used by:** `results/ResultsScreen`
+**Notes:** the template draws neither dialog. `sheet` — opened by the plain row's *Open lyric sheet*
+— shows `lyrics.plain` with its line breaks in a 560px dialog that scrolls past 60vh, with *Close*
+only: it never shows synced lines and cannot replace the lyrics. `edit` — opened by *Add lyrics
+manually* — is a textarea whose save goes through `saveLyrics` and replaces the lyrics state;
+pasted LRC timestamps make the result synced, and a failed save shows a `.ch-alert`.
+**See:** [../features/lyrics.md](../features/lyrics.md)
