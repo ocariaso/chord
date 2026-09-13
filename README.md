@@ -1,6 +1,4 @@
-# CHORD
-
-**CHORD** — Component Harmony & Orchestral Retrieval Decoder
+Component Harmony & Orchestral Retrieval Decoder
 
 <img width="1586" height="2670" alt="image" src="https://github.com/user-attachments/assets/b5ddb9e6-321e-4fc0-b709-b94f2e91ccd7" />
 
