@@ -94,10 +94,14 @@ export function LandingScreen({ submitting, error, onFileSelected, onUrlSubmitte
 
   return (
     <section
-      className="flex flex-1 flex-col items-center justify-center"
-      style={{ paddingBlock: isPhone ? "var(--space-6)" : "56px" }}
+      className="flex min-h-0 flex-1 flex-col items-center justify-center"
+      style={{ paddingBlock: isPhone ? "var(--space-3)" : "clamp(12px, 4vh, 56px)" }}
     >
-      <div className="flex w-full flex-col items-center text-center" style={{ maxWidth: 580, gap: isPhone ? 28 : 40 }}>
+      {/* Spacing follows the viewport's height, so a short window tightens the column instead of scrolling. */}
+      <div
+        className="flex w-full flex-col items-center text-center"
+        style={{ maxWidth: 580, gap: isPhone ? "clamp(14px, 3vh, 28px)" : "clamp(18px, 4vh, 40px)" }}
+      >
         <header className="flex flex-col items-center" style={{ gap: isPhone ? "var(--space-4)" : "var(--space-6)" }}>
           <span className="flex flex-col items-center" style={{ gap: 6 }}>
             <span style={{ font: "600 13px/1 var(--font-body)", letterSpacing: "0.32em", paddingLeft: "0.32em", color: "var(--color-text)" }}>

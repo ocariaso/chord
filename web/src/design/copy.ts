@@ -15,13 +15,6 @@ export function countWord(count: number): string {
   return COUNT_WORDS[count] ?? String(count);
 }
 
-/** "about 40 seconds left", "about 3 minutes left" — rounded, because the estimate is rough. */
-function remaining(seconds: number): string {
-  if (seconds < 60) return `about ${Math.max(5, Math.round(seconds / 5) * 5)} seconds left`;
-  const minutes = Math.round(seconds / 60);
-  return `about ${minutes} minute${minutes === 1 ? "" : "s"} left`;
-}
-
 export const brand = {
   name: "CHORD",
   expansion: "Component Harmony & Orchestral Retrieval Decoder",
@@ -67,10 +60,7 @@ export const landingCopy = {
 export const processingCopy = {
   stages: ["Queued", "Downloading audio", "Separating stems", "Detecting tempo", "Detecting chords and key"],
   cancel: "Cancel",
-  model: "Six-source model",
-  estimate: (secondsLeft: number) => `Six-source model · ${remaining(secondsLeft)}`,
   loadingStems: "Loading stems…",
-  decoding: "Decoding six stems in your browser",
   // App-authored
   cancelling: "Cancelling…",
 } as const;

@@ -17,6 +17,8 @@ interface ChordBarProps {
   lyrics: Lyrics | null | undefined;
   onOpenLyricSheet: () => void;
   onAddLyrics: () => void;
+  /** The vocals stem is near-silent. Said here rather than in one view so every view shows it. */
+  instrumental: boolean;
 }
 
 const NO_CHORD = "N";
@@ -37,7 +39,7 @@ function LyricRow({ label, children }: { label: string; children: React.ReactNod
 }
 
 /** The chords and lyric section (design.md#chords-and-lyrics): the chord now and the next three, the strip, and the lyric row. */
-export function ChordBar({ segments, time, duration, transpose, onSeek, lyrics, onOpenLyricSheet, onAddLyrics }: ChordBarProps) {
+export function ChordBar({ segments, time, duration, transpose, onSeek, lyrics, onOpenLyricSheet, onAddLyrics, instrumental }: ChordBarProps) {
   const [stripRef, stripWidth] = useElementWidth<HTMLDivElement>();
   const seekDrag = useSeekDrag(duration, onSeek);
 
@@ -132,6 +134,7 @@ export function ChordBar({ segments, time, duration, transpose, onSeek, lyrics, 
         </div>
       )}
       {lyricRow}
+      {instrumental && <span className="ch-hint">{resultsCopy.instrumental}</span>}
     </div>
   );
 }

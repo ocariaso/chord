@@ -132,9 +132,9 @@ on the transport's loop chip — and the synced lyric line is plain text, not a 
 
 ### Transport
 
-[`Transport.tsx`](../../web/src/screens/results/Transport.tsx) is the last thing in the card. It is
-not sticky: when the results are taller than the window — a Console panel, say — it scrolls with
-the page like everything else.
+[`Transport.tsx`](../../web/src/screens/results/Transport.tsx) is the last thing in the card. The
+page never scrolls and the card fills the viewport, so the transport is always on screen; the view
+panel above it takes whatever height is left.
 
 Left to right: play/pause, elapsed time, the seek slider, duration, the speed chip, the loop chip
 and the metronome chip. The seek slider is a 4 px bar inside a full-height transparent wrapper that
@@ -168,8 +168,9 @@ per stem, a `.ch-stemrow`:
   [`peaks.ts`](../../web/src/utils/peaks.ts) builds a CSS `polygon()` from 160 peak bins (every 8th
   sample, square-root lifted so a quiet stem still has a shape, with a 2% floor so silence stays
   visible) each time a load finishes. The waveform dims while the stem isn't heard — the design's
-  `audible()`, so a stem held by another's solo dims too. It draws **no playhead** and doesn't seek;
-  position is shown and set on the chord strip and the transport, and the element is `aria-hidden`.
+  `audible()`, so a stem held by another's solo dims too. A `.ch-playhead` crosses it at the playback
+  position, but it doesn't seek; position is set on the chord strip and the transport, and the
+  element is `aria-hidden`.
 
 Rows follow `STEM_KEYS` in [`design/stems.ts`](../../web/src/design/stems.ts) — vocals, drums,
 bass, guitar, piano, other, the design's order and the API's `STEM_NAMES` order. A stem outside
@@ -183,8 +184,9 @@ The Mixer has **no pan or tone controls**.
 
 [`ConsoleView.tsx`](../../web/src/screens/results/ConsoleView.tsx): a `.ch-striprow` of
 [`ConsoleStrip`](../../web/src/screens/results/ConsoleStrip.tsx)s beside a
-[`MasterStrip`](../../web/src/screens/results/MasterStrip.tsx). The row scrolls horizontally, and
-`.ch-strip` holds a 112 px floor so a strip never collapses under its own controls.
+[`MasterStrip`](../../web/src/screens/results/MasterStrip.tsx), filling the view panel's height. The
+row never scrolls: strips share the width and narrow below `.ch-strip`'s 112 px floor when they must,
+clipping their own controls at the edge, and their faders shrink with the window's height.
 
 Each stem strip is a `.ch-panel.ch-strip` — `.is-active` (the raised panel with an accent hairline)
 when soloed, otherwise `.is-off` (55% opacity) when muted — holding the label, a state label, a
@@ -217,12 +219,13 @@ up with them — readouts for Output (the master fader in dB), Peak (true peak, 
 of [`AnalogModule`](../../web/src/screens/results/AnalogModule.tsx)s.
 
 The five dials — Output left, Output right, True peak (dBTP), Loudness (LUFS) and Correlation — sit
-in a grid of `repeat(5, minmax(180px, 1fr))` that scrolls horizontally. The 180 px floor is
-load-bearing: [`OutputDial`](../../web/src/screens/results/OutputDial.tsx) draws its scale text
-inside a 200×140 SVG viewBox, and any narrower puts that text under 9 px. Whenever the output is
+in a grid of `repeat(5, minmax(0, 1fr))`, each SVG capped at 14% of the viewport's height, and the
+whole dial section is hidden in a window under 900 px tall, where it and the modules can't both fit.
+[`OutputDial`](../../web/src/screens/results/OutputDial.tsx) draws its scale text inside a 200×140
+SVG viewBox, so under about 180 px per dial that text drops below 9 px — accepted over scrolling. Whenever the output is
 silent, paused included, Correlation reads `—` and its needle eases back to centre.
 
-Each stem gets a `.ch-panel.ch-module` (120 px floor, in the same kind of scrolling row) —
+Each stem gets a `.ch-panel.ch-module` (narrowing below its 120 px floor rather than scrolling) —
 `.is-active` when soloed, otherwise `.is-off` when muted, solo first as on the Console strips:
 
 | Control | Size | Range and readout |
@@ -287,7 +290,8 @@ The meters are the deliberate exception, written straight to the DOM; see
 - Phones get the Mixer only: no meters, tone, pan, speed or loop.
 - A soloed, muted stem reads *Soloed* and lifts on the Console and Analog views, but is silent.
 - No reset gesture: a double-click does nothing, and no key centres Tone or Pan.
-- The transport isn't sticky, so play and seek scroll out of view under a Console panel taller than
-  the window.
+- The page never scrolls, so a window too small for a view clips it instead: strips and modules
+  narrow past their floors, the Analog dials hide under 900 px of height, and only a phone's stem
+  panel scrolls.
 - The view switch unmounts the outgoing view, so meter holds and needle positions restart when you
   come back to it.

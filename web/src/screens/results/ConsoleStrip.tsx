@@ -40,6 +40,9 @@ export function ConsoleStrip({ stem, anySolo, controls }: ConsoleStripProps) {
           flexDirection: "column",
           gap: "var(--space-4)",
           padding: "var(--space-6) 14px",
+          // Below the stylesheet's 112px floor rather than scroll; the fader shrinks with the view's height too.
+          minWidth: 0,
+          overflow: "hidden",
         } as React.CSSProperties
       }
     >
@@ -49,7 +52,7 @@ export function ConsoleStrip({ stem, anySolo, controls }: ConsoleStripProps) {
           {stateLabel(stem, anySolo)}
         </span>
       </span>
-      <span className="flex flex-1" style={{ gap: "var(--space-4)", minHeight: 170 }}>
+      <span className="flex min-h-0 flex-1" style={{ gap: "var(--space-4)" }}>
         <VerticalFader
           value={state.gain}
           onChange={(gain) => controls.onGainChange(state.key, gain)}

@@ -33,7 +33,7 @@ subclass, so **every field is overridable by an environment variable of the same
 | `db_path` | `<server>/data/db.sqlite3` | not derived from `data_dir` — set both if you move it |
 | `jobs_dir` | `<server>/data/jobs` | same caveat |
 | `models_cache_dir` | `<server>/data/models_cache` | becomes `TORCH_HOME`, demucs' fallback download cache |
-| `demucs_model` | `htdemucs_6s` | the 6-source model; see [../features/stem-separation.md](../features/stem-separation.md). The Docker image sets it from the build argument whose weights it carries. The processing screen's *Six-source model* label is hardcoded, not read from this |
+| `demucs_model` | `htdemucs_6s` | the 6-source model; see [../features/stem-separation.md](../features/stem-separation.md). The Docker image sets it from the build argument whose weights it carries. The web's stem copy (*six isolated stems*, the stem list) is hardcoded, not read from this |
 | `device` | `cuda` | `DEVICE=cpu` in the CPU Compose path; falls back to CPU if CUDA is absent |
 | `enable_chord_detection` | `True` | set false to skip the madmom stage entirely |
 | `max_duration_seconds` | `720` | longer tracks are refused before separation — a URL job from yt-dlp's metadata, before downloading; `0` disables. The landing page's *"up to 12 minutes"* is hardcoded against this default |

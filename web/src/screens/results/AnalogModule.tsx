@@ -30,6 +30,9 @@ export function AnalogModule({ stem, controls }: AnalogModuleProps) {
           alignItems: "center",
           gap: "var(--space-4)",
           padding: "var(--space-6) var(--space-4)",
+          // Below the stylesheet's 120px floor rather than scroll the row.
+          minWidth: 0,
+          overflow: "hidden",
         } as React.CSSProperties
       }
     >

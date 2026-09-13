@@ -207,8 +207,10 @@ It runs every frame while playing. `O(n)` per frame on a few hundred lines with 
 fine, but the obvious candidate if the render loop ever needs tightening.
 
 **The row renders for every track, instrumentals included.** Judging a vocals stem silent mutes it
-and marks it on the mixer, but leaves the lyric row alone: an instrumental shows whatever the lookup
-found — usually *None found for this track.* with *Add lyrics manually* — like any other song.
+and leaves the lyric row alone: an instrumental shows whatever the lookup found — usually *None
+found for this track.* with *Add lyrics manually* — like any other song. Under the row, the hint
+*No vocal content detected — the vocals stem is present but silent.* is added; it sits in the
+chords and lyrics section rather than in a view so Mixer, Console and Analog all show it.
 
 ### The lyric sheet and manual entry
 

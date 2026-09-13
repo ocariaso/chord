@@ -34,7 +34,11 @@ function KofiIcon() {
 /** The page footer. The template has none; it is kept by decision, built from Nocturne's icon buttons and the template's hint. */
 export function Footer() {
   return (
-    <footer className="flex flex-col items-center" style={{ gap: "var(--space-1)", padding: "0 var(--space-8) var(--space-8)" }}>
+    // One row, so the footer takes as little of a page that never scrolls as it can.
+    <footer
+      className="flex flex-none flex-wrap items-center justify-center"
+      style={{ gap: "var(--space-1) var(--space-4)", padding: "var(--space-1) var(--space-8) var(--space-3)" }}
+    >
       <div className="flex items-center" style={{ gap: "var(--space-2)" }}>
         <a
           href={GITHUB_URL}

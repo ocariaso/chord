@@ -120,7 +120,7 @@ main.tsx              loads nocturne.css, chord-theme.css, index.css; mounts <Ap
 App.tsx               no screen state: activeJobId, then the job's status, decide what renders
    │                  everything about the job flows from useJobEvents(activeJobId)
    ├─ LandingScreen       file drop, URL form, "Submitting…" while the POST is out
-   ├─ ProcessingScreen    five-stage list, progress, time estimate, cancel
+   ├─ ProcessingScreen    five-stage list, progress, cancel
    ├─ FailurePanel        job error, cancelled (resume), connection lost, job not found
    └─ ResultsScreen       loads the stems; the engine and the design's PlayerState for all three views
          ├─ ResultsTopbar, AnalysisBar, ChordBar    always mounted; no view tabs below 720px

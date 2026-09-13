@@ -28,7 +28,7 @@ recorded here.
 | The breakpoint | [`design/layout.ts`](../../web/src/design/layout.ts) |
 | A screen and its states | a folder under [`screens/`](../../web/src/screens/) |
 | The fader, knob, MUTE/SOLO pair and waveform | [`components/controls/`](../../web/src/components/controls/) |
-| The card the failure and results screens sit on (landing and processing sit on the page ground) | [`ScreenCard`](../../web/src/components/ScreenCard.tsx) |
+| The card the results screen sits on (landing, processing and failure sit on the page ground) | [`ScreenCard`](../../web/src/components/ScreenCard.tsx) |
 
 `design/` holds no components and never imports from `screens/` or `components/`.
 
@@ -133,24 +133,28 @@ comments and in review.
   vertically, 160px for its full range — never rotationally, which is unusable with a mouse.
 - **Keyboard:** an arrow moves ±0.01 and Shift+arrow ±0.1; Home and End go to 0 and 1; Page Up and
   Page Down move ±0.1, as the ARIA slider pattern expects.
-- **Console:** strips sit in `.ch-striprow`, which scrolls instead of collapsing. Each is
+- **Console:** strips sit in `.ch-striprow`, its `overflow-x` overridden to `hidden` so the strips
+  share the width rather than scroll ([Responsive](#responsive)). Each is
   `.ch-panel.ch-strip` with `--stem` set, holding `.ch-vfader`, `.ch-meter`, `.ch-ticks`, the Level
   and Pan readouts and MUTE/SOLO, and the master strip ends the row.
 - **Analog:** each stem is `.ch-panel.ch-module`: a Level knob in the stem's hue, then Tone and Pan
   as `.ch-knob-sm` with `--stem: var(--color-neutral-700)`, so only Level carries the hue. Every knob
   shows its label and its value.
-- **Floors:** `.ch-strip` holds 112px and `.ch-module` 120px. Never give either
-  `flex: 1; min-width: 0` — they collapse under their own controls.
+- **Floors:** the stylesheet gives `.ch-strip` 112px and `.ch-module` 120px. Because the page never
+  scrolls, `ConsoleStrip` and `AnalogModule` override them inline (`min-width: 0`,
+  `overflow: hidden`) and narrow instead. Above about 1000px wide six stems still get their floor;
+  narrower, a strip or module clips its own controls at the edge rather than scroll the row.
 
 ## Metering
 
 - **Meters bypass React.** A frame loop writes each meter's `--l` and each needle's `transform`
   straight to the DOM: a custom-property write per frame is cheap, a render per frame isn't.
 - **Five dials** — Output left, Output right, True peak, Loudness and Correlation — sit in a grid of
-  `repeat(5, minmax(180px, 1fr))` with `overflow-x: auto`. Each is drawn on a `0 0 200 140` viewBox,
-  its needle rotating about `(100, 108)` through ±70°, with the mid label 10° left of centre.
-- **The 180px floor is load-bearing:** any narrower puts the in-SVG type under 9px. If the dials
-  must get narrower, show three instead of shrinking five.
+  `repeat(5, minmax(0, 1fr))`, and each SVG is capped at `14vh` tall. Each is drawn on a `0 0 200 140`
+  viewBox, its needle rotating about `(100, 108)` through ±70°, with the mid label 10° left of centre.
+- **The dials give way first.** Under about 180px per dial the in-SVG type drops below 9px; that is
+  accepted over a scrolling page. Under 900px of viewport height the dial section is hidden
+  entirely, because the dials and the modules can't both fit and the modules carry the controls.
 
 ## Chords and lyrics
 
@@ -214,13 +218,27 @@ lyrics, open dialogs — is ordinary state beside it.
 
 One breakpoint, 720px. The results shell is fluid from about 360px, and 1120px is its widest.
 
+**The app is exactly one viewport and the page never scrolls**, in either direction, at any size.
+`index.css` clips `html`, `body` and `#root`; `App` is `h-dvh` with a one-row footer; every screen
+is `flex-1 min-h-0` and shares out the height it gets instead of overflowing:
+
+- landing, processing and failure are centered columns whose spacing is `clamp()`ed to `vh`; a
+  failure's log is cut at 30% of the viewport (*Copy log* still copies all of it);
+- results fill the `ScreenCard` (`fill`): the view panel takes the height the bars leave, Mixer
+  rows split it evenly, Console faders shrink with it, and Console strips and Analog modules share
+  the width below their stylesheet floors instead of scrolling;
+- the Analog dials are capped at 14vh and hidden under 900px of height, where they and the modules
+  can't both fit;
+- **the one exception is a phone's stem list**: six stacked rows with 44px targets can't fit beside
+  the bars, so below 720px the view panel alone scrolls.
+
 - **Where the breakpoint is read:**
   - components use `PHONE_QUERY` from `design/layout.ts` through `useMediaQuery`;
   - `App`, `MixerView` and `AnalysisBar` use Tailwind's `max-[720px]:`;
   - `chord-theme.css` has its own `@media (max-width: 720px)`.
 - **From 1024px** all three views are available, their rows filling the width.
-- **Between 720 and 1024px** the same, with the Console and Analog rows scrolling at their floors
-  (112px, 120px, and 180px for the dials).
+- **Between 720 and 1024px** the same, with Console strips, Analog modules and dials narrowing
+  rather than scrolling.
 - **Below 720px, results** lock to the Mixer, with no view tabs. The stylesheet stacks the
   `.ch-stemrow` rows with 44px MUTE/SOLO targets, the Mixer's column labels and the analysis bar's
   dividers are hidden, and the transport becomes `.ch-m-bar`: play, seek and the Click chip.
@@ -318,5 +336,6 @@ the same change.
 2. Walk every state in [Screens and their states](#screens-and-their-states) that the change touches,
    at a desktop width and under 720px, and compare before and after — screenshots are the cheapest
    diff.
-3. Tab through the touched controls: arrows move them, the focus ring shows, and at 200% zoom nothing
-   clips and strip rows scroll.
+3. Tab through the touched controls: arrows move them and the focus ring shows.
+4. Check the page never scrolls: no scrollbar at a desktop size, at a short window (about 700px
+   tall), or under 720px wide, where only the results' stem panel may scroll.

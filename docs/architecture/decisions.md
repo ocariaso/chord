@@ -31,8 +31,9 @@ for in place of its placeholder shapes — and
 `clip-path`. This replaced WaveSurfer, which needed every stem fetched twice — an `ArrayBuffer` for
 the engine, a media element for its cursor.
 
-**Cost:** no per-row playhead, and a waveform isn't a seek target; position is shown and set on the
-chord strip and the transport. The envelope is coarse and fixed — 160 bins whatever the length, so
+**Cost:** the playhead can't be drawn inside the clipped element, so `StemWaveform` wraps the wave
+and lays the chord strip's `.ch-playhead` beside it; a waveform isn't a seek target, so position is
+set on the chord strip and the transport. The envelope is coarse and fixed — 160 bins whatever the length, so
 4.5 s per bin on a twelve-minute track — and it is computed on the main thread while the stems load.
 In exchange: one fetch per stem, and one dependency fewer.
 
@@ -331,16 +332,15 @@ The calls that took a decision:
   rules asked for a visible label and value on every control; the harness drew those two knobs with
   a label only, so the written rule won.
 - **Loading stems is the template's `processing-loading` state:** the processing screen at 100%,
-  *Loading stems…*, *Decoding six stems in your browser*. `PlaybackEngine.load` no longer reports
+  *Loading stems…*. `PlaybackEngine.load` no longer reports
   progress.
 
 **Cost:**
 
 - A soloed, muted stem's strip and its audio disagree: it reads *Soloed* and lifts, and is silent.
-- Waiting has no measure. An upload reads *Submitting…* and stem loading sits at 100% under a hint
-  about decoding, however long either takes and whichever part is slow.
-- A set loop shows only in the loop chip's label, and a Console panel taller than the window
-  scrolls the transport out of view.
+- Waiting has no measure. An upload reads *Submitting…* and stem loading sits at 100% on
+  *Loading stems…*, however long either takes and whichever part is slow.
+- A set loop shows only in the loop chip's label.
 - Every job error is titled *Separation failed*, the template's title, a failed download or an
   unreadable file included, so the body has to carry the specifics.
 - A stem the design has no name or hue for isn't loaded at all; a Demucs model with a different
@@ -428,7 +428,7 @@ engine never stops.
 ## Narrow screens get the Mixer view only
 
 **Constraint:** Console strips need 112 px each, Analog modules 120 px and its dials 180 px, or
-their controls collapse; a phone is about 360 px wide.
+their controls collapse; a phone is about 360 px wide; and the page must never scroll.
 
 **Choice:** a single breakpoint at 720px and, below it, the template's responsive rules, now
 [Responsive](../conventions/design.md#responsive): lock to the Mixer and
@@ -437,12 +437,17 @@ stylesheet stacks each `.ch-stemrow` into name, fader with its readout, MUTE/SOL
 waveform; `MixerView` hides the column labels whose columns are gone, and `AnalysisBar` the
 dividers between its wrapped groups; the analysis bar and the full chord bar stay; and only the
 transport changes markup, to `.ch-m-bar` with play,
-seek and a *Click* metronome chip. Above the breakpoint, strip rows scroll horizontally at their
-floors rather than shrink. This replaced `ScaleToFit`, which kept fixed-width layouts intact by
+seek and a *Click* metronome chip. **The whole app is one viewport and never scrolls**
+([Responsive](../conventions/design.md#responsive)), by the owner's standing request: screens share
+out the height instead of overflowing, Console strips and Analog modules narrow below their floors
+instead of scrolling, the Analog dials shrink and hide under 900px of height, and only a phone's
+stem panel scrolls. This replaced `ScaleToFit`, which kept fixed-width layouts intact by
 transform-scaling them, text included, and later a phone layout built from the harness's phone
 frame, which the template's written rules outranked ([why](#the-ui-was-built-from-a-design-template)).
 
-**Cost:** on a narrow screen Pan, Tone, every meter, speed and A–B looping are unreachable — the
+**Cost:** below about 1000px wide, Console strips and Analog modules clip their own controls, and
+the dial type drops under 9px; a window under 900px tall shows no output dials at all; a very
+short window clips the bottom of the view panel rather than scroll to it. On a narrow screen Pan, Tone, every meter, speed and A–B looping are unreachable — the
 `.ch-m-bar` has no speed or loop chip, and no time readouts. A speed or loop set before the window
 narrowed stays in force with no control to change it. The stacked rows make a long page: six stems,
 four lines each, under the analysis and chord bars. Resizing across the breakpoint switches the
@@ -470,14 +475,12 @@ sidesteps SQLite's cross-thread rules between the worker and request handlers.
 since `saveLyrics` builds `{ text }` inline. Part of the contract is values no type describes: the
 stage messages, which [`design/copy.ts`](../../web/src/design/copy.ts) mirrors verbatim as
 `processingCopy.stages` and [`design/stages.ts`](../../web/src/design/stages.ts) matches against
-`stage_message`, and the separation span, which
-[`ProcessingScreen`](../../web/src/screens/processing/ProcessingScreen.tsx) copies as
-`SEPARATION_PROGRESS_END = 0.5` from `_SEPARATION_PROGRESS` in `pipeline.py`.
+`stage_message`.
 
 **Cost:** nothing enforces agreement; a server field rename — or a reworded stage message — is a
 silent client break. FastAPI already publishes an OpenAPI schema at `/openapi.json`, so generating
-the types is available whenever the duplication starts to hurt, though it wouldn't cover those
-values. See [../api/contract-sync.md](../api/contract-sync.md).
+the types is available whenever the duplication starts to hurt, though it wouldn't cover the
+stage messages. See [../api/contract-sync.md](../api/contract-sync.md).
 
 ## madmom is patched in place
 

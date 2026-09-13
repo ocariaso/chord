@@ -305,7 +305,7 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
 
   return (
     <>
-      <ScreenCard>
+      <ScreenCard fill>
         <ResultsTopbar
           job={job}
           duration={player.duration}
@@ -334,13 +334,20 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
           lyrics={lyrics}
           onOpenLyricSheet={() => setLyricsDialog("sheet")}
           onAddLyrics={() => setLyricsDialog("edit")}
+          instrumental={stems.some((stem) => stem.silent)}
         />
+        {/* The view takes whatever height the bars leave. The page never scrolls; on a phone six stacked stem rows
+            can't fit beside the transport, so this panel alone may. */}
         <div
           id={VIEW_PANEL_ID}
+          className="flex min-h-0 flex-1 flex-col"
+          style={{ overflowY: isPhone ? "auto" : "hidden" }}
           role={isPhone ? undefined : "tabpanel"}
           aria-labelledby={isPhone ? undefined : `${VIEW_PANEL_ID}-${view}-tab`}
         >
-          {view === "mixer" && <MixerView stems={stems} controls={controls} />}
+          {view === "mixer" && (
+            <MixerView stems={stems} controls={controls} playhead={player.duration > 0 ? Math.min(1, player.time / player.duration) : 0} />
+          )}
           {view === "console" && (
             <ConsoleView
               stems={stems}

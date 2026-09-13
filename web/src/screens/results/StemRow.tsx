@@ -8,14 +8,17 @@ import type { StemControls, StemDisplay } from "./types";
 interface StemRowProps {
   stem: StemDisplay;
   controls: StemControls;
+  /** 0…1 playback position. */
+  playhead: number;
 }
 
 /** `.ch-stemrow` (design.md#controls): name, level fader and value, MUTE/SOLO, waveform. Below 720px the stylesheet stacks it. */
-export function StemRow({ stem, controls }: StemRowProps) {
+export function StemRow({ stem, controls, playhead }: StemRowProps) {
   const { state } = stem;
   const value = fmtDb(state.gain, state.muted);
   return (
-    <div className="ch-stemrow" style={{ "--stem": stem.hue } as React.CSSProperties}>
+    // On the web the rows share the view's height evenly; a stacked phone row keeps its own, and the panel scrolls.
+    <div className="ch-stemrow min-h-0 flex-1 max-[720px]:flex-none" style={{ "--stem": stem.hue } as React.CSSProperties}>
       <span className="ch-stemrow-name">
         <span className="ch-dot" />
         <span style={{ color: "var(--color-text)" }}>{stem.name}</span>
@@ -41,7 +44,7 @@ export function StemRow({ stem, controls }: StemRowProps) {
           onToggleSolo={() => controls.onToggleSolo(state.key)}
         />
       </span>
-      <StemWaveform envelope={stem.envelope} off={!stem.audible} />
+      <StemWaveform envelope={stem.envelope} off={!stem.audible} playhead={playhead} />
     </div>
   );
 }

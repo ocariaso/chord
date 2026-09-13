@@ -202,7 +202,7 @@ split.
 Separation starts the bar at 10% and then follows Demucs, which reports progress as each chunk of
 audio *starts* — so the bar holds at 10% until the second chunk begins, a noticeable while on CPU.
 On a server's first job it holds a little longer, while the separator loads its weights onto the
-device. The time-remaining estimate appears only after 3 s of measured progress.
+device.
 
 ### The first job is slower than the rest
 
@@ -255,8 +255,8 @@ Cancel and then resume one through the API to run it again, or clean up:
 ### Two uploads, and the second doesn't start
 
 Correct behavior. One worker thread, one queue, strictly serial — Demucs wants the whole GPU. A
-queued job's processing screen sits on *Queued* at 0% with the hint *Six-source model*; nothing on
-it says the job is waiting for another one. See
+queued job's processing screen sits on *Queued* at 0%; nothing on it says the job is waiting for
+another one. See
 [../architecture/decisions.md](../architecture/decisions.md#a-single-serial-worker-thread-not-a-task-queue).
 
 ### My finished job disappeared
@@ -272,8 +272,8 @@ through `pagehide`. There is no history, by design:
 ### "Loading stems…" takes a long time
 
 After separation finishes, the browser downloads all six WAVs in parallel and decodes them before
-the results appear — there is no streaming path. The processing screen holds at 100% with
-*Decoding six stems in your browser* for the whole wait, downloading included. There is no byte
+the results appear — there is no streaming path. The processing screen holds at 100% on
+*Loading stems…* for the whole wait, downloading included. There is no byte
 count, so a slow download looks exactly like a slow decode; the browser's network panel tells them
 apart. That's ~250 MB for a four-minute song at 44.1 kHz, and more at 48 kHz or for a longer track.
 Inherent to the Web Audio approach:

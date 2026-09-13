@@ -69,7 +69,8 @@ export function OutputDial({ scale, needleRef, valueRef, initialValue, restDegre
   const text = { fill: "var(--color-neutral-500)", fontFamily: "var(--font-body)" };
   return (
     <span className="flex min-w-0 flex-col items-center" style={{ gap: 6 }}>
-      <svg viewBox="0 0 200 140" style={{ width: "100%", height: "auto" }} aria-hidden="true">
+      {/* Capped by the viewport's height, so a wide window's dials never push the modules off a page that doesn't scroll. */}
+      <svg viewBox="0 0 200 140" style={{ width: "100%", height: "auto", maxHeight: "14vh" }} aria-hidden="true">
         <path d="M17.3 77.9 A88 88 0 0 1 182.7 77.9" fill="none" strokeWidth={1.4} style={{ stroke: "var(--color-neutral-800)" }} />
         <path d={scale.accentArc} fill="none" strokeWidth={2.4} style={{ stroke: "var(--color-accent)" }} />
         <g strokeWidth={2.2} strokeLinecap="round" style={{ stroke: "var(--color-neutral-400)" }}>

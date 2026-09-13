@@ -140,9 +140,7 @@ update sets it.
 `stage_message` is the string the UI actually shows. `ProcessingScreen` maps `status` and
 `stage_message` onto its fixed five-stage list with `processingStage()` in
 [`design/stages.ts`](../../web/src/design/stages.ts) — `separating` with *Detecting tempo* is the
-tempo stage — and estimates *"about N seconds left"* from how far progress has moved between the
-first separating update it saw and the latest one, timed by their `updated_at`. It hardcodes the
-end of the span as `SEPARATION_PROGRESS_END = 0.5`, a hand copy of `_SEPARATION_PROGRESS`.
+tempo stage — and prints `progress` as a percentage over the bar.
 
 ## Observation: the SSE stream
 

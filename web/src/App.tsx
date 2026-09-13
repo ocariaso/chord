@@ -176,9 +176,9 @@ function App() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <main className="flex flex-1 justify-center px-(--space-8) pt-7 pb-10 max-[720px]:px-3">
-        <div className="flex w-full max-w-280 min-w-0 flex-col" style={{ gap: "var(--space-8)" }}>
+    <div className="flex h-dvh flex-col overflow-hidden">
+      <main className="flex min-h-0 flex-1 justify-center px-(--space-8) pt-5 pb-2 max-[720px]:px-3 max-[720px]:pt-3">
+        <div className="flex h-full w-full max-w-280 min-w-0 flex-col">
           {activeJobId === null ? (
             <LandingScreen
               submitting={submitting}

@@ -315,8 +315,9 @@ Consequences:
   stem that isn't heard is dimmed (`.is-off`), not redrawn.
 - **160 bins, whatever the length**, so detail per bin shrinks as tracks get longer: a
   twelve-minute track is 4.5 s per bin. The bars inside are decoration, not samples.
-- **No per-row playhead, and no seeking.** Position is shown on the chord strip and the transport's
-  seek slider, and those are the two places to seek; a waveform is `aria-hidden`.
+- **A playhead on every row, but no seeking.** Each waveform carries a `.ch-playhead` at `--p`, in a
+  wrapper so the envelope's `clip-path` doesn't cut it away. The chord strip and the transport's
+  seek slider are the two places to seek; a waveform is `aria-hidden`.
 - **Phones draw them too.** Below 720px the stylesheet stacks each Mixer row and gives the
   waveform a full-width line of its own, last.
 
@@ -325,7 +326,7 @@ Consequences:
 [`utils/hasVocals.ts`](../../web/src/utils/hasVocals.ts) computes RMS over every 8th sample of the
 decoded vocals buffer's first channel and compares it against `0.01`. Instrumental tracks
 separate into a vocals stem that is near-silent rather than absent. When it is, `ResultsScreen`
-mutes the vocals stem on load and marks it — a hint under the Mixer's stems, and *Silent* as the
+mutes the vocals stem on load and marks it — a hint under the lyric row, shown in all three views, and *Silent* as the
 Console strip's state label while the stem stays muted and unsoloed. Nothing else changes: the
 lyric row still renders, so an instrumental shows whatever the lyrics lookup found.
 

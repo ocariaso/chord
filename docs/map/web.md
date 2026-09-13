@@ -147,14 +147,14 @@ scaffold leftovers nothing references.
 Nocturne's variables. Vite scaffold style (single quotes, no semicolons). `StrictMode` double-invokes mount effects in development, so under `npm run dev`
 `ResultsScreen` downloads its stems twice.
 
-### `src/index.css` — global styles (27 lines)
+### `src/index.css` — global styles (28 lines)
 **Used by:** `main.tsx`
-**Notes:** `@import "tailwindcss"`; `min-height: 100%` on `html`, `body` and `#root` (the page's
-full height comes from `min-h-screen` in `App.tsx`); the page ground; and button cursors (`pointer`,
-or `not-allowed` when disabled). The ground is the canvas the template's harness drew, in tokens: `html` in
-`--ch-well`, and on `body` a radial glow from `--ch-panel-raised` at the top left through
-`--color-bg` to `--ch-well`, sized to the first screen (`100% 100vh`, no repeat), so a longer page
-carries on in the well colour without a seam. It defines no class and no keyframes — app CSS that
+**Notes:** `@import "tailwindcss"`; `height: 100%` and `overflow: hidden` on `html`, `body` and
+`#root` — **the page never scrolls**; the app is one viewport (`h-dvh` in `App.tsx`) and screens share
+out its height; the page ground; and button cursors (`pointer`, or `not-allowed` when disabled). The
+ground is the canvas the template's harness drew, in tokens: `html` in `--ch-well`, and on `body` a
+radial glow from `--ch-panel-raised` at the top left through `--color-bg` to `--ch-well`, sized to
+the viewport (`100% 100%`, no repeat). It defines no class and no keyframes — app CSS that
 defines a class fails `check-design.mjs`. Tailwind's preflight **and utilities** sit in cascade
 layers while the vendored sheets are unlayered, so **a Tailwind class can't override a property a
 `ch-` or Nocturne class sets** — use an inline style.
@@ -187,9 +187,10 @@ cancel, resume and copy-log handlers; a cancel that fails is ignored (a job that
 answers 409), since the stream reports the real state. **Leaving a job discards it**: `handleBack`
 — *New track*, *Try another source* and *Discard* — clears `activeJobId`, and `useJobEvents`'
 cleanup fires the beacon: the server cancels a job still running (keeping its files) and deletes a
-finished one. Lays the screens out like the template harness's canvas: 28px top, `--space-8` (22.4px) sides
-and 40px bottom around a 1120px column, with 12px side gutters from a `max-[720px]:` utility below
-720px.
+finished one. Lays the screens out in exactly one viewport (`h-dvh`, overflow hidden): `main` is
+`flex-1 min-h-0` with 20px top, `--space-8` (22.4px) sides and 8px bottom around a full-height
+1120px column, and 12px side gutters and 12px top from `max-[720px]:` utilities below 720px; the
+one-row `Footer` takes the rest.
 **See:** [../architecture/web.md](../architecture/web.md)
 
 ---
@@ -410,8 +411,7 @@ Pure functions, one subject per file.
 `results/Transport`
 **Notes:** `"3:51"` (`"0:00"` for non-finite), with 5 ms of slack before flooring: decoding at a
 device rate other than a stem's own can leave it a frame short — a 36-second track decodes to
-35.99998 s at 44.1 kHz — which would otherwise read 0:35. The processing screen's time-left wording
-isn't here; it is `processingCopy.estimate` in `design/copy.ts`.
+35.99998 s at 44.1 kHz — which would otherwise read 0:35.
 
 ### `src/utils/tempo.ts` — `formatBpm(bpm)` (4 lines)
 **Used by:** `results/AnalysisBar`
@@ -436,7 +436,7 @@ run on every render of the chord bar — every animation frame while playing.
 **Used by:** `results/ResultsScreen`
 **Notes:** the RMS of channel 0 over every 8th sample (`SAMPLE_STRIDE`), against
 `SILENCE_RMS_THRESHOLD = 0.01`. Instrumentals separate into a **near-silent** vocals stem rather
-than an absent one; a silent one starts muted and is marked by the Mixer's hint line and, while it
+than an absent one; a silent one starts muted and is marked by a hint under the lyric row (in every view) and, while it
 stays muted, the Console strip's *Silent* label. The lyric row still renders.
 
 ### `src/utils/download.ts` — `downloadFile(url, filename)` (14 lines)
@@ -497,15 +497,13 @@ shapes, tapers and stem identities from here rather than writing their own;
 accessible names, both dialogs and the footer. Two template lines are **reworded by decision**,
 each marked: the *Cancelled* body (the template promised a 24-hour queue) and *Connection lost*'s
 secondary action, *New track* in place of *Work offline*. Grouped by screen; values that need data
-are functions (`rejectedBody(fileName)`, `levelLabel(stem, value)`) — `processingCopy.estimate`
-takes seconds and rounds them itself, to the nearest 5 s with a 5 s floor under a minute and to whole
-minutes above, because the estimate is rough — and `failureCopy` is keyed by the state ids in
+are functions (`rejectedBody(fileName)`, `levelLabel(stem, value)`), and `failureCopy` is keyed by the state ids in
 [Screens and their states](../conventions/design.md#screens-and-their-states). **Some strings restate server facts and must change with them:**
 `processingCopy.stages` is `PROCESSING_STAGES`, whose last four labels are the server's
 `stage_message` strings; *up to 12 minutes* (`dropHint`, `phoneDropHint`) is
 `max_duration_seconds`' default; *44.1 / 48 kHz preserved* is `_PRESERVED_SAMPLE_RATES`; *MP3 or
-FLAC* and the rejection copy are `ALLOWED_UPLOAD_EXTENSIONS`; and *six* stems (`intro`,
-`processingCopy.model`, `estimate`, `decoding`) and the stem list (`stemsHint`) are the Demucs model. `stemNames` is
+FLAC* and the rejection copy are `ALLOWED_UPLOAD_EXTENSIONS`; and *six* stems (`intro`)
+and the stem list (`stemsHint`) are the Demucs model. `stemNames` is
 read by key, through `stemName` in `design/stems`. `countWord` spells counts up to six only (the
 stem-failure body); `footerCopy.copyright` hardcodes the author's name.
 **See:** [../conventions/design.md](../conventions/design.md)
@@ -572,12 +570,13 @@ must agree: `@media (max-width: 720px)` in `chord-theme.css`, and the `max-[720p
 
 ## `src/components/` — the pieces the screens share
 
-### `src/components/ScreenCard.tsx` — the screen surface (21 lines)
+### `src/components/ScreenCard.tsx` — the screen surface (25 lines)
 **Exports:** `ScreenCard`
-**Used by:** `failure/FailurePanel`, `results/ResultsScreen` — not `landing/LandingScreen` or
-`processing/ProcessingScreen`, which sit on the page ground
-**Notes:** `.ch-app` with the template harness's 10px radius, ring and shadow, and an optional `maxWidth`
-(520 for the processing and failure cards). `overflow: hidden` clips everything to the radius — and
+**Used by:** `results/ResultsScreen` — not `landing/LandingScreen`, `processing/ProcessingScreen` or
+`failure/FailurePanel`, which sit on the page ground
+**Notes:** `.ch-app` with the template harness's 10px radius, ring and shadow, an optional `maxWidth`
+(unused today), and `fill`, which grows the card to the page's height (`flex: 1 1 0`, `min-height: 0`)
+so `ResultsScreen` can share that height out. `overflow: hidden` clips everything to the radius — and
 makes the card a scroll container, so a `position: sticky` child would stick to the card, not the
 viewport. Nothing inside is sticky today.
 
@@ -598,13 +597,14 @@ popover sits at 20). Focuses `[data-autofocus]` or the first focusable element, 
 Escape or a press on the backdrop, and restores focus on unmount. `onClose` is read through a ref so
 the focus effect runs once. `width` widens it past Nocturne's 440px.
 
-### `src/components/Footer.tsx` — footer links (66 lines)
+### `src/components/Footer.tsx` — footer links (70 lines)
 **Exports:** `Footer`
 **Imports from:** `design/copy`
 **Used by:** `App`
 **Notes:** the template had no footer; this one is kept by decision. GitHub, a bug-report `mailto:`
 and Ko-fi as Nocturne ghost icon buttons (`.btn-icon`), plus `footerCopy.copyright` —
-`© <year> Ormin Cariaso · v{__APP_VERSION__}`. In the page flow, not fixed. Hardcodes the author's
+`© <year> Ormin Cariaso · v{__APP_VERSION__}`, on one wrapping row so it takes as little of the
+unscrolled page as it can. In the page flow (`flex-none` under `main`), not fixed. Hardcodes the author's
 URLs and email.
 
 ### `src/components/icons.tsx` — shared inline SVG (55 lines)
@@ -645,13 +645,15 @@ value or reset.
 parent supplies the element they sit in. `stem` is the display name, used only for the accessible
 names (*Mute Vocals*), which contain the visible text.
 
-### `controls/StemWaveform.tsx` — `.ch-wave` (17 lines)
+### `controls/StemWaveform.tsx` — `.ch-wave` (21 lines)
 **Exports:** `StemWaveform`
 **Imports from:** —
 **Used by:** `results/StemRow`
 **Notes:** the bar pattern clipped (`clip-path`) to the stem's real envelope from `utils/peaks`,
-`.is-off` while the stem isn't heard, and `aria-hidden`. **Display only** — it doesn't seek; the
-chord strip and the transport do.
+`.is-off` while the stem isn't heard, with a `.ch-playhead` at `--p` beside it in an `aria-hidden`
+wrapper (the clip would cut a child away). The wrapper carries `order-5` and a full basis, standing
+in for the stylesheet's phone rule on `.ch-wave`. **Display only** — it doesn't seek; the chord
+strip and the transport do.
 
 ---
 
@@ -661,12 +663,13 @@ Each screen renders its states from
 [Screens and their states](../conventions/design.md#screens-and-their-states) and takes every string
 from `design/copy`; together they are the design's reference implementation.
 
-### `src/screens/landing/LandingScreen.tsx` — the landing screen (247 lines)
+### `src/screens/landing/LandingScreen.tsx` — the landing screen (251 lines)
 **Exports:** `LandingScreen`, `Submission`, `SubmitError`
 **Imports from:** `components/icons`, `design/copy`, `design/layout`, `hooks/useMediaQuery`
 **Used by:** `App`
 **Notes:** the only screen **not** on a `ScreenCard`: one centered column on the page ground, grown
-(`flex-1`) to fill `main` and vertically centered above the footer. The `upload`, `upload-submitting`
+(`flex-1 min-h-0`) to fill `main` and vertically centered above the footer, its padding and gaps
+`clamp()`ed to `vh` so a short window tightens it rather than scrolling. The `upload`, `upload-submitting`
 and `upload-error` states, in two arrangements: web, and the phone layout below 720px — no *Choose file* button (the column dropzone is
 itself the control: `role="button"`, Enter or Space), a full-width *Fetch track*, no intro paragraph
 or divider. Client-side rejection of anything but `.mp3`/`.flac` (`ACCEPTED_EXTENSIONS`, plus the
@@ -679,35 +682,36 @@ the button stays enabled, as the template harness's did. `Track URL` renders at 
 Nocturne's `.field > label` outranks `.ch-label` — as it did in the harness.
 **See:** [../features/ingest.md](../features/ingest.md)
 
-### `src/screens/processing/ProcessingScreen.tsx` — live progress (176 lines)
+### `src/screens/processing/ProcessingScreen.tsx` — live progress (160 lines)
 **Exports:** `ProcessingScreen`
 **Imports from:** `api/client` (type), `components/CoverArt`, `components/icons`, `design/copy`,
 `design/layout`, `design/stages`, `hooks/useMediaQuery`, `utils/time`
 **Used by:** `App`, **and `results/ResultsScreen`** (as its stem-loading screen, via `loading`)
 **Notes:** like `LandingScreen`, not on a `ScreenCard`: one centered 460px column on the page ground,
-grown (`flex-1`) and vertically centered — cover art, title and meta, then a large percentage over
+grown (`flex-1 min-h-0`) and vertically centered, with `vh`-clamped padding and gaps — cover art, title and meta, then a large percentage over
 the stage message and bar, the stage list, and *Cancel* at the foot. The `processing-*` states. The fixed five-stage list: stages before the
 current one are `.is-done`, and a skipped stage shows done rather than disappearing. A done stage's
 time is the gap between the server `updated_at` of the first update seen in it and in the next
 stage seen (`stageSnapshots`) — *Queued* starts at `job.created_at` — so **no client clock is
-involved** and render stays pure. The separation estimate (*Six-source model · about 40 seconds
-left*, worded by `processingCopy.estimate`) extrapolates the progress gained since separation's
-first update, once 3 s of it have passed, to `SEPARATION_PROGRESS_END = 0.5` — the end of
-`_SEPARATION_PROGRESS` in `server/app/pipeline/pipeline.py`, hand-copied. The phone frame shows no
-stage times or ticks, a 52px tile without its hairline, and a full-width *Cancel* at the foot. With
-`loading` it shows *Loading stems…* at 100% with the last stage current and *Decoding six stems in
-your browser* — no download progress, since the engine reports none — and `ResultsScreen` passes on
+involved** and render stays pure. No hint or time-remaining estimate sits under the bar. The phone
+layout shows no stage times, ticks or format, an 88px tile without its hairline, and a full-width
+*Cancel*. With `loading` it shows *Loading stems…* at 100% with the last stage current — no download
+progress, since the engine reports none — and `ResultsScreen` passes on
 the same `stageSnapshots`, so the done stages keep their times; its *Cancel* is then
 `ResultsScreen`'s `onBack`, which discards the finished job.
 **See:** [../architecture/job-lifecycle.md](../architecture/job-lifecycle.md)
 
-### `src/screens/failure/FailurePanel.tsx` — failure states (59 lines)
+### `src/screens/failure/FailurePanel.tsx` — failure states (76 lines)
 **Exports:** `FailurePanel`, `FailureTone`, `FailureAction`
-**Imports from:** `components/ScreenCard`
+**Imports from:** nothing in-repo
 **Used by:** `App`, `results/ResultsScreen`
 **Notes:** the `job-error`, `job-cancelled`, `connection-error` and `results-load-error` states:
 `.ch-alert` + optional `.ch-log` (newlines kept — a stem failure logs one request per line) + a
-primary and optional secondary action, in a 520px card. The tone picks **only the dot color** —
+primary and optional secondary action, centered and wrapping. Like `LandingScreen` and
+`ProcessingScreen` it is not on a `ScreenCard`: one centered 460px column on the page ground, grown
+(`flex-1 min-h-0`) and vertically centered, with `vh`-clamped padding and gaps. The log is cut at
+`30vh` (overflow hidden) so a long traceback never scrolls the page; *Copy log* still copies all of
+it. The tone picks **only the dot color** —
 `--ch-danger`, `--ch-warn` or `--color-neutral-600` — and the panel itself is never tinted. Every
 one of those states has a secondary action; only *Job not found* leaves it out. The words come from the
 caller. `role="alert"` announces it on mount.
@@ -716,7 +720,7 @@ caller. `role="alert"` announces it on mount.
 
 ## `src/screens/results/` — the results screen
 
-### `results/ResultsScreen.tsx` — the results state hub (387 lines)
+### `results/ResultsScreen.tsx` — the results state hub (394 lines)
 **Exports:** `ResultsScreen`
 **Imports from:** `api/client`, `audio/playbackEngine`, `components/ScreenCard`, `design/copy`,
 `design/layout`, `design/player`, `design/stems`, `hooks/useLyrics`, `hooks/useMediaQuery`,
@@ -730,7 +734,10 @@ caller. `role="alert"` announces it on mount.
 stem's gain, mute, solo, tone and pan — plus what the state model leaves to the app: load phase and
 failures, waveform envelopes, speed and whether it's supported, loop, chords (`undefined` loading /
 `null` after any failed fetch), `hasVocals`, lyrics, and which dialog is open. Every view gets the
-same `StemDisplay[]` and `StemControls`, so switching views mid-song is seamless. Loads only
+same `StemDisplay[]` and `StemControls`, so switching views mid-song is seamless. The card is
+`ScreenCard fill`, and the view panel between the bars is `flex-1 min-h-0` so each view shares out
+the height the bars leave; it clips on the web and scrolls only below 720px, where stacked stem rows
+can't fit — the one scrolling region in the app. Loads only
 `templateStems(job.stem_names)`. Three phases: `loading` (`ProcessingScreen` with `loading` and the
 `stageSnapshots` prop `App` passes through), `failed` (*Stems failed to load* — *Retry download*
 reloads only the failures, *Open anyway* shows what loaded, even when nothing did), `ready`. **One `requestAnimationFrame` loop dispatches the
@@ -794,7 +801,7 @@ confidence; the − / + buttons stop at `MIN_TRANSPOSE` / `MAX_TRANSPOSE`. Tempo
 only when it isn't whole, and *—* when there is none. The master fader is thin and its readout
 follows `masterDb()`.
 
-### `results/ChordBar.tsx` — chords and the lyric row (137 lines)
+### `results/ChordBar.tsx` — chords and the lyric row (140 lines)
 **Exports:** `ChordBar`
 **Imports from:** `api/client` (types), `design/copy`, `hooks/useElementWidth`, `hooks/useSeekDrag`,
 `utils/lyrics`, `utils/time`, `utils/transpose`
@@ -807,7 +814,9 @@ label, and **a segment narrower than its label shows none** (7 px per character 
 measured width) — clipped text reads as another chord. The strip is an `aria-hidden` pointer
 shortcut for seeking; the transport's slider is the accessible seek. It draws no loop markers. The
 lyric row's four states: looking, synced (the current line, or the first line dimmed before it
-starts), plain (*Open lyric sheet*), none (*Add lyrics manually*); it renders for instrumentals too.
+starts), plain (*Open lyric sheet*), none (*Add lyrics manually*); it renders for instrumentals too,
+and `instrumental` (any stem `silent`) adds the instrumental hint under it — here so all three views
+show it.
 **The synced line is plain text** — nothing opens a synced track's lyrics in the sheet or replaces
 them. Any failed chords fetch shows *No chord analysis for this track.*
 **See:** [../features/chords-and-key.md](../features/chords-and-key.md)
@@ -828,31 +837,36 @@ is disabled, not hidden, without a tempo, so the layout doesn't shift. A disable
 Nocturne's 45% opacity inline, since `.ch-chip` has no disabled style.
 **See:** [../features/speed-and-loop.md](../features/speed-and-loop.md)
 
-### `results/MixerView.tsx` — the default view (39 lines)
+### `results/MixerView.tsx` — the default view (36 lines)
 **Exports:** `MixerView`
 **Imports from:** `design/copy`, `results/StemRow`, `results/types`
 **Used by:** `results/ResultsScreen`
 **Notes:** column labels over fixed 96 / 150 / 92px columns and the waveform, one `StemRow` per
-stem, and the instrumental hint after the rows when any stem is `silent`. Phones get the same rows,
+stem (the instrumental hint lives in `ChordBar`). `flex-1 min-h-0`: the rows
+fill the view panel's height. Phones get the same rows,
 stacked by `chord-theme.css`; the labels hide below 720px through `max-[720px]:hidden`, one of the
 places `PHONE_QUERY`'s comment lists.
 **See:** [../features/results-views.md](../features/results-views.md)
 
-### `results/StemRow.tsx` — one Mixer row (47 lines)
+### `results/StemRow.tsx` — one Mixer row (50 lines)
 **Exports:** `StemRow`
 **Imports from:** `controls/Fader`, `controls/RoutingToggles`, `controls/StemWaveform`,
 `design/copy`, `design/player`, `results/types`
 **Used by:** `results/MixerView`
 **Notes:** `.ch-stemrow` ([Controls](../conventions/design.md#controls)) in the stem's `--stem` hue: dot and name, a thin
 level fader with its `fmtDb` value, MUTE/SOLO, and the waveform, dimmed while the stem isn't
-`audible`. Below 720px the stylesheet stacks it and holds MUTE/SOLO at a 44px hit height.
+`audible`. On the web it is `flex-1 min-h-0`, so the rows split the Mixer's height evenly. Below
+720px the stylesheet stacks it and holds MUTE/SOLO at a 44px hit height, and `max-[720px]:flex-none`
+keeps each stacked row its natural height (the view panel scrolls there).
 
 ### `results/ConsoleView.tsx` — strips and metering (83 lines)
 **Exports:** `ConsoleView`
 **Imports from:** `audio/meters`, `audio/playbackEngine`, `design/player`, `hooks/useAnimationFrame`,
 `utils/levels`, `results/ConsoleStrip`, `results/MasterStrip`, `results/types`
 **Used by:** `results/ResultsScreen`
-**Notes:** a `.ch-striprow` of `ConsoleStrip`s, a divider, and the `MasterStrip`. **Meters bypass
+**Notes:** a `.ch-striprow` of `ConsoleStrip`s, a divider, and the `MasterStrip`, filling the view
+panel (`flex-1 min-h-0`; the old 330px floor is gone). The strip row's `overflow-x` is overridden to
+`hidden`, so strips share the width instead of scrolling. **Meters bypass
 React**: every frame, playing or not, it fills one `MeterReadings` through `readMeters` and writes
 `--l` onto each `[data-meter]` element (collected in a layout effect whenever the stem count
 changes), each with its own `LevelFollower` (24 dB/s release) and mapped through `STEM_METER_SCALE`,
@@ -861,7 +875,7 @@ re-renders never touch the imperatively written value. The master *Peak* is the 
 1.5 s hold, written into `MasterStrip`'s `peakRef` at 8 Hz.
 **See:** [../features/metering.md](../features/metering.md)
 
-### `results/ConsoleStrip.tsx` — one Console stem strip (90 lines)
+### `results/ConsoleStrip.tsx` — one Console stem strip (93 lines)
 **Exports:** `ConsoleStrip`
 **Imports from:** `controls/Fader`, `controls/RoutingToggles`, `design/copy`, `design/player`,
 `utils/levels`, `results/types`
@@ -872,7 +886,9 @@ stereo `.ch-meter` (`data-meter` = the stem key, `data-channel` 0 and 1) beside 
 readouts and MUTE/SOLO. The label reads *Soloed*, *Muted*, *Silent* (a muted instrumental vocals),
 *Held* (another stem is soloed) or *Playing*. **It shows solo first, not the audio**: a
 soloed strip reads *Soloed* and lifts (`.is-active`) even when it is also muted, though mute wins in
-the engine and in `audible()`; a muted one dims (`.is-off`).
+the engine and in `audible()`; a muted one dims (`.is-off`). Inline `min-width: 0` and
+`overflow: hidden` let it narrow below `.ch-strip`'s 112px floor, and the fader column is
+`flex-1 min-h-0` with no minimum, so it shrinks with the view's height.
 
 ### `results/MasterStrip.tsx` — the Console's master strip (73 lines)
 **Exports:** `MasterStrip`, `MASTER_METER`
@@ -883,22 +899,23 @@ the engine and in `audible()`; a muted one dims (`.is-off`).
 `MASTER_METER_SCALE` follow, then *Output*, *Peak* and *Metronome* readouts and *Export stems*.
 *Peak* starts at *−∞* and is rewritten by `ConsoleView` through `peakRef`.
 
-### `results/AnalogView.tsx` — needle meters and knob modules (125 lines)
+### `results/AnalogView.tsx` — needle meters and knob modules (124 lines)
 **Exports:** `AnalogView`
 **Imports from:** `audio/meters`, `audio/playbackEngine`, `design/copy`, `hooks/useAnimationFrame`,
 `utils/levels`, `results/AnalogModule`, `results/OutputDial`, `results/types`
 **Used by:** `results/ResultsScreen`
-**Notes:** five `OutputDial`s in a `repeat(5, minmax(180px, 1fr))` grid that scrolls rather than
-shrinking — [Metering](../conventions/design.md#metering) calls the 180px floor load-bearing for the
-in-SVG type — above a
-`.ch-striprow` of `AnalogModule`s. Output L/R (peak, 20 dB/s release), true peak (1.5 s hold),
+**Notes:** five `OutputDial`s in a `repeat(5, minmax(0, 1fr))` grid that narrows rather than
+scrolling (the page never scrolls, so the old 180px floor is gone), above a `.ch-striprow` of
+`AnalogModule`s that fills the rest of the view panel (`flex-1 min-h-0`, `overflow-x` overridden to
+`hidden`). **Under 900px of viewport height the dial section is hidden**
+(`[@media(max-height:900px)]:hidden`): dials and modules can't both fit, and the controls win. Output L/R (peak, 20 dB/s release), true peak (1.5 s hold),
 momentary loudness (300 ms smoothing, *−∞* in silence) and correlation (300 ms smoothing); needles
 are rotated with `setAttribute` every frame and readouts rewritten at 8 Hz, both bypassing React.
 **In silence — paused included — correlation reads *—* and its needle eases back to 0**, since the
 value means nothing there.
 **See:** [../features/metering.md](../features/metering.md)
 
-### `results/AnalogModule.tsx` — one stem's knob module (92 lines)
+### `results/AnalogModule.tsx` — one stem's knob module (95 lines)
 **Exports:** `AnalogModule`
 **Imports from:** `controls/Knob`, `controls/RoutingToggles`, `design/copy`, `design/player`,
 `utils/levels`, `results/types`
@@ -907,9 +924,10 @@ value means nothing there.
 and Pan knobs in `--color-neutral-700` ([Controls](../conventions/design.md#controls): only Level carries the hue), each
 with its value under its label ([Ground rules](../conventions/design.md#ground-rules); the template's
 harness drew them with a label only), and MUTE/SOLO. Like the Console strip it shows solo first: a soloed module lifts
-(`.is-active`) even when muted; a muted one dims.
+(`.is-active`) even when muted; a muted one dims. Inline `min-width: 0` and `overflow: hidden` let it
+narrow below `.ch-module`'s 120px floor instead of scrolling the row.
 
-### `results/OutputDial.tsx` — one needle meter (116 lines)
+### `results/OutputDial.tsx` — one needle meter (117 lines)
 **Exports:** `OutputDial`, `DialScale`, `OUTPUT_DIALS`, `NEEDLE_SWEEP_DEGREES`, `NEEDLE_MID_DEGREES`
 **Imports from:** `design/copy`
 **Used by:** `results/AnalogView`
@@ -918,7 +936,8 @@ harness drew them with a label only), and MUTE/SOLO. Like the Console strip it s
 non-linear, like a VU face. The accent arcs, as the harness drew them, start at +56° on L/R and
 true peak (about −2.1 dB and −1.6 dB), +40° on loudness (about −14 LUFS) and +30° on correlation
 (+0.5). Colors go through `style` so SVG strokes can take tokens. The needle and readout elements
-are handed back through `needleRef` and `valueRef` for `AnalogView` to write.
+are handed back through `needleRef` and `valueRef` for `AnalogView` to write. The SVG is full width
+but capped at `max-height: 14vh`, so wide dials never push the modules off the unscrolled page.
 
 ### `results/ExportDialog.tsx` — downloads (97 lines)
 **Exports:** `ExportDialog`

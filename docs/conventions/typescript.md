@@ -16,7 +16,7 @@ interface ProcessingScreenProps {
   job: Job;
   onCancel: () => void;
   isCancelling?: boolean;
-  /** The first update seen in each stage, from useJobEvents; stage times and the estimate come from these. */
+  /** The first update seen in each stage, from useJobEvents; stage times come from these. */
   stageSnapshots?: Record<number, Job>;
   /** The template's `processing-loading`: the job is done and its stems are loading in the browser. */
   loading?: boolean;
@@ -304,7 +304,7 @@ A component is a class plus one variable:
 | --- | --- | --- |
 | `--v` | 0…1 control position | `Fader`, `VerticalFader`, `Knob`; the processing screen's `.ch-progress` |
 | `--l` | 0…1 meter level | `ConsoleView`'s frame loop |
-| `--p` | 0…1 playback position | `.ch-seek` in `Transport`, `.ch-playhead` in `ChordBar` |
+| `--p` | 0…1 playback position | `.ch-seek` in `Transport`, `.ch-playhead` in `ChordBar` and `StemWaveform` |
 | `--stem` | the stem's hue — `var(--ch-<key>)` from `stemHue()` in `design/stems.ts` | each stem row, strip and module; status dots |
 
 ```tsx

@@ -8,21 +8,15 @@ import {
   PROCESSING_STAGES,
   processingStage,
   QUEUED_STAGE,
-  SEPARATING_STAGE,
 } from "../../design/stages";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { formatTime } from "../../utils/time";
-
-// The span of the bar the server gives separation; see _SEPARATION_PROGRESS in pipeline.py.
-const SEPARATION_PROGRESS_END = 0.5;
-// How much separation progress to observe before offering an estimate.
-const ESTIMATE_AFTER_SECONDS = 3;
 
 interface ProcessingScreenProps {
   job: Job;
   onCancel: () => void;
   isCancelling?: boolean;
-  /** The first update seen in each stage, from useJobEvents; stage times and the estimate come from these. */
+  /** The first update seen in each stage, from useJobEvents; stage times come from these. */
   stageSnapshots?: Record<number, Job>;
   /** The template's `processing-loading`: the job is done and its stems are loading in the browser. */
   loading?: boolean;
@@ -55,19 +49,6 @@ export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSna
   const progress = loading ? 1 : job.progress;
   const stageMessage = loading ? processingCopy.loadingStems : (job.stage_message ?? PROCESSING_STAGES[current] ?? "");
 
-  let hint: string = processingCopy.model;
-  const separationStart = stageSnapshots[SEPARATING_STAGE];
-  if (loading) {
-    hint = processingCopy.decoding;
-  } else if (current === SEPARATING_STAGE && separationStart) {
-    const elapsed = secondsBetween(separationStart.updated_at, job.updated_at);
-    const gained = job.progress - separationStart.progress;
-    if (elapsed >= ESTIMATE_AFTER_SECONDS && gained > 0) {
-      const remaining = ((SEPARATION_PROGRESS_END - job.progress) / gained) * elapsed;
-      hint = processingCopy.estimate(Math.max(0, remaining));
-    }
-  }
-
   function stageStartedAt(index: number): string | undefined {
     return index === QUEUED_STAGE ? job.created_at : stageSnapshots[index]?.updated_at;
   }
@@ -89,10 +70,14 @@ export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSna
 
   return (
     <section
-      className="flex flex-1 flex-col items-center justify-center"
-      style={{ paddingBlock: isPhone ? "var(--space-6)" : "56px" }}
+      className="flex min-h-0 flex-1 flex-col items-center justify-center"
+      style={{ paddingBlock: isPhone ? "var(--space-3)" : "clamp(12px, 4vh, 56px)" }}
     >
-      <div className="flex w-full flex-col items-center" style={{ maxWidth: 460, gap: isPhone ? 28 : 36 }}>
+      {/* Spacing follows the viewport's height, so a short window tightens the column instead of scrolling. */}
+      <div
+        className="flex w-full flex-col items-center"
+        style={{ maxWidth: 460, gap: isPhone ? "clamp(12px, 2.5vh, 28px)" : "clamp(16px, 3.5vh, 36px)" }}
+      >
         <header className="flex w-full min-w-0 flex-col items-center text-center" style={{ gap: "var(--space-6)" }}>
           <CoverArt
             jobId={job.id}
@@ -139,7 +124,6 @@ export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSna
           >
             <span />
           </div>
-          <span className="ch-hint">{hint}</span>
         </div>
 
         <div className="flex w-full flex-col">

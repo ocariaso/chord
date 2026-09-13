@@ -36,7 +36,7 @@ picks the weights baked into the image (a runtime-only override downloads on the
 `STEM_NAMES` in [`schemas.py`](../../server/app/models/schemas.py), and on the web the design's
 stems: `STEM_KEYS`, the Tone pivots and `STEM_HUES` in [`design/stems.ts`](../../web/src/design/stems.ts), the
 `StemKey` union in [`design/player.ts`](../../web/src/design/player.ts), `stemNames` and every
-string that says *six* (`intro`, `processingCopy.model`, `estimate`, `decoding`) or lists the stems (`stemsHint`) in
+string that says *six* (`intro`) or lists the stems (`stemsHint`) in
 [`design/copy.ts`](../../web/src/design/copy.ts), and a `--ch-<stem>` hue in
 [`chord-theme.css`](../../web/src/styles/chord-theme.css) for any new stem name. **Only stems in
 `STEM_KEYS` are loaded**, so a new stem left out of it is never played, shown or offered for single
@@ -49,7 +49,7 @@ download. Miss `STEM_NAMES` and the API advertises stems that don't exist, produ
 | Task | Files |
 | --- | --- |
 | Add a pipeline stage | [`pipeline/pipeline.py`](../../server/app/pipeline/pipeline.py) — its place in `run_job`, a `stage` name with an entry in `_STAGE_FAILURE_MESSAGES`, a progress step, and an `_is_superseded` checkpoint after it — plus a new leaf module in [`pipeline/`](../../server/app/pipeline/). Follow the leaf contract: no database access. For the screen: its label in `processingCopy.stages` ([`design/copy.ts`](../../web/src/design/copy.ts)), which is `PROCESSING_STAGES`, and its index in `processingStage` ([`design/stages.ts`](../../web/src/design/stages.ts)) |
-| Change stage progress or messages | [`pipeline/pipeline.py`](../../server/app/pipeline/pipeline.py) — `_SEPARATION_PROGRESS` and the fixed steps are there; the processing screen's estimate assumes separation ends at 0.5 (`SEPARATION_PROGRESS_END` in [`ProcessingScreen.tsx`](../../web/src/screens/processing/ProcessingScreen.tsx)). A stage message is also a label in `processingCopy.stages` ([`design/copy.ts`](../../web/src/design/copy.ts)), and `processingStage` recognises *Detecting tempo* only by it; rename both together |
+| Change stage progress or messages | [`pipeline/pipeline.py`](../../server/app/pipeline/pipeline.py) — `_SEPARATION_PROGRESS` and the fixed steps are there. A stage message is also a label in `processingCopy.stages` ([`design/copy.ts`](../../web/src/design/copy.ts)), and `processingStage` recognises *Detecting tempo* only by it; rename both together |
 | Change what a failure says | a `UserFacingError` subclass in [`pipeline/errors.py`](../../server/app/pipeline/errors.py) for a sentence written for the user (the exception it's raised `from` becomes the log), or `_STAGE_FAILURE_MESSAGES` in `pipeline.py` for everything unexpected. That sentence is the panel's body; its title — *Separation failed*, whichever stage failed — and its buttons are `failureCopy["job-error"]` in [`design/copy.ts`](../../web/src/design/copy.ts) |
 | Change the track length limit | `max_duration_seconds` in [`core/config.py`](../../server/app/core/config.py) — and the *up to 12 minutes* hints (`dropHint`, `phoneDropHint`) in [`design/copy.ts`](../../web/src/design/copy.ts), which assume the default |
 | Improve separation quality | [`pipeline/separation.py`](../../server/app/pipeline/separation.py) + the model checklist above |

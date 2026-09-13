@@ -209,9 +209,9 @@ the track is noticed — the engine never stops itself. It runs unconditionally,
 or loading, which keeps the code branchless. While paused it dispatches the same time every frame,
 the reducer hands back the same state, and React bails out of the render. While playing, every
 frame re-renders `ResultsScreen` and everything under it: nothing is memoized, and `stems` and
-`controls` are rebuilt on each render. Every position display — the chord strip's playhead, the
-time readouts, the seek slider, the current chord and lyric line — reads the same `player.time`, so
-they cannot drift apart. The waveforms have no playhead.
+`controls` are rebuilt on each render. Every position display — the chord strip's and the Mixer
+waveforms' playheads, the time readouts, the seek slider, the current chord and lyric line — reads
+the same `player.time`, so they cannot drift apart.
 
 Meters take a separate path on purpose. `ConsoleView` and `AnalogView` each run their own loop
 through [`useAnimationFrame`](../../web/src/hooks/useAnimationFrame.ts), call `readMeters` (a
@@ -296,8 +296,7 @@ The hook also returns `stageSnapshots`: the first update it saw in each of the p
 screen's five stages, indexed through `processingStage` in
 [`design/stages.ts`](../../web/src/design/stages.ts). `App` hands them to `ProcessingScreen` — directly,
 and through `ResultsScreen` for the stem-loading screen — which subtracts their `updated_at`
-timestamps to show how long each finished stage took and to extrapolate *"about N seconds left"*
-during separation. Both sides of every subtraction are server timestamps, so the client's clock
+timestamps to show how long each finished stage took. Both sides of every subtraction are server timestamps, so the client's clock
 never enters. `reconnect(latest)` starts the snapshots over.
 
 ## Styling
@@ -328,7 +327,7 @@ The conventions that follow are summarized here; the rules themselves are in
   | --- | --- | --- | --- |
   | `--v` | 0…1 | `Fader`, `VerticalFader`, `Knob`, `ProcessingScreen` | `.ch-fader`, `.ch-vfader`, `.ch-knob`, `.ch-progress` |
   | `--l` | 0…1 | `ConsoleView`'s frame loop, on the meters in `ConsoleStrip` and `MasterStrip` | `.ch-meter i` |
-  | `--p` | 0…1 | `ChordBar` (the playhead), `Transport` (the seek slider) | `.ch-playhead`, `.ch-seek` |
+  | `--p` | 0…1 | `ChordBar` and `StemWaveform` (the playhead), `Transport` (the seek slider) | `.ch-playhead`, `.ch-seek` |
   | `--stem` | a color | `StemRow`, `ConsoleStrip`, `AnalogModule` and the export rows, via `stemHue()` → `var(--ch-<key>)`; the small knobs, the master meter and the status dots, with a hue of their own | dot, fader fill, meter, waveform bars, knob arc |
 
 - **Tailwind and inline `style` take tokens, not literals** — `style={{ gap: "var(--space-8)" }}`,

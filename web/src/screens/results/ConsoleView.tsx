@@ -23,7 +23,7 @@ interface ConsoleViewProps {
   readMeters: (target: MeterReadings, now: number) => void;
 }
 
-/** The Console view: a scrolling row of strips and the master strip. The meters bypass React, written each frame (design.md#metering). */
+/** The Console view: a row of strips sharing the width, and the master strip. The meters bypass React, written each frame (design.md#metering). */
 export function ConsoleView({ stems, controls, master, onMasterChange, metronome, onExport, readMeters }: ConsoleViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const peakRef = useRef<HTMLSpanElement>(null);
@@ -63,15 +63,15 @@ export function ConsoleView({ stems, controls, master, onMasterChange, metronome
   return (
     <div
       ref={containerRef}
-      className="flex items-stretch"
+      className="flex min-h-0 flex-1 items-stretch"
       style={{
         gap: "var(--space-8)",
-        padding: "var(--space-8)",
-        minHeight: 330,
+        padding: "var(--space-6) var(--space-8)",
         boxShadow: "inset 0 -1px 0 color-mix(in srgb, var(--color-text) 8%, transparent)",
       }}
     >
-      <div className="ch-striprow">
+      {/* The page never scrolls, so the strips share the width rather than scrolling at the stylesheet's floor. */}
+      <div className="ch-striprow" style={{ overflowX: "hidden" }}>
         {stems.map((stem) => (
           <ConsoleStrip key={stem.state.key} stem={stem} anySolo={anySolo} controls={controls} />
         ))}

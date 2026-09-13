@@ -178,16 +178,8 @@ larger ones.
 | 1.00 | *Done* |
 
 The bar holds at 0.10 while the separator is constructed and its weights load, because no chunk has
-started yet.
-
-The processing screen turns the same numbers into an estimate.
-[`ProcessingScreen.tsx`](../../web/src/screens/processing/ProcessingScreen.tsx) keeps the first
-update seen in each stage (`stageSnapshots`, from `useJobEvents`); once at least three seconds
-separate the separation snapshot's `updated_at` from the latest one, and progress has moved, it
-extrapolates `(0.5 − progress) / gained × elapsed` and shows *Six-source model · about 40 seconds
-left*. Until then, and in every other stage, the hint is *Six-source model* alone. Both timestamps
-are the server's, so the client's clock never enters. The estimate assumes a constant
-rate, and its `SEPARATION_PROGRESS_END = 0.5` repeats `_SEPARATION_PROGRESS[1]` by hand.
+started yet. The processing screen shows the percentage and the bar as they are; it offers no
+time-remaining estimate.
 
 ## Cancelling during separation
 
@@ -243,8 +235,7 @@ off one `AudioContext` clock, as described in [audio playback](../architecture/a
 
 While loading, `ResultsScreen` renders the processing screen as the template's `processing-loading`
 state: every stage but the last done — on the web layout with the durations measured while the job
-ran — and the last current, the bar at 100%, *Loading stems…* as the message and *Decoding six stems
-in your browser* as the hint. That screen holds, unchanged, from the
+ran — and the last current, the bar at 100%, *Loading stems…* as the message. That screen holds, unchanged, from the
 first request to the last decoded buffer. `load()` reports no progress, so nothing tells the
 download apart from the decode, or a slow connection from a stalled one. The *Cancel* button here
 leaves the job: it returns to the landing screen, and discard-on-leave deletes the finished job on

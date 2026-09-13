@@ -183,8 +183,6 @@ constants; the timeouts and the SSE interval are literals where they're used.
 | stretch processor | 60 ms frames, ±15 ms similarity search, 1 s input blocks, 3 s lookahead, at most 12 blocks cached | `audio/stretchProcessor.js`; block size in `audio/playbackEngine.ts` |
 | waveform envelope | 160 bins, every 8th sample | `utils/peaks.ts` |
 | `WHOLE_SECOND_SLACK` | 5 ms added before `formatTime` floors, so a stem decoded a frame short still reads its whole length | `utils/time.ts` |
-| `ESTIMATE_AFTER_SECONDS` | `3` s of separation before a time-remaining estimate | `screens/processing/ProcessingScreen.tsx` |
-| `SEPARATION_PROGRESS_END` | `0.5` — duplicates `_SEPARATION_PROGRESS[1]` | `screens/processing/ProcessingScreen.tsx` |
 | mobile breakpoint | `(max-width: 720px)` | the `@media` block in `styles/chord-theme.css`; `PHONE_QUERY` in `design/layout.ts`; the `max-[720px]:` utilities in `App.tsx`, `screens/results/MixerView.tsx` and `screens/results/AnalysisBar.tsx` |
 
 No tool checks these values against each other — the breakpoint in particular has to agree in every
