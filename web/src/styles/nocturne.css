@@ -2,19 +2,23 @@
 /* Vendored from the design template's Nocturne sheet (docs/conventions/design.md). Its @import of Inter is dropped:
    bundled after other CSS it would be invalid, so index.html loads the font instead. */
 
+/* Registered as a plain number so the browser can animate it directly, cross-fading every oklch()
+   expression that reads it whenever a track's hue changes. */
+@property --accent-hue {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 229.6;
+}
+
 :root {
   --color-bg: #161826;
   --color-surface: #232532;
   --color-text: #e9e9ed;
-  --color-accent: #9184d9; /* review round 7 (Barron): the accent moves to
-     the product's blurple — OKLCH hue 289.2, the hue of the app's own Pro
-     accent (#9a8fe0, --om-accent-pro) — at the same lightness the steel
-     accent held (L 0.660, so the documented ratios survive) and chroma
-     in the product blurple's own range (its token sits at C 0.118; the
-     accent takes 0.125, from the old steel's 0.030):
-     the accent now reads as an accent rather than another neutral. */
-  --color-accent-2: #a7a1db; /* the machine-derived stand-in follows: same
-     hue, same L 0.734, chroma at the same 2:3 proportion it held */
+  /* CHORD's brand blue, OKLCH H 229.6 — overridden per track by useAccentHue directly on :root. */
+  --accent-hue: 229.6;
+  transition: --accent-hue 0.8s ease;
+  --color-accent: oklch(56% 0.091 var(--accent-hue));
+  --color-accent-2: oklch(63.5% 0.05 calc(var(--accent-hue) - 0.6));
   --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
 
   /* Tonal ramps — generated in OKLCH on one shared lightness scale, so the
@@ -29,25 +33,30 @@
   --color-neutral-800: #3f424d;
   --color-neutral-900: #292b31;
 
-  --color-accent-100: #f5f4ff;
-  --color-accent-200: #e7e5fe;
-  --color-accent-300: #d2cefd;
-  --color-accent-400: #b5abfc;
-  --color-accent-500: #968ae0;
-  --color-accent-600: #796cbf;
-  --color-accent-700: #5d5294;
-  --color-accent-800: #423a6a;
-  --color-accent-900: #2b2741;
+  --color-accent-100: oklch(97.1% 0.015 var(--accent-hue));
+  --color-accent-200: oklch(93.1% 0.034 var(--accent-hue));
+  --color-accent-300: oklch(87% 0.065 var(--accent-hue));
+  --color-accent-400: oklch(78% 0.114 var(--accent-hue));
+  --color-accent-500: oklch(67.9% 0.125 var(--accent-hue));
+  --color-accent-600: oklch(58% 0.125 var(--accent-hue));
+  --color-accent-700: oklch(48% 0.104 var(--accent-hue));
+  --color-accent-800: oklch(38% 0.08 var(--accent-hue));
+  --color-accent-900: oklch(29% 0.047 var(--accent-hue));
 
-  --color-accent-2-100: #f5f4ff;
-  --color-accent-2-200: #e7e5fe;
-  --color-accent-2-300: #d2cefd;
-  --color-accent-2-400: #b5afe8;
-  --color-accent-2-500: #9690c9;
-  --color-accent-2-600: #7972a9;
-  --color-accent-2-700: #5c5783;
-  --color-accent-2-800: #423e5d;
-  --color-accent-2-900: #2b293a;
+  --color-accent-2-100: oklch(97.1% 0.015 calc(var(--accent-hue) - 0.6));
+  --color-accent-2-200: oklch(93.1% 0.034 calc(var(--accent-hue) - 0.6));
+  --color-accent-2-300: oklch(87% 0.065 calc(var(--accent-hue) - 0.6));
+  --color-accent-2-400: oklch(78% 0.1 calc(var(--accent-hue) - 0.6));
+  --color-accent-2-500: oklch(67.9% 0.096 calc(var(--accent-hue) - 0.6));
+  --color-accent-2-600: oklch(58% 0.084 calc(var(--accent-hue) - 0.6));
+  --color-accent-2-700: oklch(48% 0.072 calc(var(--accent-hue) - 0.6));
+  --color-accent-2-800: oklch(38% 0.058 calc(var(--accent-hue) - 0.6));
+  --color-accent-2-900: oklch(29% 0.038 calc(var(--accent-hue) - 0.6));
+
+  /* The page ground (index.css), at --accent-hue instead of the surface tokens' fixed indigo. */
+  --page-ground-1: oklch(24.6% 0.0325 var(--accent-hue));
+  --page-ground-2: oklch(21.4% 0.0278 var(--accent-hue));
+  --page-ground-3: oklch(19.8% 0.0281 var(--accent-hue));
 
   /* Deck section-divider ground — review round 3: saturation as presence.
      Dividers take a saturated deep indigo (hue 277, the neutral ramp's own

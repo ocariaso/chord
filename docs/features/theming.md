@@ -1,9 +1,13 @@
 # Theming
 
-The palette is **fixed**. Every track renders in the same Nocturne colours; what differs between
-tracks is the cover art, and each stem keeps its own identity hue. Sampling accent colours from the
-artwork — `useDominantColor.ts` and the per-track tinted surfaces it fed — is gone, and with it the
-"colour arrived late" update path that imperative widgets needed.
+Every accent-family color in Nocturne — `--color-accent`, `--color-accent-2` and their 100–900
+ramps — holds a fixed lightness and chroma per step, but reads its hue from one custom property,
+`--accent-hue`. [`useAccentHue`](../../web/src/hooks/useAccentHue.ts) samples the job's cover art
+once it exists and sets that property on `App`'s root div; with no thumbnail, no job, or a failed
+sample, nothing is set and Nocturne's default (229.6°, the brand blue) applies. See
+[A per-track accent hue](../architecture/decisions.md#a-per-track-accent-hue-driven-by-one-custom-property)
+for the mechanism and its cost, and [ground rule 6](../conventions/design.md#ground-rules) for why
+this is the one token family the design check lets a hook drive at runtime.
 
 The standard is [../conventions/design.md](../conventions/design.md). The UI was built from a
 design template, since removed; the two vendored stylesheets below came from it and are owned here
@@ -39,15 +43,16 @@ token or class, a class defined in app CSS — through
 
 ## The palette
 
-Nocturne's `:root` tokens, a dark ground with a blurple accent:
+Nocturne's `:root` tokens, a dark ground with a blue accent:
 
 | Token | Value | Used for |
 | --- | --- | --- |
 | `--color-bg` | `#161826` | the screen card (`.ch-app`) |
 | `--color-surface` | `#232532` | inputs and dialogs |
 | `--color-text` | `#e9e9ed` | text |
-| `--color-accent` | `#9184d9` | primary actions, the current chord, progress, focus rings, the vocals stem |
-| `--color-accent-100` … `900` | tonal ramp | tabs, chips, empty meter tracks, the cover tile |
+| `--accent-hue` | `229.6` (default) | the one runtime input to the accent family below — set per job by `useAccentHue` |
+| `--color-accent` | `oklch(56% 0.091 var(--accent-hue))` | primary actions, the current chord, progress, focus rings, the vocals stem |
+| `--color-accent-100` … `900` | tonal ramp, same hue | tabs, chips, empty meter tracks, the cover tile |
 | `--color-neutral-100` … `900` | tonal ramp | every grey, including the *other* stem |
 | `--color-divider` | text at 16% | hairlines and fading rules |
 | `--space-1` … `--space-8` | 2.8 px steps | spacing |
@@ -174,10 +179,9 @@ Served by `GET /jobs/{job_id}/thumbnail.jpg`, a plain `FileResponse` with `media
 ### Showing it
 
 [`CoverArt.tsx`](../../web/src/components/CoverArt.tsx) draws a tile filled with
-`linear-gradient(150deg, var(--color-accent-800), var(--color-accent-900))` and, when `has_thumbnail`
-is true, the image on top with Nocturne's `.lighten` — `mix-blend-mode: lighten`. Each pixel shows
-the lighter of the artwork and the gradient: dark areas of the art take on the blurple, bright areas
-come through. The palette tints the art, not the other way round.
+`linear-gradient(150deg, var(--color-accent-800), var(--color-accent-900))`, and when `has_thumbnail`
+is true, the plain image on top — no blend. The art already drives the tile's own accent hue, so
+tinting the art itself as well would be double theming.
 
 | Where | Size | Corner radius | Hairline outline |
 | --- | --- | --- | --- |
@@ -189,9 +193,9 @@ The outline is an inset `neutral-800` hairline on an overlay above the image. Th
 empty `alt`, since the track title sits beside it.
 
 Because `has_thumbnail` is recomputed for every job response, the processing screen switches from
-the bare gradient to the artwork as soon as the file exists — after the download for a link, before
-separation for an upload. If the image fails to load, `onError` hides it and the gradient tile
-stays. The landing screen, the failure panels and the dialogs show no artwork.
+the gradient tile's music-note mark to the artwork as soon as the file exists — after the download
+for a link, before separation for an upload. If the image fails to load, `onError` hides it and the
+music-note mark returns. The landing screen, the failure panels and the dialogs show no artwork.
 
 ## Known gaps
 

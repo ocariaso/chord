@@ -1,6 +1,7 @@
 import type { Job } from "../../api/client";
 import { CoverArt } from "../../components/CoverArt";
 import { CheckIcon } from "../../components/icons";
+import { MarqueeText } from "../../components/MarqueeText";
 import { processingCopy } from "../../design/copy";
 import { PHONE_QUERY } from "../../design/layout";
 import {
@@ -89,12 +90,11 @@ export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSna
             outlined={!isPhone}
           />
           <span className="flex w-full min-w-0 flex-col items-center" style={{ gap: 6 }}>
-            <span
-              className="w-full truncate"
+            <MarqueeText
+              text={job.original_filename}
+              className="w-full"
               style={{ font: isPhone ? "500 17px/1.3 var(--font-body)" : "500 20px/1.3 var(--font-body)", color: "var(--color-text)" }}
-            >
-              {job.original_filename}
-            </span>
+            />
             <span className="ch-subtitle" style={{ fontSize: 12.5 }}>
               {metaFor(job, !isPhone)}
             </span>

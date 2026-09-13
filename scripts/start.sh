@@ -3,6 +3,8 @@ set -e
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+mkdir -p server/data
+
 COMPOSE_FILES=(-f docker-compose.yml)
 if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
   echo "NVIDIA GPU detected — building with CUDA support."

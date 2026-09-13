@@ -437,24 +437,50 @@ The calls that took a decision:
   ([Checking a UI change](../conventions/design.md#checking-a-ui-change)), and `npm run lint` checks
   tokens, classes and colours against the stylesheets, not copy or layout.
 
-## A fixed Nocturne palette instead of per-song accents
+## A per-track accent hue, driven by one custom property
 
-**Constraint:** the design defines CHORD's look as a token system — six low-chroma stem hues,
-two status hues, the Nocturne neutral and accent ramps — and its contrast floors hold only for
-those values.
+**Constraint:** the design defines CHORD's look as a token system — six low-chroma stem hues, two
+status hues, the Nocturne neutral and accent ramps — and its contrast floors hold only for those
+values; the app also wants each track's accent to follow its cover art, as it once did through
+`useDominantColors`, which clustered the thumbnail into two accent colors at runtime and pushed the
+result out as hex through inline styles and effects.
 
-**Choice:** one fixed palette, from [`nocturne.css`](../../web/src/styles/nocturne.css) and
-[`chord-theme.css`](../../web/src/styles/chord-theme.css). Nothing is derived from the cover art;
-the artwork appears only inside its own tile, blended over an accent gradient through Nocturne's
-`.lighten`. This replaced `useDominantColors`, which clustered the thumbnail into two accent
-colors at runtime.
+**Choice:** every accent-family token in [`nocturne.css`](../../web/src/styles/nocturne.css)
+(`--color-accent`, `--color-accent-2` and their 100–900 ramps) is defined as `oklch(L C
+var(--accent-hue))`, holding the design's lightness and chroma at each step and reading only the
+hue from a variable. The page ground in [`index.css`](../../web/src/index.css) does the same at its
+own three stops' lightness and chroma, so the ambient background tints along with the accent.
+[`useAccentHue`](../../web/src/hooks/useAccentHue.ts) samples the job's
+`thumbnail.jpg` on a small offscreen canvas
+([`extractDominantHue`](../../web/src/utils/dominantHue.ts)), averages each pixel's OKLab chroma
+vector — weighted by its own chroma, and excluding near-black and near-white pixels, so vivid areas
+outweigh muted ones and neither extreme skews the result — and returns the resulting hue in
+degrees. The hook sets `--accent-hue` on `document.documentElement` — the actual `:root` element,
+not a nested div — because `--color-accent`'s `var(--accent-hue)` is resolved where `--color-accent`
+itself is declared (nocturne.css's `:root` rule), not where a descendant later overrides the
+variable; setting the override anywhere else leaves every accent-family token silently pinned to the
+default. `--accent-hue` is registered via `@property` (`syntax: "<number>"`) so `:root`'s
+`transition: --accent-hue 0.8s ease` can animate it directly — every `oklch()` expression that reads
+it cross-fades as a side effect, with no per-token transition needed. It falls back to nocturne.css's
+default (229.6, the brand blue) with no thumbnail, no hue yet, or the landing screen. A failed
+extraction is retried up to three times (0.5s/1.5s/3s) before giving up, since the thumbnail file can
+still be mid-write the instant `has_thumbnail` first turns true. `--accent-hue` is a fifth entry in
+`RUNTIME_PROPERTIES` ([`check-design.mjs`](../../web/scripts/check-design.mjs)), alongside `--v`,
+`--l`, `--p` and `--stem` — a deliberate, documented exception to
+[ground rule 6](../conventions/design.md#ground-rules), "no new color": every value the hue can
+produce still holds the design's own lightness and chroma, so contrast floors survive; only the hue
+moves.
 
-**Cost:** every song looks the same. A new color means a new token in a vendored stylesheet —
-the design's rule is a token in Nocturne, never a hex in a component, and `npm run lint` rejects
-a hex colour or colour function in app code, a shadow's black apart — and with the template
-removed, no upstream copy shows what a stylesheet edited here was. What went away with the per-song accent: a color that
-resolved after first paint, the effects that re-applied it, and a canvas-taint fallback for
-cross-origin art.
+**Cost:** an accent-family color function in `nocturne.css` no longer names a single fixed shade —
+reading one requires resolving `--accent-hue` first, and that resolution only happens correctly at
+`:root` itself, not at an arbitrary descendant. `chord-theme.css`'s stem hues stay hardcoded
+`oklch()`, hue and all, so vocals (`var(--color-accent)`) shift with the track, and drums, bass,
+guitar and piano don't — this reproduces the old per-song accent's asymmetry, not a new one. Cover
+art is same-origin (served by this app's own API), so no canvas-taint fallback is needed, unlike the
+original `useDominantColors`. A transient wrong hue can still show for roughly a second on some jobs
+— the retry logic only re-tries a *failed* read, not a *successful* read of a not-yet-final
+thumbnail file, and this hasn't been root-caused on the server side. Extraction happens once per job
+after the thumbnail exists, and holds the default hue until a hue resolves or retries run out.
 
 ## Vendored stylesheets, driven by custom properties
 

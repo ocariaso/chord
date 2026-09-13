@@ -1,6 +1,7 @@
 import type { Job } from "../../api/client";
 import { CoverArt } from "../../components/CoverArt";
 import { PlusIcon } from "../../components/icons";
+import { MarqueeText } from "../../components/MarqueeText";
 import { resultsCopy } from "../../design/copy";
 import type { ResultView } from "../../design/player";
 import { formatTime } from "../../utils/time";
@@ -20,7 +21,7 @@ interface ResultsTopbarProps {
   onNewTrack: () => void;
 }
 
-/** `.ch-topbar`: cover, title and meta, the view tabs, Export stems and New track. It wraps instead of truncating the title. */
+/** `.ch-topbar`: cover, title and meta, the view tabs, Export stems and New track. A title too long for the bar scrolls. */
 export function ResultsTopbar({ job, duration, stemCount, view, panelId, onViewChange, onExport, onNewTrack }: ResultsTopbarProps) {
   // The decoded length rather than the server's, so the subtitle can never disagree with the transport.
   const meta = [job.author, formatTime(duration), resultsCopy.stemCount(stemCount)].filter(Boolean).join(" · ");
@@ -45,9 +46,7 @@ export function ResultsTopbar({ job, duration, stemCount, view, panelId, onViewC
       <CoverArt jobId={job.id} hasThumbnail={job.has_thumbnail} size={44} radius={6} />
       <div className="ch-topbar-title">
         {/* An h1 for the document outline; letter-spacing undoes the heading rule so it reads like the title class alone. */}
-        <h1 className="ch-title" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: "normal" }}>
-          {job.original_filename}
-        </h1>
+        <MarqueeText as="h1" text={job.original_filename} className="ch-title" style={{ letterSpacing: "normal" }} />
         <span className="ch-subtitle">{meta}</span>
       </div>
       {onViewChange && (

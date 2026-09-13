@@ -18,7 +18,7 @@ const SOURCE_DIR = join(WEB_DIR, "src");
 const VENDORED_DIR = join(SOURCE_DIR, "styles");
 
 // The only custom properties a component sets (design.md#runtime-values).
-const RUNTIME_PROPERTIES = new Set(["--v", "--l", "--p", "--stem"]);
+const RUNTIME_PROPERTIES = new Set(["--v", "--l", "--p", "--stem", "--accent-hue"]);
 // The class families the stylesheets own; any other class is a Tailwind layout utility.
 const OWNED_CLASS = /^(?:ch-[\w-]+|is-[\w-]+|btn(?:-[\w-]+)?|dialog(?:-[\w-]+)?|field|input|lighten)$/;
 const HEX_COLOR = /#[0-9a-fA-F]{3,8}\b/;

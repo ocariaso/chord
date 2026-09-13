@@ -62,6 +62,16 @@ export function AlertIcon({ size = 20 }: IconProps) {
   );
 }
 
+export function MusicNoteIcon({ size = 20 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden="true">
+      <circle cx="7" cy="18" r="3" />
+      <circle cx="17" cy="16" r="3" />
+      <path d="M10 18V5.5L20 3v13" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /** The stage list's tick; stroked in `color`, transparent for stages not yet done. */
 export function CheckIcon({ color }: { color: string }) {
   return (

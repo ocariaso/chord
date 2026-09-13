@@ -12,10 +12,10 @@ html {
   background: var(--ch-well);
 }
 
-/* The design's canvas in tokens: a raised glow at the top left falling away to the well, sized to the viewport. */
+/* The design's canvas in tokens: a raised glow at the top left falling away to the well, tinted per track. */
 body {
   margin: 0;
-  background: radial-gradient(120% 90% at 18% 0%, var(--ch-panel-raised) 0%, var(--color-bg) 55%, var(--ch-well) 100%) top /
+  background: radial-gradient(120% 90% at 18% 0%, var(--page-ground-1) 0%, var(--page-ground-2) 55%, var(--page-ground-3) 100%) top /
     100% 100% no-repeat;
 }
 
@@ -25,4 +25,14 @@ button:not(:disabled) {
 
 button:disabled {
   cursor: not-allowed;
+}
+
+/* Scrolls a title that's too long for its container, looping over two back-to-back copies of the text. */
+@keyframes chord-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
 }
