@@ -1,5 +1,7 @@
 import { MetronomeIcon, PauseIcon, PlayIcon } from "../../components/icons";
 import { resultsCopy } from "../../design/copy";
+import { useClockValue } from "../../hooks/useClockValue";
+import { usePlayhead } from "../../hooks/usePlayhead";
 import { usePopover } from "../../hooks/usePopover";
 import { useSeekDrag } from "../../hooks/useSeekDrag";
 import { formatTime } from "../../utils/time";
@@ -14,7 +16,8 @@ const DISABLED_CHIP_STYLE = { opacity: 0.45 };
 interface TransportProps {
   playing: boolean;
   onPlayPause: () => void;
-  time: number;
+  /** The playback position in seconds, read every frame. */
+  getTime: () => number;
   duration: number;
   onSeek: (seconds: number) => void;
   speed: number;
@@ -39,11 +42,21 @@ function loopLabel(loop: LoopState | null): string {
   return resultsCopy.loopRange(formatTime(loop.start), formatTime(loop.end));
 }
 
-function SeekSlider({ time, duration, onSeek }: Pick<TransportProps, "time" | "duration" | "onSeek">) {
+/** The elapsed time, in a component of its own so the transport doesn't render with every second. */
+function ElapsedTime({ getTime }: Pick<TransportProps, "getTime">) {
+  const readout = useClockValue(() => formatTime(getTime()));
+  return <span className="ch-time">{readout}</span>;
+}
+
+function SeekSlider({ getTime, duration, onSeek }: Pick<TransportProps, "getTime" | "duration" | "onSeek">) {
   const seekDrag = useSeekDrag(duration, onSeek);
+  const sliderRef = usePlayhead<HTMLSpanElement>(() => (duration > 0 ? Math.min(1, getTime() / duration) : 0));
+  const seconds = useClockValue(() => Math.round(getTime()));
+  const readout = useClockValue(() => formatTime(getTime()));
 
   // role="slider" without key handling fails an accessibility audit (design.md#accessibility).
   function handleKeyDown(event: React.KeyboardEvent<HTMLSpanElement>) {
+    const time = getTime();
     const step = event.shiftKey ? SEEK_LARGE_STEP_SECONDS : SEEK_STEP_SECONDS;
     let target: number;
     switch (event.key) {
@@ -78,15 +91,15 @@ function SeekSlider({ time, duration, onSeek }: Pick<TransportProps, "time" | "d
     // A 4px bar is a hard target; the transparent wrapper gives the pointer room without changing the look.
     <span className="flex min-w-0 flex-1 items-center self-stretch" style={{ cursor: "pointer", touchAction: "none" }} {...seekDrag}>
       <span
+        ref={sliderRef}
         className="ch-seek"
-        style={{ "--p": duration > 0 ? Math.min(1, time / duration) : 0 } as React.CSSProperties}
         tabIndex={0}
         role="slider"
         aria-label={resultsCopy.seek}
         aria-valuemin={0}
         aria-valuemax={Math.round(duration)}
-        aria-valuenow={Math.round(time)}
-        aria-valuetext={resultsCopy.seekText(formatTime(time), formatTime(duration))}
+        aria-valuenow={seconds}
+        aria-valuetext={resultsCopy.seekText(readout, formatTime(duration))}
         onKeyDown={handleKeyDown}
       />
     </span>
@@ -144,7 +157,7 @@ function SpeedChip({ speed, onSpeedChange }: Pick<TransportProps, "speed" | "onS
 export function Transport({
   playing,
   onPlayPause,
-  time,
+  getTime,
   duration,
   onSeek,
   speed,
@@ -162,11 +175,11 @@ export function Transport({
 
   if (compact) {
     return (
-      <div className="ch-m-bar">
+      <div className="ch-m-bar" style={{ background: "transparent" }}>
         <button type="button" className="ch-play" onClick={onPlayPause} aria-label={playLabel}>
           {playing ? <PauseIcon size={15} /> : <PlayIcon size={15} />}
         </button>
-        <SeekSlider time={time} duration={duration} onSeek={onSeek} />
+        <SeekSlider getTime={getTime} duration={duration} onSeek={onSeek} />
         <button
           type="button"
           className={metronomeClass}
@@ -184,12 +197,13 @@ export function Transport({
   }
 
   return (
-    <div className="ch-transport">
+    // On the page ground, not a card: the top hairline alone sets the transport off.
+    <div className="ch-transport" style={{ background: "transparent" }}>
       <button type="button" className="ch-play" onClick={onPlayPause} aria-label={playLabel}>
         {playing ? <PauseIcon /> : <PlayIcon />}
       </button>
-      <span className="ch-time">{formatTime(time)}</span>
-      <SeekSlider time={time} duration={duration} onSeek={onSeek} />
+      <ElapsedTime getTime={getTime} />
+      <SeekSlider getTime={getTime} duration={duration} onSeek={onSeek} />
       <span className="ch-time" style={{ color: "var(--color-neutral-600)" }}>
         {formatTime(duration)}
       </span>

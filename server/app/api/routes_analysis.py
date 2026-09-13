@@ -6,6 +6,7 @@ from app.db.database import db_cursor
 from app.models.schemas import ChordSegment, LyricsResponse, SaveLyricsRequest
 from app.pipeline.lyrics import estimate_lyrics_offset, fetch_lyrics, guess_candidates, parse_lyrics_text
 from app.pipeline.pipeline import job_dir
+from app.pipeline.separation import STEM_SUFFIX
 
 router = APIRouter(prefix="/jobs", tags=["analysis"])
 
@@ -42,7 +43,7 @@ def get_lyrics(job_id: str) -> LyricsResponse:
             break
 
     if result and result["synced"]:
-        vocals_path = job_dir(job_id) / "stems" / "vocals.wav"
+        vocals_path = job_dir(job_id) / "stems" / f"vocals{STEM_SUFFIX}"
         if vocals_path.exists():
             offset = estimate_lyrics_offset(vocals_path, result["synced"])
             if offset:

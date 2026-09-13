@@ -23,9 +23,7 @@ export type ResultView = "mixer" | "console" | "analog";
 export interface PlayerState {
   view: ResultView;
   playing: boolean;
-  /** Seconds. */
-  time: number;
-  /** Seconds. */
+  /** Seconds. The position isn't state: PlaybackEngine's clock is read every frame where it's shown. */
   duration: number;
   /** 0…1 UI position. */
   master: number;

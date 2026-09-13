@@ -28,7 +28,7 @@ recorded here.
 | The breakpoint | [`design/layout.ts`](../../web/src/design/layout.ts) |
 | A screen and its states | a folder under [`screens/`](../../web/src/screens/) |
 | The fader, knob, MUTE/SOLO pair and waveform | [`components/controls/`](../../web/src/components/controls/) |
-| The card the results screen sits on (landing, processing and failure sit on the page ground) | [`ScreenCard`](../../web/src/components/ScreenCard.tsx) |
+| Fitting a results view to the height it gets, without cropping | [`FitToPanel`](../../web/src/components/FitToPanel.tsx) |
 
 `design/` holds no components and never imports from `screens/` or `components/`.
 
@@ -66,6 +66,12 @@ Components take state as custom properties, never as inline geometry:
 The stem hues are `--ch-vocals` (the accent), `--ch-drums`, `--ch-bass`, `--ch-guitar`, `--ch-piano`
 and `--ch-other`, one per API stem name. The browser doesn't interpolate `--v`, and that's right:
 controls track the pointer exactly, so never animate `--v` or the geometry it drives.
+
+`--l` and `--p` change every frame, so they are written onto the element directly rather than
+rendered: the metering views write `--l`, and
+[`usePlayhead`](../../web/src/hooks/usePlayhead.ts) writes `--p`. An element that takes either from a
+frame loop doesn't set it in its JSX — or sets a constant, as the meters' `--l: 0` — so a render
+never writes over it.
 
 ## Classes
 
@@ -133,28 +139,26 @@ comments and in review.
   vertically, 160px for its full range — never rotationally, which is unusable with a mouse.
 - **Keyboard:** an arrow moves ±0.01 and Shift+arrow ±0.1; Home and End go to 0 and 1; Page Up and
   Page Down move ±0.1, as the ARIA slider pattern expects.
-- **Console:** strips sit in `.ch-striprow`, its `overflow-x` overridden to `hidden` so the strips
-  share the width rather than scroll ([Responsive](#responsive)). Each is
+- **Console:** strips sit in `.ch-striprow`. Each is
   `.ch-panel.ch-strip` with `--stem` set, holding `.ch-vfader`, `.ch-meter`, `.ch-ticks`, the Level
   and Pan readouts and MUTE/SOLO, and the master strip ends the row.
 - **Analog:** each stem is `.ch-panel.ch-module`: a Level knob in the stem's hue, then Tone and Pan
   as `.ch-knob-sm` with `--stem: var(--color-neutral-700)`, so only Level carries the hue. Every knob
   shows its label and its value.
-- **Floors:** the stylesheet gives `.ch-strip` 112px and `.ch-module` 120px. Because the page never
-  scrolls, `ConsoleStrip` and `AnalogModule` override them inline (`min-width: 0`,
-  `overflow: hidden`) and narrow instead. Above about 1000px wide six stems still get their floor;
-  narrower, a strip or module clips its own controls at the edge rather than scroll the row.
+- **Floors:** `.ch-strip` holds 112px and `.ch-module` 120px. Never give either
+  `flex: 1; min-width: 0` — they collapse under their own controls. A window narrower than a view's
+  floors add up to scales the view down instead ([Responsive](#responsive)).
 
 ## Metering
 
 - **Meters bypass React.** A frame loop writes each meter's `--l` and each needle's `transform`
   straight to the DOM: a custom-property write per frame is cheap, a render per frame isn't.
 - **Five dials** — Output left, Output right, True peak, Loudness and Correlation — sit in a grid of
-  `repeat(5, minmax(0, 1fr))`, and each SVG is capped at `14vh` tall. Each is drawn on a `0 0 200 140`
-  viewBox, its needle rotating about `(100, 108)` through ±70°, with the mid label 10° left of centre.
-- **The dials give way first.** Under about 180px per dial the in-SVG type drops below 9px; that is
-  accepted over a scrolling page. Under 900px of viewport height the dial section is hidden
-  entirely, because the dials and the modules can't both fit and the modules carry the controls.
+  `repeat(5, minmax(180px, 1fr))`, under a hairline rather than inside a panel. Each is drawn on a
+  `0 0 200 140` viewBox, its needle rotating about `(100, 108)` through ±70°, with the mid label 10°
+  left of centre.
+- **The 180px floor is load-bearing:** any narrower puts the in-SVG type under 9px. The dials are
+  never hidden or narrowed; a window too small for them scales the whole view.
 
 ## Chords and lyrics
 
@@ -215,22 +219,26 @@ lyrics, open dialogs — is ordinary state beside it.
   soloed or it is.
 - **A strip or module shows solo before mute:** soloed is `.is-active` and reads "Soloed" even when
   also muted; muted alone is `.is-off`. Mute still silences the audio.
+- **The playback position isn't state.** `PlayerState` holds `playing` and `duration`; where the
+  position shows, it is read from `PlaybackEngine` every frame — `usePlayhead` for `--p`,
+  `useClockValue` for a readout, chord or lyric line, which renders only when what it shows changes.
 
 ## Responsive
 
 One breakpoint, 720px. The results shell is fluid from about 360px, and 1120px is its widest.
 
 **The app is exactly one viewport and the page never scrolls**, in either direction, at any size.
-`index.css` clips `html`, `body` and `#root`; `App` is `h-dvh` with a one-row footer; every screen
+`index.css` clips `html`, `body` and `#root`; `App` is `h-dvh`, with a one-row footer on the landing screen only; every screen
 is `flex-1 min-h-0` and shares out the height it gets instead of overflowing:
 
 - landing, processing and failure are centered columns whose spacing is `clamp()`ed to `vh`; a
   failure's log is cut at 30% of the viewport (*Copy log* still copies all of it);
-- results fill the `ScreenCard` (`fill`): the view panel takes the height the bars leave, Mixer
-  rows split it evenly, Console faders shrink with it, and Console strips and Analog modules share
-  the width below their stylesheet floors instead of scrolling;
-- the Analog dials are capped at 14vh and hidden under 900px of height, where they and the modules
-  can't both fit;
+- **no screen sits in a card.** The results are a column on the page ground divided only by
+  hairlines — the top bar's and transport's chrome backgrounds are dropped;
+- the results view panel takes the height the bars leave. Mixer rows, Console faders and Analog
+  modules grow into spare height; when the view doesn't fit — too short, or narrower than its floors
+  add up to — `FitToPanel` scales the whole view down uniformly, so **nothing is cropped or hidden**,
+  and every floor above still holds;
 - **the one exception is a phone's stem list**: six stacked rows with 44px targets can't fit beside
   the bars, so below 720px the view panel alone scrolls.
 
@@ -239,8 +247,8 @@ is `flex-1 min-h-0` and shares out the height it gets instead of overflowing:
   - `App`, `MixerView` and `AnalysisBar` use Tailwind's `max-[720px]:`;
   - `chord-theme.css` has its own `@media (max-width: 720px)`.
 - **From 1024px** all three views are available, their rows filling the width.
-- **Between 720 and 1024px** the same, with Console strips, Analog modules and dials narrowing
-  rather than scrolling.
+- **Between 720 and 1024px** the same, with the Console and Analog views scaled down to keep their
+  floors (1020px each, Mixer 560px) rather than scrolling or cropping.
 - **Below 720px, results** lock to the Mixer, with no view tabs. The stylesheet stacks the
   `.ch-stemrow` rows with 44px MUTE/SOLO targets, the Mixer's column labels and the analysis bar's
   dividers are hidden, and the transport becomes `.ch-m-bar`: play, seek and the Click chip.
@@ -325,7 +333,7 @@ taken. *Template* is what the retired files said or drew.
 | `job-cancelled` body | "…The upload is still in your queue for 24 hours if you want to resume it." | "…The upload is kept until you leave this page if you want to resume it." | leaving the page discards a cancelled job; nothing is held for 24 hours |
 | `connection-error` secondary action | "Work offline" | "New track" | the app has no offline mode |
 | Sticky transport, upload progress bar, loop markers on the chord strip, speed chip on phones | not drawn | removed | the app had grown them; the design doesn't have them |
-| Footer | none | kept: Nocturne icon buttons and a `.ch-hint` line | kept by decision |
+| Footer | none | kept on the landing screen only: Nocturne icon buttons and a `.ch-hint` line | kept by decision; a job's screens need the whole viewport |
 | `db()` | linear, −12…0 dB | 36 dB span with the bottom silent; the master through its own ticks | the guide invited a different taper, and these match the strips' tick columns |
 | Page ground | a radial gradient `#1d1f33` → `#161826` → `#121320` | the same gradient through `--ch-panel-raised`, `--color-bg` and `--ch-well` | the nearest tokens; two of the stops weren't tokens |
 

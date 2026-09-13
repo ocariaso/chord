@@ -5,9 +5,14 @@ from pathlib import Path
 import julius
 import soundfile as sf
 import torch
-from demucs.api import Separator, save_audio
+from demucs.api import Separator
+from demucs.audio import prevent_clip
 
 from app.core.config import settings
+
+# Lossless like the WAV Demucs writes by default, at about half the bytes — and every stem is downloaded whole
+# before playback can start. decodeAudioData reads FLAC natively.
+STEM_SUFFIX = ".flac"
 
 # Demucs always works at the model's own rate (44.1 kHz for htdemucs). Stems from a 48 kHz source are
 # resampled back to it, so they line up sample-for-sample with the original in a DAW; other source
@@ -26,8 +31,13 @@ def _resolve_device() -> str:
 def _get_separator() -> Separator:
     global _separator
     if _separator is None:
-        _separator = Separator(model=settings.demucs_model, device=_resolve_device())
+        _separator = Separator(model=settings.demucs_model, device=_resolve_device(), overlap=settings.demucs_overlap)
     return _separator
+
+
+def load_model() -> None:
+    """Loads the separation model now, rather than inside the first job."""
+    _get_separator()
 
 
 def _chunk_callback(on_progress: Callable[[float], None]) -> Callable[[dict], None]:
@@ -45,7 +55,7 @@ def _chunk_callback(on_progress: Callable[[float], None]) -> Callable[[dict], No
 
 
 def separate(input_path: Path, output_dir: Path, on_progress: Callable[[float], None] | None = None) -> list[str]:
-    """Run Demucs on input_path, writing one WAV per stem into output_dir.
+    """Run Demucs on input_path, writing one 16-bit FLAC per stem into output_dir.
 
     `on_progress` receives 0-1 as chunks start; an exception raised from it abandons the pass. Stems
     are written to a sibling scratch directory that is renamed into place only once every one of them
@@ -66,7 +76,10 @@ def separate(input_path: Path, output_dir: Path, on_progress: Callable[[float], 
     for name, waveform in stems.items():
         if output_rate != separator.samplerate:
             waveform = julius.resample_frac(waveform, separator.samplerate, output_rate)
-        save_audio(waveform, str(partial_dir / f"{name}.wav"), samplerate=output_rate)
+        # Demucs' save_audio would start an ffmpeg process per FLAC; libsndfile encodes in-process. Clipping is
+        # prevented the way save_audio does it.
+        samples = prevent_clip(waveform, mode="rescale").t().cpu().numpy()
+        sf.write(str(partial_dir / f"{name}{STEM_SUFFIX}"), samples, output_rate, subtype="PCM_16")
         stem_names.append(name)
 
     shutil.rmtree(output_dir, ignore_errors=True)

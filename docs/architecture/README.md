@@ -65,9 +65,10 @@ POST /jobs            (multipart file)          POST /jobs/from-url   ({"url": .
         ┌──────────────────┴───────────────────────┐
         │  status=fetching   (URL jobs only)       │  yt-dlp -> original.mp3, title, uploader
         │  (status unchanged)                      │  duration + format; too long -> error
-        │  status=separating  progress 0.1 -> 0.5  │  Demucs -> stems/*.wav, progress measured
-        │    progress 0.5, "Detecting tempo"       │  librosa -> tempo_bpm
-        │  status=analyzing   progress 0.6         │  madmom -> chords.json, key.json
+        │  status=separating  progress 0.1 -> 0.85 │  Demucs -> stems/*.flac, progress measured
+        │    beside it: one analysis thread        │  decode once -> librosa tempo, madmom chords + key
+        │    progress 0.85, "Detecting tempo"      │  only if tempo is still running -> tempo_bpm
+        │  status=analyzing   progress 0.9         │  only if chords are still running -> chords.json, key.json
         │  status=done        progress 1.0         │  one final UPDATE: status, tempo, key
         └──────────────────────────────────────────┘
                            │
@@ -79,12 +80,13 @@ POST /jobs            (multipart file)          POST /jobs/from-url   ({"url": .
           error     -> failure panel with a message and a log
           cancelled -> failure panel; POST /jobs/{id}/resume re-queues the job
                            │
-        results fetch stems (WAV), chords.json, and lyrics on demand
+        results fetch stems (FLAC), chords.json, and lyrics on demand
 ```
 
 Every write the worker makes is scoped to the job's `attempt`. Between stages it re-reads the
 row and returns if the job was cancelled, deleted, or resumed under a new attempt; separation
-checks too, from Demucs' chunk callback, at most every two seconds. A resumed job reuses the
+checks too, from Demucs' chunk callback, at most every two seconds. Analysis on its own thread
+can't be stopped, but writes nothing: the worker writes its results. A resumed job reuses the
 download and the stems its cancelled attempt finished. See [job-lifecycle.md](job-lifecycle.md)
 for each transition in detail.
 

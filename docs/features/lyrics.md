@@ -21,8 +21,8 @@ analysis/lyrics.json exists?                                ← a lookup's resul
              for each (track, artist) candidate:            ← guess_candidates
                  fetch_lyrics(track, artist, duration)      ← lrclib /get then /search
                  stop at the first hit
-             if synced and vocals.wav exists:
-                 estimate_lyrics_offset(vocals.wav, lines)  ← cross-correlate
+             if synced and vocals.flac exists:
+                 estimate_lyrics_offset(vocals.flac, lines) ← cross-correlate
                  shift every line["time"] by the offset
              write the result — or null — to analysis/lyrics.json
              null ? → 404 : return it
@@ -101,7 +101,7 @@ activity against the *measured* activity of the separated vocals stem — a meas
 possible because separation already happened.
 
 ```
-vocals.wav ──► _vocal_activity ───► binary activity array, one bin per 0.25 s
+vocals.flac ─► _vocal_activity ───► binary activity array, one bin per 0.25 s
                                      (RMS per bin > 12% of peak RMS → 1, else 0)
 
 LRC lines ──► _expected_activity ──► binary array, 1 from each line's time until the
@@ -203,8 +203,10 @@ for (let i = 0; i < lines.length; i++) {
 }
 ```
 
-It runs every frame while playing. `O(n)` per frame on a few hundred lines with an early exit —
-fine, but the obvious candidate if the render loop ever needs tightening.
+`ChordBar` runs it inside `useClockValue`, so it runs every animation frame — paused as well as
+playing — but the bar renders only when the index changes. `O(n)` per frame on a few hundred lines
+with an early exit — fine, but the obvious candidate if the frame loop ever needs tightening. The
+index is a frame behind lyrics that were just replaced, so the row clamps it to the new lines.
 
 **The row renders for every track, instrumentals included.** Judging a vocals stem silent mutes it
 and leaves the lyric row alone: an instrumental shows whatever the lookup found — usually *None

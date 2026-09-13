@@ -39,8 +39,8 @@ function secondsBetween(from: string, to: string): number {
 }
 
 /**
- * The template's processing screen — the `processing-*` scenarios — at web and phone width. Like the landing screen it
- * sits on the page ground rather than a `ScreenCard`: one centered column, vertically centered above the footer.
+ * The template's processing screen — the `processing-*` scenarios — at web and phone width: one centered column on the
+ * page ground, vertically centered above the footer.
  */
 export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSnapshots = {}, loading = false }: ProcessingScreenProps) {
   const isPhone = useMediaQuery(PHONE_QUERY);
@@ -56,8 +56,10 @@ export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSna
   const stageRows = PROCESSING_STAGES.map((label, index) => {
     const done = index < current;
     const start = stageStartedAt(index);
+    // A stage ends when the next one seen begins, the job's completion included: analysis that finished during
+    // separation is never seen as a stage of its own.
     let end: string | undefined;
-    for (let later = index + 1; later <= current && end === undefined; later++) end = stageStartedAt(later);
+    for (let later = index + 1; later <= PROCESSING_STAGES.length && end === undefined; later++) end = stageStartedAt(later);
     return {
       label,
       className: done ? "ch-stage is-done" : index === current ? "ch-stage is-current" : "ch-stage",

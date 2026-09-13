@@ -124,6 +124,11 @@ export async function resumeJob(jobId: string): Promise<Job> {
 }
 
 export function stemUrl(jobId: string, stemName: string): string {
+  return `${API_BASE}/jobs/${jobId}/stems/${stemName}.flac`;
+}
+
+/** The stem as uncompressed WAV, converted from the stored FLAC as it downloads: what Export stems saves. */
+export function stemDownloadUrl(jobId: string, stemName: string): string {
   return `${API_BASE}/jobs/${jobId}/stems/${stemName}.wav`;
 }
 

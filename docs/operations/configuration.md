@@ -26,6 +26,7 @@ No `.env` file is read — `Settings` declares no `env_file` — and list values
 | --- | --- | --- |
 | `DEVICE` | `cuda` | `cpu` or `cuda`. Falls back to CPU if CUDA is unavailable. Compose sets `${DEVICE:-cpu}` in the base file and `cuda` in the overlay. |
 | `DEMUCS_MODEL` | `htdemucs_6s` | The Docker image sets it from the build argument of the same name. **See the warning below.** |
+| `DEMUCS_OVERLAP` | `0.25` | How much of each chunk Demucs blends with its neighbours, 0…1. The default is Demucs' own. Opt-in: a lower value such as `0.1` separates faster, with more audible seams where chunks meet. |
 | `ENABLE_CHORD_DETECTION` | `true` | `false` skips the madmom stage entirely — no `analyzing` status, no `chords.json`, no key. |
 | `MAX_DURATION_SECONDS` | `720` | The longest track, in seconds, a job will separate; `0` disables the check. A URL job is refused from yt-dlp's metadata before anything downloads, an upload once the worker reads it and before separation. Both fail with *"This track is M:SS long. CHORD separates tracks up to N minutes."* |
 | `CORS_ORIGINS` | `["http://localhost:5173"]` | Only relevant when the browser talks to the server directly (local dev). Irrelevant behind nginx. |
@@ -49,7 +50,8 @@ No `.env` file is read — `Settings` declares no `env_file` — and list values
 
 > **`MAX_DURATION_SECONDS` protects the browser more than the server.** A job's six stems are
 > decoded into the tab's memory before playback — 1.5–1.7 GB at twelve minutes — and the zip
-> endpoint builds its whole archive in server memory. Raise the limit and both grow in proportion.
+> the export dialog downloads is buffered whole in the tab before it's saved. Raise the limit and
+> both grow in proportion.
 > The landing page's *"up to 12 minutes"* is hardcoded in `landingCopy` in
 > [`design/copy.ts`](../../web/src/design/copy.ts) and doesn't follow the setting.
 
@@ -137,10 +139,15 @@ constants; the timeouts and the SSE interval are literals where they're used.
 | `_UPLOAD_COPY_CHUNK_BYTES` | 1 MB | `routes_jobs.py` |
 | SSE poll interval | `0.5` s | `routes_jobs.py` |
 | `SaveLyricsRequest.text` `max_length` | `100_000` characters | `schemas.py` |
-| `_SEPARATION_PROGRESS` | `(0.1, 0.5)` — separation's span of the progress bar | `pipeline.py` |
+| `_SEPARATION_PROGRESS` | `(0.1, 0.85)` — separation's span of the progress bar | `pipeline.py` |
+| `_TEMPO_PROGRESS` / `_CHORDS_PROGRESS` | `0.85` / `0.9` — written only for analysis still running once the stems are | `pipeline.py` |
 | `_PROGRESS_WRITE_STEP` | `0.01` — at most one row write per percentage point | `pipeline.py` |
 | `_SUPERSEDED_POLL_SECONDS` | `2.0` — how often separation checks for a cancel | `pipeline.py` |
 | `_PRESERVED_SAMPLE_RATES` | `{44100, 48000}` | `separation.py` |
+| `STEM_SUFFIX` | `.flac` — stems are stored as 16-bit FLAC | `separation.py` |
+| `SAMPLE_RATE` | `44100` — the one mono decode tempo, chord and key detection share | `decode.py` |
+| `_WAV_BLOCK_FRAMES` | `65536` frames decoded per block when a stem is exported as WAV | `routes_stems.py` |
+| zip compression | `ZIP_DEFLATED`, `compresslevel=1` | `routes_stems.py` |
 | `_RMS_HOP_SECONDS` | `0.25` s | `lyrics.py` |
 | `_RMS_ACTIVITY_RATIO` | `0.12` | `lyrics.py` |
 | `_MAX_OFFSET_SECONDS` | `30` | `lyrics.py` |
@@ -156,6 +163,9 @@ constants; the timeouts and the SSE interval are literals where they're used.
 | --- | --- | --- |
 | `client_max_body_size` | `512m` | sized for a twelve-minute lossless upload |
 | `proxy_read_timeout` | `1h` | keeps the SSE stream open through a long separation |
+| `gzip_types` | `text/css application/javascript application/json image/svg+xml`, level 5, bodies over 1024 bytes | the app shell and the API's JSON; stems and artwork are already compressed, and the event stream is left out so each event goes out as it's written |
+| `Cache-Control` on `/assets/` | `public, max-age=31536000, immutable` | Vite puts a content hash in every file name there |
+| `Cache-Control` on `/index.html` | `no-cache` | it names the current hashed assets |
 
 **Web** — paths under `web/src/`
 

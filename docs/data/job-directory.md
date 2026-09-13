@@ -10,12 +10,12 @@ server/data/jobs/<job_id>/
 ├── thumbnail.jpg           cover art, if any was found
 ├── stems.partial/          scratch: exists while a separation pass runs, or after one was interrupted
 ├── stems/                  complete or absent
-│   ├── vocals.wav
-│   ├── drums.wav
-│   ├── bass.wav
-│   ├── guitar.wav
-│   ├── piano.wav
-│   └── other.wav
+│   ├── vocals.flac
+│   ├── drums.flac
+│   ├── bass.flac
+│   ├── guitar.flac
+│   ├── piano.flac
+│   └── other.flac
 └── analysis/
     ├── chords.json
     ├── key.json
@@ -65,35 +65,39 @@ over an accent gradient and samples nothing from it.
 
 ## `stems/`
 
-One WAV per `STEM_NAMES` entry, written by `separate()` in
+One 16-bit FLAC per `STEM_NAMES` entry (`<name>.flac`, `STEM_SUFFIX`), written by `separate()` in
 [`separation.py`](../../server/app/pipeline/separation.py). Names come from the model's own output
-keys and match `STEM_NAMES`.
+keys and match `STEM_NAMES`. A job directory written before stems were FLAC holds `<name>.wav`
+instead, which nothing on the current server reads.
 
 **Sample rate.** Demucs always separates at the model's own rate, 44.1 kHz for `htdemucs_6s`.
 The stems are written at the *source's* rate when that is 44.1 or 48 kHz
 (`_PRESERVED_SAMPLE_RATES`): 48 kHz stems are resampled back from the model's output with
 `julius.resample_frac`, so they line up sample-for-sample with the original in a DAW. Any other
-source rate — 96 kHz, 32 kHz — gets the model's 44.1 kHz. Only the rate is carried over:
-`save_audio` is called without a bit depth, so the source's is not.
+source rate — 96 kHz, 32 kHz — gets the model's 44.1 kHz. Only the rate is carried over: stems are
+written with `subtype="PCM_16"`, so the source's bit depth is not.
 
 **Complete or absent.** `separate()` deletes and recreates `stems.partial/`, saves every stem into
 it, and only then renames it to `stems/`, replacing any `stems/` already there. Consequences:
 
-- `GET /jobs/{id}/stems/{name}.wav` answers *"Stem not ready"* for every stem until the rename.
-- A resumed job checks `_stems_complete` — every `STEM_NAMES` WAV present — and skips separation
+- `GET /jobs/{id}/stems/{name}.flac` and `.wav` answer *"Stem not ready"* for every stem until the
+  rename.
+- A resumed job checks `_stems_complete` — every `STEM_NAMES` FLAC present — and skips separation
   when it holds.
 - A pass abandoned by a cancel, or cut off by a restart, leaves `stems.partial/` behind — empty
   if the pass was interrupted before its save loop. The job's next separation deletes it; a
   discard removes it with the rest of the directory.
 
-~10 MB per stem-minute at 44.1 kHz (~11 MB at 48 kHz), so ~250 MB for a four-minute song. This is
-the dominant disk cost and the reason for several other design choices — see
-[README.md](README.md#sizing).
+About half of WAV's ~10 MB per stem-minute at 44.1 kHz (~11 MB at 48 kHz), so roughly 125 MB for a
+four-minute song. This is the dominant disk cost and the reason for several other design choices —
+see [README.md](README.md#sizing).
 
-Two endpoints read this directory, and they disagree on purpose:
+Three endpoints read this directory, and they disagree on purpose:
 
-- `GET /jobs/{id}/stems/{name}.wav` validates `name` against the constant `STEM_NAMES`.
-- `GET /jobs/{id}/download` globs the directory, so the zip reflects what actually exists.
+- `GET /jobs/{id}/stems/{name}.flac` (the file as stored) and `.wav` (converted from it as it
+  streams) validate `name` against the constant `STEM_NAMES`.
+- `GET /jobs/{id}/download` globs the directory for `*.flac`, so the zip reflects what actually
+  exists.
 
 ## `analysis/`
 
@@ -157,7 +161,7 @@ permission error on a first run. See
 JOB=3f2a...b91
 ls -laR server/data/jobs/$JOB
 du -sh  server/data/jobs/$JOB
-soxi    server/data/jobs/$JOB/stems/vocals.wav      # rate and bit depth, if sox is installed
+soxi    server/data/jobs/$JOB/stems/vocals.flac     # rate and bit depth, if sox is installed
 jq '.[0:5]' server/data/jobs/$JOB/analysis/chords.json
 jq .       server/data/jobs/$JOB/analysis/key.json
 ```

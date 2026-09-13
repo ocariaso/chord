@@ -80,16 +80,17 @@ export function AnalogView({ stems, controls, readMeters }: AnalogViewProps) {
   });
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* Under 900px of height the dials and the modules can't both fit a page that never scrolls; the controls win. */}
-      <div className="ch-section flex [@media(max-height:900px)]:hidden" style={{ gap: "var(--space-8)", boxShadow: "none", paddingBottom: 0 }}>
-        <div className="ch-panel flex min-w-0 flex-1" style={{ gap: "var(--space-8)", padding: "var(--space-6) var(--space-8)" }}>
+    <div className="flex flex-1 flex-col">
+      {/* A hairline under the dials instead of a panel around them: the results sit on the page ground, not in boxes. */}
+      <div className="ch-section flex" style={{ gap: "var(--space-8)" }}>
+        <div className="flex min-w-0 flex-1" style={{ gap: "var(--space-8)" }}>
           <div className="flex min-w-0 flex-1 flex-col" style={{ gap: "var(--space-4)" }}>
             <span className="ch-label">{resultsCopy.outputLevel}</span>
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                // The 180px floor keeps the in-SVG type at 9px or more; FitToPanel never lays the view out narrower.
+                gridTemplateColumns: "repeat(5, minmax(180px, 1fr))",
                 gap: "var(--space-6)",
                 alignItems: "start",
               }}
@@ -112,8 +113,9 @@ export function AnalogView({ stems, controls, readMeters }: AnalogViewProps) {
           </div>
         </div>
       </div>
-      <div className="ch-section flex min-h-0 flex-1">
-        <div className="ch-striprow" style={{ alignItems: "stretch", overflowX: "hidden" }}>
+      {/* The transport's top hairline closes this section, so it draws none of its own. */}
+      <div className="ch-section flex flex-1" style={{ boxShadow: "none" }}>
+        <div className="ch-striprow" style={{ alignItems: "stretch" }}>
           {stems.map((stem) => (
             <AnalogModule key={stem.state.key} stem={stem} controls={controls} />
           ))}

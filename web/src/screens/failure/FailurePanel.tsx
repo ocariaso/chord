@@ -30,8 +30,8 @@ interface FailurePanelProps {
 
 /**
  * A failure state (`job-error`, `job-cancelled`, `connection-error`, `results-load-error`): `.ch-alert` under a
- * `.ch-dropicon` mark, an optional `.ch-log`, its actions. Like the landing and processing screens it sits on the page
- * ground rather than a `ScreenCard`: one centered column, vertically centered above the footer.
+ * `.ch-dropicon` mark, an optional `.ch-log`, its actions: one centered column on the page ground, vertically centered
+ * above the footer.
  */
 export function FailurePanel({ tone, title, body, log, primary, secondary }: FailurePanelProps) {
   return (

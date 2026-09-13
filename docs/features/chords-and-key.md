@@ -1,21 +1,22 @@
 # Chords and key detection
 
-Produces the chord timeline and the key readout. Runs under `status=analyzing`, and is the one
-stage that can be switched off entirely (`ENABLE_CHORD_DETECTION=false`).
+Produces the chord timeline and the key readout. Runs beside separation, shows as
+`status=analyzing` only if it is still running once the stems are written, and is the one stage that
+can be switched off entirely (`ENABLE_CHORD_DETECTION=false`).
 
 ## Pipeline
 
-[`chords.py`](../../server/app/pipeline/chords.py) `analyze_audio(path)` returns
+[`chords.py`](../../server/app/pipeline/chords.py) `analyze_audio(signal)` returns
 `(list[ChordSegment], KeyEstimate)` using three madmom processors:
 
 ```
-audio file ──► CNNChordFeatureProcessor ──► features ──► CRFChordRecognitionProcessor
-                                                              │
-                                                    (start, end, "C#:min") triples
-                                                              │
-                                                    label normalization → ChordSegment[]
+decoded Signal ──► CNNChordFeatureProcessor ──► features ──► CRFChordRecognitionProcessor
+                                                                  │
+                                                        (start, end, "C#:min") triples
+                                                                  │
+                                                        label normalization → ChordSegment[]
 
-audio file ──► CNNKeyRecognitionProcessor ──► prediction vector
+decoded Signal ──► CNNKeyRecognitionProcessor ──► prediction vector
                                                     │
                                         key_prediction_to_label → "Db major"
                                                     │
@@ -27,10 +28,21 @@ decodes them into temporally smoothed segments. Running the CNN alone would give
 per-frame labels rather than the clean segment boundaries the timeline needs.
 
 All three processors are lazily constructed module-level singletons, the same pattern as the
-Demucs separator — construction loads model data and is not cheap.
+Demucs separator — construction loads model data and is not cheap. `load_models()` builds them in
+the worker's warm-up, before the first job.
 
-Analysis runs on the original mix after separation and tempo detection, at progress `0.6` with the
-stage message *Detecting chords and key*.
+The `Signal` is the job's one decode of the original mix, from
+[`decode.decode_mono`](../../server/app/pipeline/decode.py): mono at 44.1 kHz, the shape both models
+read, so their `SignalProcessor` passes it through untouched and the file is decoded once for chords,
+key and tempo instead of three times. Measured against the old path-based calls, the chord features,
+key prediction and segments are byte-identical.
+
+Analysis runs on the job's analysis thread, started with separation, right after tempo detection
+and on the same decode. If it is still running once the stems are written, `run_job` writes
+`status=analyzing`, progress `0.9` and *Detecting chords and key* while it waits; if it finished
+during separation, the job never reports `analyzing` at all. `chords.json` and `key.json` are
+written by `run_job` on the worker thread once the result is collected, so a cancelled run's
+analysis writes nothing — though it can't be stopped, and finishes unread.
 
 ## Label normalization
 
@@ -154,23 +166,19 @@ seek slider is the accessible way to seek.
 **The key.** `transposeKeyLabel(key_estimate, transpose)` in 26 px, or `—`, followed by
 `Math.round(key_confidence × 100)% confident` when a confidence exists.
 
-The active segment is found with a linear scan:
-
-```ts
-list.findIndex((segment) => currentTime >= segment.start && currentTime < segment.end)
-```
-
-`ChordBar` re-renders every frame while playing (see
-[rendering cost](results-views.md#rendering-cost)), and each render also rebuilds every segment's
-label and width. Fine for a few hundred segments; the first thing to optimize if the timeline ever
-gets long.
+The chord bar takes `getTime`, not a time, and reads the clock every animation frame through
+`useClockValue`. Two binary searches over the sorted segments give what the bar shows: `endedCount`
+(how many segments have ended — every one before it is `.is-past`) and `activeSegment` (the one
+playing, or −1 before the first chord and in a gap). The bar renders only when one of those, the
+`m:ss` readout or the lyric line changes (see [rendering cost](results-views.md#rendering-cost)), and
+each render rebuilds every segment's label and width. The strip's playhead moves through
+`usePlayhead`, without a render. In a gap between chords, the next-three list starts after the
+segments already ended.
 
 ## Known gaps
 
 - `ChordSegment.confidence` is a constant, and `key_confidence` isn't corrected after a relative-key
   flip.
 - `key.json` is unserved.
-- Outside every segment — before the first or after the last — no segment is active, so the
-  next-three list starts again from the top of the song.
 - A segment too narrow for its label has no hover `title`, so it can't be read on the strip.
 - Sharps only, in both the key and the chords.

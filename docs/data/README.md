@@ -21,12 +21,12 @@ server/data/                     ← gitignored; bind-mounted into the container
         ├── thumbnail.jpg        cover art, if any was found
         ├── stems.partial/       scratch while separation runs; left behind if it's interrupted
         ├── stems/               appears only once every stem is written
-        │   ├── vocals.wav
-        │   ├── drums.wav
-        │   ├── bass.wav
-        │   ├── guitar.wav
-        │   ├── piano.wav
-        │   └── other.wav
+        │   ├── vocals.flac
+        │   ├── drums.flac
+        │   ├── bass.flac
+        │   ├── guitar.flac
+        │   ├── piano.flac
+        │   └── other.flac
         └── analysis/
             ├── chords.json      served by GET /jobs/{id}/chords
             ├── key.json         written, never served
@@ -47,11 +47,11 @@ on every read rather than stored:
 | status, progress, duration and format, key, tempo, timestamps, `attempt` | the `jobs` row |
 | `has_thumbnail` | a `Path.exists()` check per serialization |
 | `stem_names` | **neither** — the constant `STEM_NAMES`, gated on `status == "done"` |
-| whether a resume skips separation | a check that every `STEM_NAMES` WAV is in `stems/` |
+| whether a resume skips separation | a check that every `STEM_NAMES` FLAC is in `stems/` |
 | whether a resumed URL job downloads again | a check for `original.mp3` |
 | chord segments | `analysis/chords.json` only |
 | lyrics | `analysis/lyrics.json` only |
-| audio | `original.*` and `stems/*.wav` |
+| audio | `original.*` and `stems/*.flac` — exported WAVs are converted on request, never stored |
 
 They can disagree. A row whose directory was deleted still lists in `GET /jobs`; a directory
 whose row was deleted is invisible to the API and will never be cleaned up. See
@@ -59,13 +59,15 @@ whose row was deleted is invisible to the API and will never be cleaned up. See
 
 ## Sizing
 
-Uncompressed WAV dominates everything else:
+The stems dominate everything else. They are stored as 16-bit FLAC, which is lossless at about half
+the size of WAV, so the figures below are the WAV sizes halved — how well FLAC compresses depends on
+the material:
 
 | Item | Rough size |
 | --- | --- |
-| one stem, per minute of audio | ~10 MB at 44.1 kHz, ~11 MB at 48 kHz |
-| six stems, four-minute song at 44.1 kHz | ~250 MB |
-| six stems, twelve minutes at 48 kHz — the most the default duration limit allows | ~830 MB |
+| one stem, per minute of audio | ~5 MB at 44.1 kHz, ~5.5 MB at 48 kHz (WAV: ~10 and ~11 MB) |
+| six stems, four-minute song at 44.1 kHz | ~125 MB (WAV: ~250 MB) |
+| six stems, twelve minutes at 48 kHz — the most the default duration limit allows | ~415 MB (WAV: ~830 MB) |
 | `original.mp3` from a URL (192 kbps), four minutes | ~6 MB |
 | `original.flac` upload | up to the 512 MB nginx accepts |
 | `thumbnail.jpg` | tens of KB |
@@ -78,8 +80,8 @@ The same stems cost more again in the browser, which decodes all six into 32-bit
 48 kHz. That is about 0.5 GB of tab memory for a four-minute song, and 1.5–1.7 GB at twelve
 minutes.
 
-Stem size is what four other things are sized against: the in-memory zip endpoint's memory use,
-the browser needing all six stems before playback,
+Stem size is what three other things are sized against: the browser needing all six stems before
+playback,
 [discard-on-leave](../architecture/decisions.md#discard-on-leave) deleting finished jobs, and
 `MAX_DURATION_SECONDS` refusing long tracks before separation — six decoded stems of a long mix
 outgrow what a browser tab can hold.

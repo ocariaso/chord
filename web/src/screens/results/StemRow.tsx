@@ -8,17 +8,18 @@ import type { StemControls, StemDisplay } from "./types";
 interface StemRowProps {
   stem: StemDisplay;
   controls: StemControls;
-  /** 0…1 playback position. */
-  playhead: number;
+  /** The 0…1 playback position, read every frame. */
+  progress: () => number;
 }
 
 /** `.ch-stemrow` (design.md#controls): name, level fader and value, MUTE/SOLO, waveform. Below 720px the stylesheet stacks it. */
-export function StemRow({ stem, controls, playhead }: StemRowProps) {
+export function StemRow({ stem, controls, progress }: StemRowProps) {
   const { state } = stem;
   const value = fmtDb(state.gain, state.muted);
   return (
-    // On the web the rows share the view's height evenly; a stacked phone row keeps its own, and the panel scrolls.
-    <div className="ch-stemrow min-h-0 flex-1 max-[720px]:flex-none" style={{ "--stem": stem.hue } as React.CSSProperties}>
+    // On the web the rows share any spare height evenly, never shrinking below their content; a stacked phone row keeps
+    // its own height, and the panel scrolls.
+    <div className="ch-stemrow flex-1 max-[720px]:flex-none" style={{ "--stem": stem.hue } as React.CSSProperties}>
       <span className="ch-stemrow-name">
         <span className="ch-dot" />
         <span style={{ color: "var(--color-text)" }}>{stem.name}</span>
@@ -44,7 +45,7 @@ export function StemRow({ stem, controls, playhead }: StemRowProps) {
           onToggleSolo={() => controls.onToggleSolo(state.key)}
         />
       </span>
-      <StemWaveform envelope={stem.envelope} off={!stem.audible} playhead={playhead} />
+      <StemWaveform envelope={stem.envelope} off={!stem.audible} progress={progress} />
     </div>
   );
 }

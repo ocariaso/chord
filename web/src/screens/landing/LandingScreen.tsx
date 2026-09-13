@@ -56,8 +56,7 @@ function Alert({ title, body }: SubmitError) {
 
 /**
  * The template's landing screen — scenarios `upload`, `upload-submitting` and `upload-error` — at web and phone width.
- * Unlike the other screens it sits on the page ground rather than a `ScreenCard`: one centered column, vertically
- * centered in the space above the footer.
+ * One centered column on the page ground, vertically centered in the space above the footer.
  */
 export function LandingScreen({ submitting, error, onFileSelected, onUrlSubmitted }: LandingScreenProps) {
   const [url, setUrl] = useState("");

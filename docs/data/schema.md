@@ -44,10 +44,12 @@ from the migration. The two paths order columns differently — `ADD COLUMN` app
   run's `attempt`, so it lands even when the job was cancelled during the download — a
   [resume](../api/jobs.md#post-jobsjob_idresume) skips the download and couldn't write it again.
 - **`progress`** is measured only during separation: `0 → 0.05` (download, URL jobs only)
-  `→ 0.10 … 0.50` (separation) `→ 0.50` (tempo) `→ 0.60` (chords and key) `→ 1.0`. Inside
+  `→ 0.10 … 0.85` (separation) `→ 0.85` (tempo) `→ 0.90` (chords and key) `→ 1.0`. Inside
   separation, Demucs reports each chunk as it starts; `_separation_progress` maps that fraction
-  onto `_SEPARATION_PROGRESS = (0.1, 0.5)` and writes the row at most once per percentage point
-  (`_PROGRESS_WRITE_STEP`), rounded to three decimals. A resume resets it to 0.
+  onto `_SEPARATION_PROGRESS = (0.1, 0.85)` and writes the row at most once per percentage point
+  (`_PROGRESS_WRITE_STEP`), rounded to three decimals. The 0.85 and 0.90 steps are written only for
+  analysis still running once the stems are, since it runs beside separation. A resume resets it
+  to 0.
 - **`error_message`** is always written for a person: the text of a `UserFacingError`, or the
   failed stage's fixed sentence from `_STAGE_FAILURE_MESSAGES`. **`error_log`** holds the
   exception — `"<Type>: <message>"`, or the text of the exception a `UserFacingError` was chained

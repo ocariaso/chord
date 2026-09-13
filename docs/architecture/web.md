@@ -122,7 +122,8 @@ the app sits beside it in `useState`:
 | `rafRef`, `reducedMotionRef` | the clock loop's handle, and the reduced-motion flag it reads |
 | `player.stems` | one `StemState` per loaded stem, `{key, gain, muted, solo, tone, pan}`, with gain, tone and pan as 0…1 control positions |
 | `player.master` | master fader position |
-| `player.playing`, `player.time`, `player.duration` | mirrored *from* the engine for rendering; `duration` is the longest decoded buffer |
+| `player.playing`, `player.duration` | mirrored *from* the engine for rendering; `duration` is the longest decoded buffer |
+| `getTime`, `getProgress` | stable callbacks, not state: the engine's clock in seconds (floored under reduced motion) and as 0…1 of its duration — see [The render clock](#the-render-clock) |
 | `player.view` | `mixer`, `console` or `analog`; ignored below 720px, where the Mixer is locked |
 | `player.transpose` | semitone offset, clamped by the reducer to `MIN_TRANSPOSE`…`MAX_TRANSPOSE` (±11) |
 | `player.metronome` | |
@@ -136,9 +137,9 @@ the app sits beside it in `useState`:
 | `exportOpen`, `lyricsDialog` | which dialog is open; the lyrics one as `sheet` or `edit` |
 
 The split follows the design: `PlayerState` is exactly the state its screens need, and every
-change to it is one of eight actions in one reducer. An action that changes nothing returns the
-state it was given, which is what lets the frame loop dispatch the time every frame without
-rendering while paused.
+change to it is one of seven actions in one reducer. An action that changes nothing returns the
+state it was given, so a redundant dispatch renders nothing. The playback position is deliberately
+not in it.
 
 Plus `useLyrics(job.id)`, which also returns the setter `LyricsDialog`'s save goes through, and two
 `useMediaQuery` flags: `PHONE_QUERY` from [`design/layout.ts`](../../web/src/design/layout.ts), kept
@@ -186,39 +187,49 @@ playback except through the callbacks it was handed.
 
 ## The render clock
 
-One `requestAnimationFrame` loop in `ResultsScreen`, started once on mount:
+The position is read, never stored. `ResultsScreen` exposes the engine's clock as two stable
+callbacks and runs one `requestAnimationFrame` loop of its own, started once on mount, that does
+nothing but notice the end of the track — the engine never stops itself:
 
 ```ts
+const getTime = useCallback(() => {
+  const time = engineRef.current?.getCurrentTime() ?? 0;
+  return reducedMotionRef.current ? Math.floor(time) : time;
+}, []);
+
 function tick() {
   const engine = engineRef.current;
-  if (engine) {
-    if (engine.hasEnded) {
-      engine.pause();
-      dispatch({ type: "playingChanged", playing: false });
-    }
-    const time = engine.getCurrentTime();
-    // With reduced motion the playhead steps once a second instead of gliding every frame (design.md#accessibility).
-    dispatch({ type: "timeChanged", time: reducedMotionRef.current ? Math.floor(time) : time });
+  // The engine doesn't stop itself at the end of the track.
+  if (engine?.hasEnded) {
+    engine.pause();
+    dispatch({ type: "playingChanged", playing: false });
   }
   rafRef.current = requestAnimationFrame(tick);
 }
 ```
 
-This is the only thing that moves the transport display forward, and the only place the end of
-the track is noticed — the engine never stops itself. It runs unconditionally, even while paused
-or loading, which keeps the code branchless. While paused it dispatches the same time every frame,
-the reducer hands back the same state, and React bails out of the render. While playing, every
-frame re-renders `ResultsScreen` and everything under it: nothing is memoized, and `stems` and
-`controls` are rebuilt on each render. Every position display — the chord strip's and the Mixer
-waveforms' playheads, the time readouts, the seek slider, the current chord and lyric line — reads
-the same `player.time`, so they cannot drift apart.
+`getTime` goes to `ChordBar` and `Transport`, and `getProgress` (0…1 of `engine.duration`) to
+`MixerView` as `progress`. Each display reads them every animation frame through one of two hooks:
+
+- [`usePlayhead`](../../web/src/hooks/usePlayhead.ts) writes `--p` straight onto the chord strip's
+  playhead, each Mixer waveform's playhead and the seek slider, skipping a write when the value is
+  unchanged. Nothing renders.
+- [`useClockValue`](../../web/src/hooks/useClockValue.ts) re-reads a derived primitive — the
+  elapsed `m:ss`, the seek slider's whole seconds, the active and ended chord counts, the lyric line
+  — and renders its component only when it changes: the chord bar on a boundary, a line or a
+  second, the transport's `ElapsedTime` and `SeekSlider` once a second.
+
+So playback renders neither `ResultsScreen` nor the view. Under reduced motion every reader gets the
+floored clock and steps once a second together. The cost is one frame loop per display, running
+paused as well as playing, and a frame of lag after a prop change that a clock value depends on. See
+[decisions.md](decisions.md#the-playback-position-is-read-not-stored).
 
 Meters take a separate path on purpose. `ConsoleView` and `AnalogView` each run their own loop
 through [`useAnimationFrame`](../../web/src/hooks/useAnimationFrame.ts), call `readMeters` (a
 stable callback onto the engine), and write the results straight to the DOM: `--l` on each meter
 bar, a `transform` on each needle, and readout text at most every 125 ms. Those values never
 enter React state, so the meters keep releasing toward silence after playback pauses without
-rendering anything, and add no state to the per-frame render while it plays. React never
+rendering anything, and render nothing while it plays. React never
 overwrites what the loops write, because the props it renders on those elements — `--l: 0`, a
 needle's rest angle, the initial readout text — never change after mount. See
 [../features/metering.md](../features/metering.md).
@@ -234,6 +245,8 @@ needle's rest angle, the initial readout text — never change after mount. See
 | [`useSeekDrag`](../../web/src/hooks/useSeekDrag.ts) | press or drag across an element → seek to that fraction of the duration; used by the chord strip and the transport's seek slider |
 | [`useSliderControl`](../../web/src/hooks/useSliderControl.ts) | pointer and keyboard handling for a 0…1 control drawn through `--v` |
 | [`useAnimationFrame`](../../web/src/hooks/useAnimationFrame.ts) | a `requestAnimationFrame` loop while `active`, always calling the latest callback |
+| [`useClockValue`](../../web/src/hooks/useClockValue.ts) | a value derived from the playback clock, re-read every frame and rendered only when it changes |
+| [`usePlayhead`](../../web/src/hooks/usePlayhead.ts) | a ref whose element gets `--p` written every frame from a 0…1 progress callback |
 | [`useElementWidth`](../../web/src/hooks/useElementWidth.ts) | callback ref plus the element's width, kept current by a `ResizeObserver` |
 
 `useSliderControl` backs every fader and knob. A horizontal fader follows the pointer's x, a
@@ -327,7 +340,7 @@ The conventions that follow are summarized here; the rules themselves are in
   | --- | --- | --- | --- |
   | `--v` | 0…1 | `Fader`, `VerticalFader`, `Knob`, `ProcessingScreen` | `.ch-fader`, `.ch-vfader`, `.ch-knob`, `.ch-progress` |
   | `--l` | 0…1 | `ConsoleView`'s frame loop, on the meters in `ConsoleStrip` and `MasterStrip` | `.ch-meter i` |
-  | `--p` | 0…1 | `ChordBar` and `StemWaveform` (the playhead), `Transport` (the seek slider) | `.ch-playhead`, `.ch-seek` |
+  | `--p` | 0…1 | `usePlayhead`'s frame loop, in `ChordBar` and `StemWaveform` (the playhead) and `Transport` (the seek slider) | `.ch-playhead`, `.ch-seek` |
   | `--stem` | a color | `StemRow`, `ConsoleStrip`, `AnalogModule` and the export rows, via `stemHue()` → `var(--ch-<key>)`; the small knobs, the master meter and the status dots, with a hue of their own | dot, fader fill, meter, waveform bars, knob arc |
 
 - **Tailwind and inline `style` take tokens, not literals** — `style={{ gap: "var(--space-8)" }}`,

@@ -41,7 +41,7 @@ export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSna
 | Folder | Holds |
 | --- | --- |
 | [`screens/`](../../web/src/screens/) | a folder per template screen — `landing`, `processing`, `failure`, `results` — with a file for each part design.md names (`StemRow`, `ConsoleStrip`, `MasterStrip`, `AnalogModule`, `OutputDial`, `ChordBar`, `Transport`) |
-| [`components/`](../../web/src/components/) | generic pieces (`ScreenCard`, `CoverArt`, `Dialog`, `icons.tsx`), the page `Footer`, and the template's controls in `controls/` |
+| [`components/`](../../web/src/components/) | generic pieces (`FitToPanel`, `CoverArt`, `Dialog`, `icons.tsx`), the page `Footer`, and the template's controls in `controls/` |
 | [`design/`](../../web/src/design/) | the template's non-visual vocabulary — copy, the state model, stem identity, the stage list, the breakpoint. No components, and nothing imported from `screens/` or `components/` |
 | `hooks/`, `utils/`, `audio/`, `api/` | behavior with no design in it |
 
@@ -105,11 +105,12 @@ const controls: StemControls = {
 `PlayerState` changes.
 
 - Actions say what happened: `stemsLoaded`, `stemChanged`, `viewChanged`, `masterChanged`,
-  `transposeChanged`, `metronomeChanged`, `playingChanged`, `timeChanged`.
+  `transposeChanged`, `metronomeChanged`, `playingChanged`. There is no time action: the playback
+  position is read from the engine where it's shown, never stored.
 - A handler tells the engine first and dispatches after. The reducer never touches the engine, so
   it stays a pure function of state and action.
-- An action that changes nothing returns the same state object. The playhead time is dispatched
-  every frame, and while playback is paused that costs no render.
+- An action that changes nothing returns the same state object, so a redundant dispatch costs no
+  render.
 - Limits are enforced in the reducer (`transposeChanged` clamps to ±11), not at each call site, and
   `stemsLoaded` keeps the settings of stems already on the mixer, so a retry after failed downloads
   doesn't reset them.
@@ -190,7 +191,31 @@ fetches, though, so under `StrictMode` the first engine's downloads finish and a
 ## Outside React: meters and the stretch worklet
 
 No third-party imperative library is left; waveforms are a CSS `clip-path` traced from the decoded
-buffer. Three pieces still work outside React's render cycle, each by design.
+buffer. Four pieces still work outside React's render cycle, each by design.
+
+### Playheads and clock readouts read the engine every frame
+
+Nothing stores the playback position. `ResultsScreen` passes `getTime` (seconds) or `getProgress`
+(0…1) down as stable callbacks, and the component that shows the position reads it through one of
+two hooks built on `useAnimationFrame`:
+
+```tsx
+// --p straight onto the element, every frame; the JSX must not set --p itself.
+const playheadRef = usePlayhead<HTMLSpanElement>(progress);
+<span ref={playheadRef} className="ch-playhead" />
+
+// Re-read every frame, rendered only when the value changes.
+const readout = useClockValue(() => formatTime(getTime()));
+```
+
+- **Return a primitive from `useClockValue`.** It bails out of rendering by comparing with the value
+  it holds; a new object or array every frame would render every frame.
+- **Keep the read cheap** — it runs every frame, paused included. `ChordBar` finds the active
+  segment by binary search.
+- **Expect a frame of lag.** After a prop the read depends on changes (new segments, replaced
+  lyrics), the held value still describes the old one for one render, so index with a guard.
+- Put a readout that changes every second in a component of its own (`ElapsedTime` in
+  `Transport`), so its render doesn't take the rest of the bar with it.
 
 ### Meters are written to the DOM every frame
 
@@ -304,7 +329,7 @@ A component is a class plus one variable:
 | --- | --- | --- |
 | `--v` | 0…1 control position | `Fader`, `VerticalFader`, `Knob`; the processing screen's `.ch-progress` |
 | `--l` | 0…1 meter level | `ConsoleView`'s frame loop |
-| `--p` | 0…1 playback position | `.ch-seek` in `Transport`, `.ch-playhead` in `ChordBar` and `StemWaveform` |
+| `--p` | 0…1 playback position | `usePlayhead`, on `.ch-seek` in `Transport` and `.ch-playhead` in `ChordBar` and `StemWaveform` |
 | `--stem` | the stem's hue — `var(--ch-<key>)` from `stemHue()` in `design/stems.ts` | each stem row, strip and module; status dots |
 
 ```tsx

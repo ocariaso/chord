@@ -189,9 +189,14 @@ build** — the type check is not skippable in the Docker path.
 
 ## nginx
 
-[`web/nginx.conf`](../../web/nginx.conf) does four jobs:
+[`web/nginx.conf`](../../web/nginx.conf) does six jobs:
 
 ```nginx
+gzip on;                                 # the app shell and JSON; not stems, artwork or the event stream
+gzip_comp_level 5;
+gzip_min_length 1024;
+gzip_types text/css application/javascript application/json image/svg+xml;
+
 location /api/ {
     client_max_body_size 512m;           # uploads: nginx's default is 1 MB
 
@@ -204,6 +209,13 @@ location /api/ {
     proxy_set_header Connection "";      # SSE: don't send "close"
     proxy_read_timeout 1h;               # SSE: survive a long separation
 }
+
+location /assets/ {                     # hashed build output: cache forever
+    add_header Cache-Control "public, max-age=31536000, immutable";
+    try_files $uri =404;
+}
+
+location = /index.html { add_header Cache-Control "no-cache"; }   # names the current hashes
 
 location / { try_files $uri $uri/ /index.html; }   # SPA fallback
 ```
@@ -218,6 +230,13 @@ location / { try_files $uri $uri/ /index.html; }   # SPA fallback
   file is larger than the server accepts."* The server sets no limit of its own, so any other
   proxy put in front needs an equivalent setting. See
   [troubleshooting.md](troubleshooting.md#uploads-over-512-mb-fail).
+- **gzip** covers only the text types listed. Stems (`audio/flac`, `audio/wav`, the zip) and artwork
+  are already compressed or not worth it, and `text/event-stream` is left out so each progress event
+  leaves as soon as it's written rather than waiting on the compressor.
+- **Caching:** Vite puts a content hash in every file name under `/assets/`, so those are served
+  `immutable` for a year; `index.html`, which names the current hashes, is `no-cache`, so a rebuild
+  reaches the browser on its next load. A path the SPA fallback answers with `index.html` doesn't get
+  that header.
 
 ## Common commands
 

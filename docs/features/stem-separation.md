@@ -69,12 +69,19 @@ _separator: Separator | None = None
 def _get_separator() -> Separator:
     global _separator
     if _separator is None:
-        _separator = Separator(model=settings.demucs_model, device=_resolve_device())
+        _separator = Separator(model=settings.demucs_model, device=_resolve_device(), overlap=settings.demucs_overlap)
     return _separator
 ```
 
-A module-level singleton, constructed on first use. Loading the weights onto the device takes
-seconds, so this happens once per process and every later job reuses it.
+A module-level singleton. Loading the weights onto the device takes seconds, so this happens once
+per process and every later job reuses it — and it happens before the first job: the worker thread
+calls `pipeline.warm_up()` before it takes anything off the queue, which calls `load_model()` here.
+A job submitted during the warm-up waits on *Queued*.
+
+`overlap` is `DEMUCS_OVERLAP`: how much of each chunk is blended with its neighbours. Its default,
+`0.25`, is Demucs' own. Lowering it is an opt-in trade — a value such as `0.1` is less work and
+separates faster, with more audible seams where chunks meet. See
+[configuration](../operations/configuration.md#server-environment-variables).
 The same lazy-singleton pattern appears in [`chords.py`](../../server/app/pipeline/chords.py)
 for madmom's processors.
 
@@ -115,18 +122,23 @@ def separate(input_path, output_dir, on_progress=None) -> list[str]:
     for name, waveform in stems.items():
         if output_rate != separator.samplerate:
             waveform = julius.resample_frac(waveform, separator.samplerate, output_rate)
-        save_audio(waveform, str(partial_dir / f"{name}.wav"), samplerate=output_rate)
+        samples = prevent_clip(waveform, mode="rescale").t().cpu().numpy()
+        sf.write(str(partial_dir / f"{name}{STEM_SUFFIX}"), samples, output_rate, subtype="PCM_16")
 
     shutil.rmtree(output_dir, ignore_errors=True)
     partial_dir.rename(output_dir)
 ```
 
-One WAV per stem in `data/jobs/<job_id>/stems/`. `save_audio` is called with Demucs' defaults, so
-the files are 16-bit PCM whatever the source's depth, and a stem that would clip is scaled down as a
-whole rather than clipped. Output is **uncompressed** — about 10 MB per stem-minute at 44.1 kHz and
-11.5 MB at 48 kHz, so a twelve-minute 48 kHz track is roughly 830 MB across six stems. That size
-drives other decisions: the zip endpoint builds in memory, the browser must download all six before
-playback, and discard-on-leave deletes the directory.
+One 16-bit FLAC per stem in `data/jobs/<job_id>/stems/` (`STEM_SUFFIX = ".flac"`), whatever the
+source's depth. `prevent_clip(mode="rescale")` — Demucs' own, the one its `save_audio` applies —
+scales a stem that would clip down as a whole rather than clipping it, and libsndfile encodes the
+FLAC in-process, where `save_audio` would start an ffmpeg process per file. FLAC is lossless at about
+half WAV's bytes: the same stems as WAV are about 10 MB per stem-minute at 44.1 kHz and 11.5 MB at
+48 kHz, roughly 830 MB for a twelve-minute 48 kHz track. The size still drives other decisions: the
+browser must download all six before playback, and discard-on-leave deletes the directory. Export
+converts back: the WAVs the export dialog saves are decoded from these files as they stream — see
+[downloads](downloads.md) and
+[why](../architecture/decisions.md#stems-are-stored-as-flac-and-exported-as-wav).
 
 `separate()` returns the list of names it wrote, but `run_job` ignores the return value — the
 API reports the constant `STEM_NAMES` instead.
@@ -137,7 +149,7 @@ All six files go into `stems.partial/`, which is renamed to `stems/` only after 
 written. So **`stems/` is either complete or absent**, and that guarantee is what lets a resume trust
 it. Each run deletes any leftover `stems.partial/` before starting. Stems are written only after
 Demucs returns, so a pass abandoned by a cancel leaves an empty `stems.partial/` behind (until the job
-is resumed or discarded), while a crash in the middle of writing can leave some WAVs in it — never in
+is resumed or discarded), while a crash in the middle of writing can leave some FLACs in it — never in
 `stems/`.
 
 ### Sample rate
@@ -163,18 +175,21 @@ chunk's *start* (end events are ignored), the chunk's `segment_offset / audio_le
 the current model's pass already done — which holds because Demucs' default `jobs=0` runs chunks in
 order — and `(model_idx_in_bag + that) / models` extends it across a bag of models.
 
-`_separation_progress` in `pipeline.py` maps that fraction onto `_SEPARATION_PROGRESS = (0.1, 0.5)`
+`_separation_progress` in `pipeline.py` maps that fraction onto `_SEPARATION_PROGRESS = (0.1, 0.85)`
 and writes the row only when progress has moved `_PROGRESS_WRITE_STEP = 0.01` of the bar since the
-last write. That is one write per percentage point of the *overall* bar — at most 40 across
-separation, one per 2.5% of it. The bar moves in chunk-sized steps, so a short track moves in fewer,
-larger ones.
+last write. That is one write per percentage point of the *overall* bar — at most 75 across
+separation. The bar moves in chunk-sized steps, so a short track moves in fewer, larger ones.
+
+Separation fills most of the bar because tempo, chord and key detection run beside it, on the job's
+analysis thread, rather than after it. Their steps appear only for a step still running once the
+stems are written:
 
 | Progress | Stage message |
 | --- | --- |
 | 0.05 | *Downloading audio* (links only) |
-| 0.10 → 0.50 | *Separating stems*, measured |
-| 0.50 | *Detecting tempo* |
-| 0.60 | *Detecting chords and key* |
+| 0.10 → 0.85 | *Separating stems*, measured |
+| 0.85 | *Detecting tempo* — only if tempo detection hasn't finished |
+| 0.90 | *Detecting chords and key* — only if chord and key detection hasn't finished |
 | 1.00 | *Done* |
 
 The bar holds at 0.10 while the separator is constructed and its weights load, because no chunk has
@@ -203,9 +218,10 @@ A cancelled job can be resumed from its failure panel (*Resume job*), which call
 cleared, `attempt` is incremented, and the job is enqueued again. The worker is serial, so the new
 attempt starts only after the cancelled run has returned.
 
-`run_job` skips separation when `_stems_complete(stems_dir)` finds all six WAVs. Because `stems/` is
-written atomically, that means the previous attempt finished separating — the cancel came during
-tempo or chord detection. A cancel **during** separation leaves no `stems/`, and the resumed attempt
+`run_job` skips separation when `_stems_complete(stems_dir)` finds all six FLACs. Because `stems/` is
+written atomically, that means the previous attempt finished separating — the cancel came while its
+tempo or chord results were being waited for. A job directory from before stems were FLAC holds
+`.wav` files, which don't count. A cancel **during** separation leaves no `stems/`, and the resumed attempt
 separates from the start; there is no per-chunk or per-stem resume. Link jobs also skip the download
 when `original.mp3` is already there, and keep the title and author it found, which were written
 outside the attempt guard. The lifecycle is in [job lifecycle](../architecture/job-lifecycle.md).
@@ -219,8 +235,13 @@ Roughly, for a four-minute track:
 | Modern NVIDIA GPU | tens of seconds |
 | CPU | several minutes |
 
-The first job after a server start adds a few seconds of loading the weights onto the device, with
-the bar at 10%.
+Tempo, chord and key detection run at the same time, on their own thread, so on a GPU the job is
+done soon after the stems are. On a CPU they compete with Demucs for the same cores.
+
+The weights load before the first job, during the worker's warm-up, together with the beat
+tracker's numba compile and the madmom networks; a job submitted during it waits on *Queued*. Each
+step's seconds are logged — see
+[troubleshooting](../operations/troubleshooting.md#where-a-jobs-time-goes).
 
 ## Client side
 
@@ -241,7 +262,7 @@ download apart from the decode, or a slow connection from a stalled one. The *Ca
 leaves the job: it returns to the landing screen, and discard-on-leave deletes the finished job on
 the server ([why](../architecture/decisions.md#discard-on-leave)).
 
-Loading is memory-hungry. `fetchStem` holds each stem's whole WAV as an `ArrayBuffer` until it is
+Loading is memory-hungry. `fetchStem` holds each stem's whole FLAC as an `ArrayBuffer` until it is
 decoded, for all six at once, and the decoded buffers are 32-bit float — about 276 MB per stem for
 twelve minutes at 48 kHz. That is the reason for the [duration limit](ingest.md#the-duration-limit). Once decoding
 finishes, the waveform envelope for every stem is computed on the main thread.

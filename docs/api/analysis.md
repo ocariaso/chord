@@ -67,12 +67,12 @@ request it:
 2. Otherwise reads `original_filename`, `author` and `duration_seconds` from the row, derives
    `(track, artist)` candidates, and queries [lrclib.net](https://lrclib.net) — the precise
    `/get` endpoint first (needs a duration), then the fuzzy `/search`.
-3. If synced lyrics came back and `stems/vocals.wav` exists, cross-correlates expected vs.
+3. If synced lyrics came back and `stems/vocals.flac` exists, cross-correlates expected vs.
    measured vocal activity to find a constant time shift, and applies it clamped at zero.
 4. Writes the result — or `null` — to `analysis/lyrics.json`.
 
 **Latency on a cache miss is seconds**, spanning up to four sequential lrclib requests (10 s
-timeout each) plus reading and analyzing the vocals WAV. The handler is a plain `def`, so FastAPI
+timeout each) plus decoding and analyzing the vocals FLAC. The handler is a plain `def`, so FastAPI
 runs it in its threadpool: a slow lookup holds up only its own request, not other requests or open
 event streams. Every network failure degrades to "no lyrics" rather than an error. The cache has
 no invalidation; only a `PUT` replaces it.

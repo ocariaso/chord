@@ -2,7 +2,7 @@ import logging
 import queue
 import threading
 
-from app.pipeline.pipeline import run_job
+from app.pipeline.pipeline import run_job, warm_up
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,12 @@ def enqueue(job_id: str) -> None:
 
 
 def _consume() -> None:
+    # Before the first job, on this thread: a job queued meanwhile waits no longer than it would have loading the
+    # models itself, and every job after it starts at once.
+    try:
+        warm_up()
+    except Exception:  # noqa: BLE001 - the first job loads whatever is missing and reports its own failure
+        logger.exception("Model warm-up failed")
     while True:
         job_id = job_queue.get()
         try:

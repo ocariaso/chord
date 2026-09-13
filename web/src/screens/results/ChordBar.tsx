@@ -1,6 +1,8 @@
 import type { ChordSegment, Lyrics } from "../../api/client";
 import { resultsCopy } from "../../design/copy";
+import { useClockValue } from "../../hooks/useClockValue";
 import { useElementWidth } from "../../hooks/useElementWidth";
+import { usePlayhead } from "../../hooks/usePlayhead";
 import { useSeekDrag } from "../../hooks/useSeekDrag";
 import { currentLineIndex } from "../../utils/lyrics";
 import { formatTime } from "../../utils/time";
@@ -9,7 +11,8 @@ import { transposeChord } from "../../utils/transpose";
 interface ChordBarProps {
   /** undefined while loading, null when the job has no chord analysis. */
   segments: ChordSegment[] | null | undefined;
-  time: number;
+  /** The playback position in seconds, read every frame. */
+  getTime: () => number;
   duration: number;
   transpose: number;
   onSeek: (seconds: number) => void;
@@ -29,6 +32,24 @@ const UPCOMING_COLORS = [undefined, "var(--color-neutral-600)", "var(--color-neu
 const LABEL_PX_PER_CHARACTER = 7;
 const LABEL_PADDING_PX = 8;
 
+/** How many segments have ended by `time`. Segments are sorted and don't overlap. */
+function endedCount(segments: ChordSegment[], time: number): number {
+  let low = 0;
+  let high = segments.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (segments[middle].end <= time) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+/** The index of the segment playing at `time`, or −1 before the first chord and in a gap. */
+function activeSegment(segments: ChordSegment[], time: number): number {
+  const ended = endedCount(segments, time);
+  return ended < segments.length && time >= segments[ended].start ? ended : -1;
+}
+
 function LyricRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-wrap items-center" style={{ gap: "var(--space-4)" }}>
@@ -39,17 +60,24 @@ function LyricRow({ label, children }: { label: string; children: React.ReactNod
 }
 
 /** The chords and lyric section (design.md#chords-and-lyrics): the chord now and the next three, the strip, and the lyric row. */
-export function ChordBar({ segments, time, duration, transpose, onSeek, lyrics, onOpenLyricSheet, onAddLyrics, instrumental }: ChordBarProps) {
+export function ChordBar({ segments, getTime, duration, transpose, onSeek, lyrics, onOpenLyricSheet, onAddLyrics, instrumental }: ChordBarProps) {
   const [stripRef, stripWidth] = useElementWidth<HTMLDivElement>();
   const seekDrag = useSeekDrag(duration, onSeek);
 
   const list = segments ?? [];
-  const activeIndex = list.findIndex((segment) => time >= segment.start && time < segment.end);
-  // Before the first chord, in a gap, and in a no-chord segment alike, there is no chord to name.
-  const current = activeIndex >= 0 ? list[activeIndex].chord : NO_CHORD;
+  // The clock moves every frame, but the chords shown change only at a boundary and the readout once a second, so the
+  // bar renders on those alone.
+  const ended = useClockValue(() => endedCount(list, getTime()));
+  const activeIndex = useClockValue(() => activeSegment(list, getTime()));
+  const readout = useClockValue(() => formatTime(getTime()));
+  const lineIndex = useClockValue(() => (lyrics?.synced?.length ? currentLineIndex(lyrics.synced, getTime()) : -1));
+
+  // Before the first chord, in a gap, and in a no-chord segment alike, there is no chord to name. The index is a frame
+  // behind new segments, hence the fallback.
+  const current = activeIndex >= 0 ? (list[activeIndex]?.chord ?? NO_CHORD) : NO_CHORD;
   const nowChord = current === NO_CHORD ? resultsCopy.noValue : transposeChord(current, transpose);
   const upcoming = list
-    .slice(activeIndex + 1)
+    .slice(activeIndex >= 0 ? activeIndex + 1 : ended)
     .filter((segment) => segment.chord !== NO_CHORD)
     .slice(0, UPCOMING_CHORDS);
 
@@ -57,7 +85,7 @@ export function ChordBar({ segments, time, duration, transpose, onSeek, lyrics, 
   const trackLength = Math.max(duration, list.at(-1)?.end ?? 0);
   const leadingGap = list[0]?.start ?? 0;
   const trailingGap = trackLength - (list.at(-1)?.end ?? 0);
-  const playhead = trackLength > 0 ? Math.min(1, time / trackLength) : 0;
+  const playheadRef = usePlayhead<HTMLSpanElement>(() => (trackLength > 0 ? Math.min(1, getTime() / trackLength) : 0));
 
   let lyricRow: React.ReactNode;
   if (lyrics === undefined) {
@@ -67,11 +95,12 @@ export function ChordBar({ segments, time, duration, transpose, onSeek, lyrics, 
       </LyricRow>
     );
   } else if (lyrics?.synced?.length) {
-    const lineIndex = currentLineIndex(lyrics.synced, time);
+    // The index is a frame behind lyrics that were just replaced, so it's kept inside them.
+    const line = lyrics.synced[Math.min(Math.max(0, lineIndex), lyrics.synced.length - 1)];
     lyricRow = (
       <LyricRow label={resultsCopy.lyric}>
         {/* Before the first line starts, that line shows dimmed as what's coming. */}
-        <span className={lineIndex >= 0 ? "ch-lyric" : "ch-lyric-next"}>{lyrics.synced[Math.max(0, lineIndex)].text}</span>
+        <span className={lineIndex >= 0 ? "ch-lyric" : "ch-lyric-next"}>{line.text}</span>
       </LyricRow>
     );
   } else if (lyrics?.plain) {
@@ -107,7 +136,7 @@ export function ChordBar({ segments, time, duration, transpose, onSeek, lyrics, 
           </span>
         ))}
         <span className="ch-value-sm" style={{ marginLeft: "auto" }}>
-          {formatTime(time)} / {formatTime(duration)}
+          {readout} / {formatTime(duration)}
         </span>
       </div>
       {segments === null ? (
@@ -121,8 +150,7 @@ export function ChordBar({ segments, time, duration, transpose, onSeek, lyrics, 
             const widthPx = trackLength > 0 ? ((segment.end - segment.start) / trackLength) * stripWidth : 0;
             const showLabel =
               segment.chord !== NO_CHORD && widthPx >= label.length * LABEL_PX_PER_CHARACTER + LABEL_PADDING_PX;
-            const isPast = activeIndex >= 0 ? index < activeIndex : segment.end <= time;
-            const className = index === activeIndex ? "ch-chord is-current" : isPast ? "ch-chord is-past" : "ch-chord";
+            const className = index === activeIndex ? "ch-chord is-current" : index < ended ? "ch-chord is-past" : "ch-chord";
             return (
               <span key={segment.start} className={className} style={{ flex: segment.end - segment.start }}>
                 {showLabel ? label : null}
@@ -130,7 +158,7 @@ export function ChordBar({ segments, time, duration, transpose, onSeek, lyrics, 
             );
           })}
           {trailingGap > 0 && <span style={{ flex: trailingGap }} />}
-          <span className="ch-playhead" style={{ "--p": playhead } as React.CSSProperties} />
+          <span ref={playheadRef} className="ch-playhead" />
         </div>
       )}
       {lyricRow}

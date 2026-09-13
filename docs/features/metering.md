@@ -155,10 +155,9 @@ The JSX renders the same initial values every time — `--l: 0`, the needle's re
 
 The reasons are the design source's: a custom-property write per frame is cheap and a React render
 per frame is not, and the meters have to keep falling after playback pauses, when nothing else
-re-renders. The saving is narrower than that suggests, though. While playing, `ResultsScreen`
-already re-renders the active view every frame for the playback time (see
-[rendering cost](results-views.md#rendering-cost)); the bypass keeps meter values out of those
-renders and keeps the meters alive while paused, but it does not make playback render-free.
+re-renders. The playheads and time readouts work the same way — the position is read from the
+engine where it's shown, never stored (see [rendering cost](results-views.md#rendering-cost)) — so
+a playing Console or Analog view renders nothing at frame rate.
 
 The Mixer view runs no meter loop and never calls `readMeters`. The analysers stay in the graph in
 every view regardless. Switching views unmounts the outgoing view, so followers and holds start

@@ -17,7 +17,30 @@ six. See [audio-playback.md](audio-playback.md).
 open. Decoded audio is 32-bit float at the context's sample rate: about 23 MB per stereo stem per
 minute at 48 kHz, so roughly 1.7 GB for a twelve-minute track. There is no streaming path and no
 progressive start, and that number is why the
-[duration limit](#a-duration-limit-checked-before-separation) exists.
+[duration limit](#a-duration-limit-checked-before-separation) exists. Stems arrive as
+[FLAC](#stems-are-stored-as-flac-and-exported-as-wav), which shortens the download but not the
+decode or the memory.
+
+## Stems are stored as FLAC and exported as WAV
+
+**Constraint:** every stem is downloaded whole before playback can start — about 10 MB per
+stem-minute at 44.1 kHz as WAV, six at a time — while export promises *Uncompressed WAV, exactly as
+separated*, and no feature may be removed to save bytes.
+
+**Choice:** `separate()` writes each stem as a 16-bit FLAC in-process with libsndfile
+(`soundfile.write(..., subtype="PCM_16")`), after Demucs' own `prevent_clip(mode="rescale")` — the
+clip handling `save_audio` applied, without the ffmpeg process `save_audio` would start per FLAC
+file. Lossless, at about half WAV's bytes. Playback fetches `stems/<name>.flac` as stored, and
+`decodeAudioData` reads it natively. Export fetches `stems/<name>.wav`, which the server converts as
+it streams — a 44-byte header, then the FLAC decoded a block at a time — and the zip carries the same
+converted WAVs, deflated at level 1 and streamed. A lossless 16-bit FLAC decodes to exactly the
+separated samples, so the WAV the user saves is the one Demucs' output would have been.
+
+**Cost:** encoding time on the worker thread after every separation, and a decode on the server for
+every export — twice for a stem saved alone and in the zip. Still 16-bit whatever the source's
+depth. A job directory written before the switch holds `.wav` stems, which `_stems_complete` doesn't
+recognise and neither stem route serves, so resuming such a job separates it again. See
+[../features/downloads.md](../features/downloads.md).
 
 ## Waveforms are CSS clip-path envelopes
 
@@ -87,6 +110,34 @@ state. See [audio-playback.md](audio-playback.md#metering).
 
 In exchange it works on any origin, needs no second worklet, and the Mixer view pays nothing.
 
+## The playback position is read, not stored
+
+**Constraint:** the playheads, the seek slider, the time readouts, the current chord and the lyric
+line all follow a clock that moves every frame. Kept in `PlayerState`, that clock re-rendered the
+whole results screen — bars, active view and transport — at frame rate while playing.
+
+**Choice:** `PlayerState` has no time. `ResultsScreen` passes stable `getTime` and `getProgress`
+callbacks over the engine's clock, and each display reads them itself:
+[`usePlayhead`](../../web/src/hooks/usePlayhead.ts) writes `--p` onto its element every frame, as
+the meters write `--l`, and [`useClockValue`](../../web/src/hooks/useClockValue.ts) re-reads a
+derived primitive every frame — the elapsed `m:ss`, the active chord index, the lyric line — and
+renders only when it changes. Under reduced motion `getTime` floors to whole seconds, so every
+reader steps together.
+
+**Cost:**
+
+- **A loop per display.** Every playhead and clock value runs its own `requestAnimationFrame`
+  callback, playing or paused — a Mixer runs one per stem row besides the chord bar's and the
+  transport's — each doing a read and a compare per frame.
+- **A frame of lag.** A clock value is recomputed on the next frame, so for one render after new
+  segments or replaced lyrics it indexes the old ones; `ChordBar` guards those reads.
+- **Position is invisible to render.** An element driven by `usePlayhead` must not set `--p` in its
+  JSX, or React writes it back, and a derived value must be a primitive, or it renders every frame.
+- Displays no longer share one sampled time per render, so two of them can differ by a frame.
+
+In exchange playback renders a component only when what it shows changes — the chord bar on a chord,
+lyric line or second, the transport's readouts once a second.
+
 ## A single serial worker thread, not a task queue
 
 **Constraint:** Demucs wants the whole GPU; two concurrent separations are slower than two
@@ -102,7 +153,41 @@ de-duplicates entries either — a job id can sit in the queue twice — so `run
 `queued` row, and the copy that reaches the worker after the job has run returns without doing
 anything (see [job-lifecycle.md](job-lifecycle.md#resuming)). Multiple uvicorn workers would
 break the model outright (one queue per process). Replacing this with Celery/RQ + Redis is the
-obvious upgrade path and the reason the pipeline modules take no database handles.
+obvious upgrade path and the reason the pipeline modules take no database handles. The one second
+thread a job gets is its [analysis thread](#analysis-runs-beside-separation).
+
+## Analysis runs beside separation
+
+**Constraint:** tempo, chord and key detection read only the original mix, never the stems, and are
+CPU work (librosa, madmom). On a GPU, separation of a four-minute track takes tens of seconds, so
+analysis run after it was most of the wait. And the first job after a start paid for loading every
+model, including about 19 s of numba compiling librosa's beat tracker.
+
+**Choice:** when a job enters `separating`, `run_job` starts one `chord-analysis` thread
+(`ThreadPoolExecutor(max_workers=1)`). It decodes the original once
+([`decode.py`](../../server/app/pipeline/decode.py), mono 44.1 kHz — the shape madmom's models take
+as it is) and runs tempo detection, then chord and key detection, on that one decode, while the worker
+thread runs Demucs. After separation the worker collects the results in stage order, writing
+*Detecting tempo* or *Detecting chords and key* only for a step still running, and writes
+`chords.json`, `key.json` and the final row itself, so an abandoned run's analysis writes nothing.
+Before its first job the worker calls `warm_up`: the Demucs weights, the beat tracker's compile and
+the madmom networks. See [job-lifecycle.md](job-lifecycle.md#progress-values).
+
+**Cost:**
+
+- **CPU contention.** On a CPU-only host Demucs and analysis compete for the same cores, so
+  separation slows by some of what analysis takes; the gain is mostly on a GPU.
+- **Analysis can't be cancelled.** `shutdown(cancel_futures=True)` drops only steps that haven't
+  started. A cancelled, superseded or failed run's decode, tempo or chord step keeps running,
+  unread, and can overlap the next job.
+- **A failure waits for separation.** A decode, tempo or chord error surfaces only when its future
+  is collected, after the whole separation has been spent.
+- **Stage times measure the wait, not the work.** The processing screen times a stage by the
+  snapshots it saw, so *Separating stems* can include most of analysis, a step that finished during
+  separation shows done with no time, and a job can go from `separating` to `done` without ever
+  reporting `analyzing`.
+- The whole decoded track sits in memory while Demucs holds its own copy, and the warm-up delays a
+  job submitted right after a start, which waits on *Queued*.
 
 ## The database row is the only progress channel
 
@@ -114,8 +199,8 @@ change. Control travels the same way in reverse: cancel and resume are row write
 discovers them by re-reading the row. No queues, no pub/sub, no shared memory between the two.
 
 **Cost:** up to 500 ms of latency, one SELECT per subscriber per tick, and a blocking SQLite read
-from inside the async event loop. Measured separation progress adds up to 40 writes per job, one
-per 1%, and the worker re-reads the row every 2 s during separation to notice a cancel. Trivially
+from inside the async event loop. Measured separation progress adds up to 75 writes per job, one
+per 1% of the bar, and the worker re-reads the row every 2 s during separation to notice a cancel. Trivially
 correct and trivially debuggable (`sqlite3` the file and you can see exactly what the UI will
 show), which is worth more here than the efficiency.
 
@@ -130,10 +215,12 @@ callback as each chunk starts, and that callback re-reads the row at most every 
 abandon the pass. Nothing half-written survives, because stems go to `stems.partial/` and are
 renamed into place only once all six exist.
 
-**Cost:** a cancel during a download, tempo detection or chord detection still burns that whole
-stage. During separation it takes effect at the first chunk start at least 2 s after the previous
-check — up to that interval plus one chunk of work. The UI reports *Cancelled* immediately, which
-slightly overstates what happened. See [job-lifecycle.md](job-lifecycle.md#cancelling).
+**Cost:** a cancel during a download still burns the whole download. Tempo and chord detection run
+on the job's [analysis thread](#analysis-runs-beside-separation) and can't be stopped at all: the run
+returns at its next checkpoint, but a step already running finishes on its own, unread, possibly
+while the next job separates. During separation the cancel takes effect at the first chunk start at
+least 2 s after the previous check — up to that interval plus one chunk of work. The UI reports
+*Cancelled* immediately, which overstates what happened. See [job-lifecycle.md](job-lifecycle.md#cancelling).
 
 ## An attempt counter makes resume safe
 
@@ -145,7 +232,7 @@ which a status check alone would read as "carry on".
 reads it once at the start; every write it makes is `UPDATE … WHERE id = ? AND attempt = ? AND
 status != 'cancelled'`, and every checkpoint asks `_is_superseded` — row gone, `cancelled`, or a
 different attempt. The resumed run reuses what the cancelled one finished: `original.mp3` for a
-URL job, and `stems/` when all six WAVs are present, which the rename-into-place makes
+URL job, and `stems/` when all six FLACs are present, which the rename-into-place makes
 trustworthy.
 
 **Cost:** a superseded write is dropped silently — `_update_job` never checks how many rows it
@@ -215,8 +302,8 @@ pasted, without the offset correction a lookup's synced lyrics get.
 
 ## Discard-on-leave
 
-**Constraint:** no accounts, no sessions, no storage budget. Uncompressed stems are hundreds of
-MB per song.
+**Constraint:** no accounts, no sessions, no storage budget. Lossless stems run to a hundred MB or
+more per song.
 
 **Choice:** the browser fires `navigator.sendBeacon` at the discard endpoint on `pagehide` and on
 effect cleanup; the server deletes the row and the directory for a finished job.
@@ -401,8 +488,9 @@ than the engine. `PlayerState` itself changes only through one reducer.
 
 **Cost:** verbosity — `Transport` alone takes twelve props — and every new piece of state
 touches several signatures. Because `stems` and `controls` are new objects on every render,
-memoizing a view would gain nothing, and the whole results tree re-renders on every clock tick
-during playback. In exchange the data flow is completely explicit, and no descendant can mutate
+memoizing a view would gain nothing: any change to playback state renders the whole results tree.
+The clock is the exception — it is [read, not stored](#the-playback-position-is-read-not-stored),
+so playback itself doesn't render the tree; a control change does. In exchange the data flow is completely explicit, and no descendant can mutate
 playback except through a callback it was handed.
 
 ## Three result views over one state
@@ -438,16 +526,18 @@ waveform; `MixerView` hides the column labels whose columns are gone, and `Analy
 dividers between its wrapped groups; the analysis bar and the full chord bar stay; and only the
 transport changes markup, to `.ch-m-bar` with play,
 seek and a *Click* metronome chip. **The whole app is one viewport and never scrolls**
-([Responsive](../conventions/design.md#responsive)), by the owner's standing request: screens share
-out the height instead of overflowing, Console strips and Analog modules narrow below their floors
-instead of scrolling, the Analog dials shrink and hide under 900px of height, and only a phone's
-stem panel scrolls. This replaced `ScaleToFit`, which kept fixed-width layouts intact by
-transform-scaling them, text included, and later a phone layout built from the harness's phone
-frame, which the template's written rules outranked ([why](#the-ui-was-built-from-a-design-template)).
+([Responsive](../conventions/design.md#responsive)), by the owner's standing request, and nothing
+in it is cropped or hidden: screens share out the height instead of overflowing, and a results view
+that doesn't fit — too short, or narrower than its floors add up to — is scaled down whole by
+`FitToPanel`; only a phone's stem panel scrolls. An earlier `ScaleToFit` transform-scaled
+fixed-width layouts all the time, text included, and was replaced by reflow, then by a phone layout
+built from the harness's phone frame, which the template's written rules outranked
+([why](#the-ui-was-built-from-a-design-template)). `FitToPanel` brings scaling back only as the
+last resort for a window too small for a view, and never below 720px.
 
-**Cost:** below about 1000px wide, Console strips and Analog modules clip their own controls, and
-the dial type drops under 9px; a window under 900px tall shows no output dials at all; a very
-short window clips the bottom of the view panel rather than scroll to it. On a narrow screen Pan, Tone, every meter, speed and A–B looping are unreachable — the
+**Cost:** in a window too small for a view, that view — its text, knobs and hit targets included —
+is drawn smaller than the design's sizes: the Console and Analog views below 1020px wide, and any
+view in a short window. On a narrow screen Pan, Tone, every meter, speed and A–B looping are unreachable — the
 `.ch-m-bar` has no speed or loop chip, and no time readouts. A speed or loop set before the window
 narrowed stays in force with no control to change it. The stacked rows make a long page: six stems,
 four lines each, under the analysis and chord bars. Resizing across the breakpoint switches the

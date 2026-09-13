@@ -40,7 +40,8 @@ export function ResultsTopbar({ job, duration, stemCount, view, panelId, onViewC
   }
 
   return (
-    <div className="ch-topbar">
+    // On the page ground, not a card: the bottom hairline alone sets the bar off.
+    <div className="ch-topbar" style={{ background: "transparent" }}>
       <CoverArt jobId={job.id} hasThumbnail={job.has_thumbnail} size={44} radius={6} />
       <div className="ch-topbar-title">
         {/* An h1 for the document outline; letter-spacing undoes the heading rule so it reads like the title class alone. */}

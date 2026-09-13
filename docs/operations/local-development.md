@@ -94,7 +94,7 @@ Two things happen under `npm run dev` that a production build never does:
 
 - **Stems download twice.** `StrictMode` runs `ResultsScreen`'s mount effect twice, so it creates a
   `PlaybackEngine`, disposes it, and creates another. Nothing aborts the first engine's fetches —
-  they finish and are thrown away — so a finished job's six WAVs cross the network twice.
+  they finish and are thrown away — so a finished job's six FLACs cross the network twice.
 - **Editing code can discard the job you're watching.** The discard beacon is sent from an effect
   cleanup in `useJobEvents`, and React Fast Refresh re-runs effects when you save a module `App`
   depends on — `App.tsx` itself, or a non-component module such as `useJobEvents.ts`. A running

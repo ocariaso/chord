@@ -43,6 +43,6 @@ data/db.sqlite3           # job metadata
 data/models_cache/        # TORCH_HOME: demucs' fallback download cache, normally empty
 data/jobs/<job_id>/
   original.mp3
-  stems/{vocals,drums,bass,guitar,piano,other}.wav
+  stems/{vocals,drums,bass,guitar,piano,other}.flac
   analysis/{chords.json,key.json}
 ```

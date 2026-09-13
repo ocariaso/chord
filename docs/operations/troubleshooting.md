@@ -204,12 +204,37 @@ audio *starts* — so the bar holds at 10% until the second chunk begins, a noti
 On a server's first job it holds a little longer, while the separator loads its weights onto the
 device.
 
-### The first job is slower than the rest
+### The first job after a start waits on *Queued*
 
-The first separation after a start constructs the Demucs separator, loading the weights onto the
-device — a few seconds, once per process. Nothing downloads: the weights are in the image. A first
-job that sits at 10% for much longer is downloading a model the image wasn't built with; see the
-next entry.
+Before it takes its first job, the worker thread warms up: it loads the Demucs weights onto the
+device, runs librosa's beat tracker once so numba compiles it (about 19 s on its own), and builds the
+madmom networks. A job submitted meanwhile shows *Queued* at 0% until that finishes; the server log
+reports `Model warm-up took N.N s`. Nothing downloads: the weights are in the image. If the warm-up
+fails, the failure is logged and the first job loads what's missing itself. A first job that sits
+at 10% for much longer is downloading a model the image wasn't built with; see the next entry.
+
+### Where a job's time goes
+
+Every pipeline step is timed in the server log, whether it succeeded or raised:
+
+```bash
+docker compose logs -f server
+```
+
+```text
+… INFO app.pipeline.pipeline: Job 3f2a…: download took 6.1 s
+… INFO app.pipeline.pipeline: Job 3f2a…: analysis decode took 1.2 s
+… INFO app.pipeline.pipeline: Job 3f2a…: tempo detection took 3.4 s
+… INFO app.pipeline.pipeline: Job 3f2a…: chord and key detection took 9.8 s
+… INFO app.pipeline.pipeline: Job 3f2a…: separation took 41.0 s
+… INFO app.pipeline.pipeline: Job 3f2a…: finished in 49.5 s
+```
+
+The decode, tempo and chord lines come from the analysis thread, which runs beside separation, so
+they can print before separation's and their seconds overlap it. The processing screen's stage times
+are no substitute: they measure how long each stage was the one on screen, and a step that finished
+during separation shows done with no time at all. Outside Docker the same lines go to uvicorn's
+stderr.
 
 ### "You are sending unauthenticated requests to the HF Hub"
 
@@ -225,10 +250,12 @@ reaches the Hub, since it is offline; demucs downloads it from its legacy repo i
 
 Cancellation is **cooperative**. `POST /cancel` writes `status=cancelled`, and the worker finds
 out at its next check. During separation that check runs inside Demucs' progress callback, at most
-every 2 s, and abandons the pass at the next chunk. A yt-dlp download, tempo detection or chord
-analysis in flight runs to completion first; its results are thrown away. The *Cancelled* panel
-appears straight away, so the worker may still be busy: a job queued behind it — or this job,
-resumed — waits for that stage to end. By design:
+every 2 s, and abandons the pass at the next chunk. A yt-dlp download in flight runs to completion
+first; its results are thrown away. Tempo and chord detection run on a thread of their own beside
+separation and can't be stopped at all: the run returns, but a step already running finishes
+unread — while a job queued behind it, or this job resumed, is already separating on the same
+machine. The *Cancelled* panel appears straight away, so the worker may still be busy with a
+download. By design:
 [../architecture/decisions.md](../architecture/decisions.md#cooperative-cancellation).
 
 ### Resume repeats work
@@ -271,11 +298,12 @@ through `pagehide`. There is no history, by design:
 
 ### "Loading stems…" takes a long time
 
-After separation finishes, the browser downloads all six WAVs in parallel and decodes them before
+After separation finishes, the browser downloads all six FLACs in parallel and decodes them before
 the results appear — there is no streaming path. The processing screen holds at 100% on
 *Loading stems…* for the whole wait, downloading included. There is no byte
 count, so a slow download looks exactly like a slow decode; the browser's network panel tells them
-apart. That's ~250 MB for a four-minute song at 44.1 kHz, and more at 48 kHz or for a longer track.
+apart. That's roughly 125 MB for a four-minute song at 44.1 kHz — about half the WAV size — and more
+at 48 kHz or for a longer track.
 Inherent to the Web Audio approach:
 [../architecture/decisions.md](../architecture/decisions.md#web-audio-instead-of-audio-elements).
 Under `npm run dev` every stem downloads twice — see
@@ -427,10 +455,12 @@ else changes.
 
 ### "Preparing zip…" takes a long time
 
-`GET /download` builds the whole archive in server memory before sending a byte, and the browser
-then buffers all of it before saving — so there's no progress in between, and a long track's zip
-runs to hundreds of MB on both ends. Per-stem downloads in the same dialog skip the server-side
-build. See [../api/artifacts.md](../api/artifacts.md#get-jobsjob_iddownload).
+`GET /download` streams the archive as it builds it — each stem decoded from its FLAC to WAV and
+deflated at level 1 on the way — so the server starts sending at once and holds none of it. But the
+response has no `Content-Length`, and the browser buffers all of it before saving, so the button
+reads *Preparing zip…* with no progress until the last byte arrives; a long track's zip runs to
+hundreds of MB. The server does the decode and compression while you wait, on one threadpool thread.
+Per-stem downloads in the same dialog skip the compression. See [../api/artifacts.md](../api/artifacts.md#get-jobsjob_iddownload).
 
 ## Development
 

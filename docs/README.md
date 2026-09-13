@@ -70,7 +70,7 @@ docs/
 │   ├── metering.md                post-fader meters, true peak, loudness, correlation
 │   ├── speed-and-loop.md          pitch-preserving speed and A–B loops
 │   ├── transpose.md               client-side chord/key transposition
-│   └── downloads.md               the export dialog: per-stem WAVs and the zip
+│   └── downloads.md               the export dialog: per-stem WAVs and the zip, converted from FLAC
 │
 ├── api/
 │   ├── README.md                  conventions, base paths, endpoint summary

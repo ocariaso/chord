@@ -13,6 +13,9 @@ class Settings(BaseSettings):
 
     demucs_model: str = "htdemucs_6s"
     device: str = "cuda"
+    # How much of each chunk Demucs blends with its neighbours; 0.25 is Demucs' own default. Lower is faster, with more
+    # audible seams where chunks meet, so the default keeps separation quality as it was.
+    demucs_overlap: float = 0.25
 
     enable_chord_detection: bool = True
 

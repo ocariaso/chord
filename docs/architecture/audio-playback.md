@@ -1,6 +1,6 @@
 # Audio playback
 
-The mixer's defining constraint: six separate WAV files must play as one piece of music, with
+The mixer's defining constraint: six separate FLAC files must play as one piece of music, with
 sample-accurate alignment, while the user mutes, solos, re-levels, pans and tilts them live —
 and loops a region, or changes speed without changing pitch.
 
@@ -316,7 +316,8 @@ Consequences:
 - **160 bins, whatever the length**, so detail per bin shrinks as tracks get longer: a
   twelve-minute track is 4.5 s per bin. The bars inside are decoration, not samples.
 - **A playhead on every row, but no seeking.** Each waveform carries a `.ch-playhead` at `--p`, in a
-  wrapper so the envelope's `clip-path` doesn't cut it away. The chord strip and the transport's
+  wrapper so the envelope's `clip-path` doesn't cut it away. `usePlayhead` writes that `--p` every
+  frame, straight onto the element, so a moving playhead renders nothing. The chord strip and the transport's
   seek slider are the two places to seek; a waveform is `aria-hidden`.
 - **Phones draw them too.** Below 720px the stylesheet stacks each Mixer row and gives the
   waveform a full-width line of its own, last.

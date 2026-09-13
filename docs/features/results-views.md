@@ -13,14 +13,14 @@ of three views — **Mixer**, **Console** and **Analog** — all drawn from the 
 
 ```
 ResultsScreen                 the engine, PlayerState, and what the state model leaves to the app
- ├─ ScreenCard (.ch-app)
+ ├─ .ch-app column            on the page ground, no card: hairlines divide the parts
  │   ├─ ResultsTopbar         cover, title, meta, Mixer/Console/Analog tabs, Export stems, New track
  │   ├─ AnalysisBar           key + confidence, transpose, tempo, master level
  │   ├─ ChordBar              current and next chords, chord strip, lyric row
- │   ├─ view panel            MixerView (StemRow) | ConsoleView (ConsoleStrip, MasterStrip)
+ │   ├─ view panel            FitToPanel → MixerView (StemRow) | ConsoleView (ConsoleStrip, MasterStrip)
  │   │                          | AnalogView (OutputDial, AnalogModule)
  │   └─ Transport             play, time, seek, speed, loop, metronome — play, seek and Click below 720px
- ├─ ExportDialog              outside the card
+ ├─ ExportDialog              outside the column
  └─ LyricsDialog
 ```
 
@@ -42,7 +42,11 @@ are stateless apart from their meter refs. The design's state model — [State](
 | `master` | 0…1, shared by the analysis bar's fader and the Console master strip |
 | `view` | `"mixer"`, `"console"` or `"analog"` |
 | `transpose`, `metronome` | the global controls the state model knows about |
-| `playing`, `time`, `duration` | transport display, polled from the engine |
+| `playing`, `duration` | transport display, read back from the engine |
+
+The playback position is **not** state. `ResultsScreen` hands `getTime` and `getProgress` — stable
+callbacks over the engine's clock — to the chord bar, the transport and the Mixer, and each display
+reads them every frame; see [rendering cost](#rendering-cost).
 
 What the state model leaves to the app sits beside the reducer in `useState`:
 
@@ -54,9 +58,9 @@ What the state model leaves to the app sits beside the reducer in `useState`:
 | `chordSegments`, `lyrics`, `hasVocals` | analysis results |
 | `exportOpen`, `lyricsDialog` | which dialog is open |
 
-Every change to `PlayerState` is one of eight reducer actions. An action that changes nothing
-returns the state it was given, so the frame loop's time update renders nothing while playback is
-paused, and `stemsLoaded` after a retry keeps the settings of the stems already on the mixer.
+Every change to `PlayerState` is one of seven reducer actions. An action that changes nothing
+returns the state it was given, so a redundant dispatch renders nothing, and `stemsLoaded` after a
+retry keeps the settings of the stems already on the mixer.
 
 Each render derives a `StemDisplay[]` — the `StemState`, its name, its `--stem` hue, `audible` (the
 design's `audible()`), `silent` and the waveform envelope — and passes it with a `StemControls`
@@ -132,9 +136,9 @@ on the transport's loop chip — and the synced lyric line is plain text, not a 
 
 ### Transport
 
-[`Transport.tsx`](../../web/src/screens/results/Transport.tsx) is the last thing in the card. The
-page never scrolls and the card fills the viewport, so the transport is always on screen; the view
-panel above it takes whatever height is left.
+[`Transport.tsx`](../../web/src/screens/results/Transport.tsx) is the last thing in the results,
+set off by its top hairline alone. The page never scrolls and the results fill the viewport, so the
+transport is always on screen; the view panel above it takes whatever height is left.
 
 Left to right: play/pause, elapsed time, the seek slider, duration, the speed chip, the loop chip
 and the metronome chip. The seek slider is a 4 px bar inside a full-height transparent wrapper that
@@ -184,9 +188,9 @@ The Mixer has **no pan or tone controls**.
 
 [`ConsoleView.tsx`](../../web/src/screens/results/ConsoleView.tsx): a `.ch-striprow` of
 [`ConsoleStrip`](../../web/src/screens/results/ConsoleStrip.tsx)s beside a
-[`MasterStrip`](../../web/src/screens/results/MasterStrip.tsx), filling the view panel's height. The
-row never scrolls: strips share the width and narrow below `.ch-strip`'s 112 px floor when they must,
-clipping their own controls at the edge, and their faders shrink with the window's height.
+[`MasterStrip`](../../web/src/screens/results/MasterStrip.tsx), growing into the view panel's spare
+height. `.ch-strip` holds a 112 px floor so a strip never collapses under its own controls, and each
+fader keeps a 170 px minimum; a window too narrow or short for that scales the whole view down.
 
 Each stem strip is a `.ch-panel.ch-strip` — `.is-active` (the raised panel with an accent hairline)
 when soloed, otherwise `.is-off` (55% opacity) when muted — holding the label, a state label, a
@@ -219,13 +223,13 @@ up with them — readouts for Output (the master fader in dB), Peak (true peak, 
 of [`AnalogModule`](../../web/src/screens/results/AnalogModule.tsx)s.
 
 The five dials — Output left, Output right, True peak (dBTP), Loudness (LUFS) and Correlation — sit
-in a grid of `repeat(5, minmax(0, 1fr))`, each SVG capped at 14% of the viewport's height, and the
-whole dial section is hidden in a window under 900 px tall, where it and the modules can't both fit.
-[`OutputDial`](../../web/src/screens/results/OutputDial.tsx) draws its scale text inside a 200×140
-SVG viewBox, so under about 180 px per dial that text drops below 9 px — accepted over scrolling. Whenever the output is
+in a grid of `repeat(5, minmax(180px, 1fr))` under a hairline, with no panel around them. The 180 px
+floor is load-bearing: [`OutputDial`](../../web/src/screens/results/OutputDial.tsx) draws its scale
+text inside a 200×140 SVG viewBox, and any narrower puts that text under 9 px. The dials and the
+modules are always both shown; a window too small for them scales the whole view. Whenever the output is
 silent, paused included, Correlation reads `—` and its needle eases back to centre.
 
-Each stem gets a `.ch-panel.ch-module` (narrowing below its 120 px floor rather than scrolling) —
+Each stem gets a `.ch-panel.ch-module` (120 px floor) —
 `.is-active` when soloed, otherwise `.is-off` when muted, solo first as on the Console strips:
 
 | Control | Size | Range and readout |
@@ -268,21 +272,29 @@ at that speed, and the loop keeps looping until a seek lands outside it.
 
 ## Reduced motion
 
-With `prefers-reduced-motion: reduce`, `ResultsScreen` stores `Math.floor(time)` instead of the
-exact position ([Accessibility](../conventions/design.md#accessibility)). The playhead, the time readouts, the current chord and the lyric
+With `prefers-reduced-motion: reduce`, `ResultsScreen`'s `getTime` returns `Math.floor(time)`
+instead of the exact position ([Accessibility](../conventions/design.md#accessibility)). The playhead, the time readouts, the current chord and the lyric
 line then **step once a second** — which also means the chord and lyric highlights can trail the
 audio by up to a second. The meters and needles are not affected and keep moving every frame.
 
 ## Rendering cost
 
-`ResultsScreen` runs its own `requestAnimationFrame` loop that reads `engine.getCurrentTime()` and
-dispatches it, pausing the engine when `hasEnded` reports it ran off the end. While playing, that is
-a new time every frame, so **the whole results tree re-renders at frame rate**: topbar, analysis
-bar, chord bar, the active view and the transport. None of them is memoized, and `stems` and
-`controls` are rebuilt on every render. While paused the reducer returns the same state and React
-skips the work.
+**Playback doesn't re-render the results screen.** The position never enters React state
+([why](../architecture/decisions.md#the-playback-position-is-read-not-stored)); each display reads the
+engine's clock itself, every animation frame:
 
-The meters are the deliberate exception, written straight to the DOM; see
+| Display | Reads | Renders |
+| --- | --- | --- |
+| chord strip playhead, each Mixer waveform's playhead, the seek slider's fill | `usePlayhead` writes `--p` onto the element | never — a DOM write, skipped when unchanged |
+| the chord bar: current and upcoming chords, strip highlight, `m:ss` readout, lyric line | four `useClockValue`s | on a chord boundary, a lyric line or a whole second |
+| the transport's elapsed time, the seek slider's `aria-valuenow` and `aria-valuetext` | `useClockValue` in `ElapsedTime` and `SeekSlider` | once a second |
+
+`ResultsScreen`'s own `requestAnimationFrame` loop only pauses the engine when `hasEnded` reports it
+ran off the end. What does render the whole tree is a change to playback state — a fader drag, a
+mute, a view switch: nothing is memoized, and `stems` and `controls` are rebuilt on every render.
+
+The cost is a frame loop per display, playing or paused — a Mixer runs one per stem row — each a
+clock read and a compare. The meters take the same route, written straight to the DOM; see
 [why the meters bypass React](metering.md#why-the-meters-bypass-react).
 
 ## Known gaps
@@ -290,8 +302,7 @@ The meters are the deliberate exception, written straight to the DOM; see
 - Phones get the Mixer only: no meters, tone, pan, speed or loop.
 - A soloed, muted stem reads *Soloed* and lifts on the Console and Analog views, but is silent.
 - No reset gesture: a double-click does nothing, and no key centres Tone or Pan.
-- The page never scrolls, so a window too small for a view clips it instead: strips and modules
-  narrow past their floors, the Analog dials hide under 900 px of height, and only a phone's stem
-  panel scrolls.
+- The page never scrolls, so a window too small for a view scales it down instead — its text and
+  hit targets included — rather than cropping it; only a phone's stem panel scrolls.
 - The view switch unmounts the outgoing view, so meter holds and needle positions restart when you
   come back to it.

@@ -12,8 +12,8 @@ string union in [`client.ts`](../../web/src/api/client.ts).
 | --- | --- | --- |
 | `queued` | the create endpoints, at INSERT; the `resume` endpoint | row exists, worker hasn't started this attempt |
 | `fetching` | `run_job` | yt-dlp is downloading (URL jobs only, and not on a resume that already has the audio) |
-| `separating` | `run_job` | Demucs is running — **and tempo detection, later in the same state** |
-| `analyzing` | `run_job` | madmom chord/key detection |
+| `separating` | `run_job` | Demucs is running, with tempo, chord and key detection beside it on the job's analysis thread — **and tempo detection, if it is still running once the stems are written** |
+| `analyzing` | `run_job` | madmom chord/key detection still running once the stems are written; never written when it finished during separation |
 | `done` | `run_job` | terminal, success |
 | `error` | `run_job` | terminal, failure; `error_message` is set, and usually `error_log` |
 | `cancelled` | `cancel` / `discard` endpoints | terminal, user-initiated; the only status `resume` accepts |
@@ -58,22 +58,26 @@ everything it writes is scoped to that attempt — see [Resuming](#resuming).
                                          │
                                          ├─► separating  progress 0.10  "Separating stems"
                                          │   same UPDATE: duration_seconds, audio_format
+                                         │   start the chord-analysis thread, which runs beside all of this:
+                                         │     decode the original once → librosa tempo
+                                         │                              → madmom chords + key (if enabled)
                                          │   stems/ complete? → skip separation
                                          │   else Demucs → stems.partial/ → renamed to stems/
-                                         │     progress 0.10 → 0.50 as chunks start, ≤ 1 write per 1%
+                                         │     progress 0.10 → 0.85 as chunks start, ≤ 1 write per 1%
                                          │     at a chunk start, every ≥ 2 s: superseded? → abandon
                                          │
                        [checkpoint: superseded? → return]
                                          │
-                                         ├─► (still separating)  progress 0.50  "Detecting tempo"
-                                         │   librosa → tempo_bpm (held locally; 0 BPM is stored as null)
+                                         ├─► tempo still running? → (still separating)  progress 0.85  "Detecting tempo"
+                                         │   wait for tempo_bpm (held locally; 0 BPM is stored as null)
                                          │
                        [checkpoint: superseded? → return]
                                          │
-                enable_chord_detection ──├─► analyzing  progress 0.60  "Detecting chords and key"
-                                         │   madmom → chords.json + key.json
+                enable_chord_detection ──├─► chords still running? → analyzing  progress 0.90  "Detecting chords and key"
+                                         │   wait for chords + key → chords.json + key.json
                                          │   key_estimate, key_confidence (held locally)
                                          │
+                                         │   analysis thread shut down: unstarted steps dropped
                        [checkpoint: superseded? → return]
                                          │
                                          └─► done  progress 1.00  "Done"
@@ -124,18 +128,30 @@ instant it sees `done`.
 
 ### Progress values
 
-`progress` is a fixed ladder with one measured span: `0 → 0.05 → 0.10 … 0.50 → 0.60 → 1.0`.
-Uploads skip 0.05, and so does a resumed URL job that already has its audio.
+`progress` is a fixed ladder with one measured span: `0 → 0.05 → 0.10 … 0.85 → 0.85 → 0.90 → 1.0`.
+Uploads skip 0.05, and so does a resumed URL job that already has its audio. The 0.85 and 0.90 steps
+are conditional: tempo, chord and key detection start with separation on a thread of their own
+(`_start_analysis`), and once the stems are written `run_job` collects them in stage order, writing
+*Detecting tempo* only if the tempo future isn't done yet and `status=analyzing`, *Detecting chords
+and key*, only if the chords future isn't. A step that finished during separation never becomes the
+current stage — the processing screen shows it as done, with no time — so on a fast GPU a job often
+goes from separation straight to 1.0, and on a CPU-only host, where analysis finishes first, it
+nearly always does.
 
-Separation — by far the longest stage — fills 0.10 to 0.50 from Demucs' own chunk progress.
+Separation fills 0.10 to 0.85 from Demucs' own chunk progress.
 `separation.separate()` installs a callback on the Demucs `Separator` for each job, and Demucs
 calls it as each chunk starts, with the chunk's offset, the audio's length and the model's index
 in its bag. [`separation.py`](../../server/app/pipeline/separation.py) turns that into a 0–1
 fraction, `(model_idx_in_bag + segment_offset / audio_length) / models` — chunks run in order, so
 the starting chunk's offset is the share already done — and `_separation_progress` in
 [`pipeline.py`](../../server/app/pipeline/pipeline.py) maps it onto the span, writing the row only
-when progress has moved at least 1%. The last chunk runs with the bar short of 0.50; the tempo
-update sets it.
+when progress has moved at least 1% — up to 75 writes. The last chunk runs with the bar short of
+0.85; the tempo update sets it, when there is one.
+
+Because the processing screen times each stage by the first update it saw in it, those times now
+measure the wait that remained rather than the work: *Separating stems* ends at the next stage the
+screen saw — the job's completion, if analysis was already done — and so includes whatever analysis
+overlapped it.
 
 `stage_message` is the string the UI actually shows. `ProcessingScreen` maps `status` and
 `stage_message` onto its fixed five-stage list with `processingStage()` in
@@ -196,8 +212,14 @@ Cancellation is **cooperative**. It writes a row and nothing else:
   re-reads the row, at most every 2 s (`_SUPERSEDED_POLL_SECONDS`), and raises `_Superseded`,
   which unwinds out of Demucs and ends the run. The pass stops at the first chunk start that comes
   at least 2 s after the previous check, rather than running to the end.
-- A yt-dlp download, a librosa tempo pass or a madmom analysis in flight still runs to completion
-  — potentially minutes of work after the user clicked Cancel.
+- A yt-dlp download in flight still runs to completion — potentially minutes of work after the
+  user clicked Cancel.
+- **Analysis can't be stopped at all.** The decode, tempo and chord steps run on the job's
+  `chord-analysis` thread from the moment separation starts. When the run returns — at a checkpoint,
+  from the separation callback, or on an error — its `finally` calls
+  `shutdown(wait=False, cancel_futures=True)`, which drops the steps that haven't started; a step
+  already running finishes on its own, unread, and can overlap the next job the worker picks up.
+  Nothing it computes is written: `run_job` writes the analysis files and row fields itself.
 - Writes the cancelled run still attempts are dropped by `_update_job`'s `status != 'cancelled'`
   guard, so the row stays `cancelled`. The one write that isn't guarded — the title and author a
   finished download found — changes only those two columns.
@@ -221,7 +243,7 @@ The new attempt reuses what the cancelled one finished:
 | Artifact | Reused when | Otherwise |
 | --- | --- | --- |
 | `original.mp3` (URL jobs) | the file exists | downloaded again |
-| `stems/` | all six `STEM_NAMES` WAVs are there | separated again — `stems/` is complete or absent, never partial |
+| `stems/` | all six `STEM_NAMES` FLACs are there | separated again — `stems/` is complete or absent, never partial |
 | tempo, chords, key | never | detected again |
 
 Incrementing `attempt` is what makes this safe. The cancelled run may still be inside a stage when
@@ -256,8 +278,8 @@ Two more details keep a resume from losing or repeating work:
 A `cancelled` job counts as terminal even while its run is still finishing a stage, so *Discard*
 straight after *Cancel* deletes the directory under that run. Its remaining writes fail or match
 no row, and it returns at the next checkpoint — but a stage that creates directories with
-`parents=True` (`stems.partial/` at the start of separation, `analysis/` before chord detection)
-can recreate part of the tree for a row that no longer exists.
+`parents=True` (`stems.partial/` at the start of separation, `analysis/` before the chord results
+are written) can recreate part of the tree for a row that no longer exists.
 
 The client side, in `useJobEvents`:
 

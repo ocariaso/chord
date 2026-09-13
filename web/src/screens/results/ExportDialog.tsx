@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { downloadAllUrl, stemUrl } from "../../api/client";
+import { downloadAllUrl, stemDownloadUrl } from "../../api/client";
 import { Dialog } from "../../components/Dialog";
 import { dialogCopy } from "../../design/copy";
 import { downloadFile } from "../../utils/download";
@@ -80,7 +80,7 @@ export function ExportDialog({ jobId, trackTitle, stems, onClose }: ExportDialog
               style={{ fontSize: 11.5 }}
               aria-label={dialogCopy.export.downloadLabel(stem.name)}
               disabled={inFlight.has(stem.state.key)}
-              onClick={() => void download(stem.state.key, stemUrl(jobId, stem.state.key), `${name} - ${stem.state.key}.wav`)}
+              onClick={() => void download(stem.state.key, stemDownloadUrl(jobId, stem.state.key), `${name} - ${stem.state.key}.wav`)}
             >
               {inFlight.has(stem.state.key) ? dialogCopy.export.saving : dialogCopy.export.download}
             </button>

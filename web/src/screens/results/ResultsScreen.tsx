@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { getChords, stemUrl, type ChordSegment, type Job } from "../../api/client";
 import { PlaybackEngine, type MeterReadings, type StemLoadFailure } from "../../audio/playbackEngine";
-import { ScreenCard } from "../../components/ScreenCard";
+import { FitToPanel } from "../../components/FitToPanel";
 import { failureCopy } from "../../design/copy";
 import { PHONE_QUERY } from "../../design/layout";
 import { audible, db, masterDb, type ResultView, type StemKey } from "../../design/player";
@@ -36,6 +36,10 @@ interface ResultsScreenProps {
 type LoadPhase = "loading" | "failed" | "ready";
 
 const VIEW_PANEL_ID = "results-view";
+// The narrowest each view lays out at before its controls collapse: the stylesheet's floors (112px strips beside the
+// 190px master, 180px dials, the Mixer's fixed columns and a usable waveform) with their gaps and padding. In a
+// narrower window FitToPanel scales the view down rather than cropping it.
+const VIEW_MIN_WIDTH: Record<ResultView, number> = { mixer: 560, console: 1020, analog: 1020 };
 // A second loop press closer than this to the first is a double press, not the end of a loop.
 const MIN_LOOP_SECONDS = 0.5;
 
@@ -138,20 +142,29 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
   useEffect(() => {
     function tick() {
       const engine = engineRef.current;
-      if (engine) {
-        if (engine.hasEnded) {
-          engine.pause();
-          dispatch({ type: "playingChanged", playing: false });
-        }
-        const time = engine.getCurrentTime();
-        // With reduced motion the playhead steps once a second instead of gliding every frame (design.md#accessibility).
-        dispatch({ type: "timeChanged", time: reducedMotionRef.current ? Math.floor(time) : time });
+      // The engine doesn't stop itself at the end of the track.
+      if (engine?.hasEnded) {
+        engine.pause();
+        dispatch({ type: "playingChanged", playing: false });
       }
       rafRef.current = requestAnimationFrame(tick);
     }
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
+
+  // The clock is read, never stored: the playheads and readouts that show it read it every frame and render only what
+  // changed, so playback doesn't re-render the screen. With reduced motion it steps once a second instead of gliding
+  // (design.md#accessibility).
+  const getTime = useCallback(() => {
+    const time = engineRef.current?.getCurrentTime() ?? 0;
+    return reducedMotionRef.current ? Math.floor(time) : time;
+  }, []);
+
+  const getProgress = useCallback(() => {
+    const duration = engineRef.current?.duration ?? 0;
+    return duration > 0 ? Math.min(1, getTime() / duration) : 0;
+  }, [getTime]);
 
   const readMeters = useCallback((target: MeterReadings, now: number) => {
     engineRef.current?.readMeters(target, now);
@@ -195,10 +208,7 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
       engine.clearLoop();
       setLoop(null);
     }
-    void engine.seek(seconds).then(() => {
-      dispatch({ type: "timeChanged", time: engine.getCurrentTime() });
-      dispatch({ type: "playingChanged", playing: engine.isPlaying });
-    });
+    void engine.seek(seconds).then(() => dispatch({ type: "playingChanged", playing: engine.isPlaying }));
   }
 
   function stemState(key: StemKey) {
@@ -305,7 +315,9 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
 
   return (
     <>
-      <ScreenCard fill>
+      {/* On the page ground, not a card: the bars' hairlines are the only dividers. `.ch-app` for its type and flex
+          column, with its background dropped so the page's glow shows through. */}
+      <div className="ch-app min-h-0 flex-1" style={{ background: "transparent" }}>
         <ResultsTopbar
           job={job}
           duration={player.duration}
@@ -327,7 +339,7 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
         />
         <ChordBar
           segments={chordSegments}
-          time={player.time}
+          getTime={getTime}
           duration={player.duration}
           transpose={player.transpose}
           onSeek={handleSeek}
@@ -336,8 +348,9 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
           onAddLyrics={() => setLyricsDialog("edit")}
           instrumental={stems.some((stem) => stem.silent)}
         />
-        {/* The view takes whatever height the bars leave. The page never scrolls; on a phone six stacked stem rows
-            can't fit beside the transport, so this panel alone may. */}
+        {/* The view takes whatever height the bars leave, scaled down when it doesn't fit, so nothing is cropped and the
+            page never scrolls. On a phone six stacked stem rows can't fit and scaling would shrink their touch targets,
+            so this panel alone scrolls instead. */}
         <div
           id={VIEW_PANEL_ID}
           className="flex min-h-0 flex-1 flex-col"
@@ -345,26 +358,26 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
           role={isPhone ? undefined : "tabpanel"}
           aria-labelledby={isPhone ? undefined : `${VIEW_PANEL_ID}-${view}-tab`}
         >
-          {view === "mixer" && (
-            <MixerView stems={stems} controls={controls} playhead={player.duration > 0 ? Math.min(1, player.time / player.duration) : 0} />
-          )}
-          {view === "console" && (
-            <ConsoleView
-              stems={stems}
-              controls={controls}
-              master={player.master}
-              onMasterChange={handleMasterChange}
-              metronome={player.metronome}
-              onExport={() => setExportOpen(true)}
-              readMeters={readMeters}
-            />
-          )}
-          {view === "analog" && <AnalogView stems={stems} controls={controls} readMeters={readMeters} />}
+          <FitToPanel enabled={!isPhone} minWidth={VIEW_MIN_WIDTH[view]}>
+            {view === "mixer" && <MixerView stems={stems} controls={controls} progress={getProgress} />}
+            {view === "console" && (
+              <ConsoleView
+                stems={stems}
+                controls={controls}
+                master={player.master}
+                onMasterChange={handleMasterChange}
+                metronome={player.metronome}
+                onExport={() => setExportOpen(true)}
+                readMeters={readMeters}
+              />
+            )}
+            {view === "analog" && <AnalogView stems={stems} controls={controls} readMeters={readMeters} />}
+          </FitToPanel>
         </div>
         <Transport
           playing={player.playing}
           onPlayPause={handlePlayPause}
-          time={player.time}
+          getTime={getTime}
           duration={player.duration}
           onSeek={handleSeek}
           speed={speed}
@@ -375,7 +388,7 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
           onToggleMetronome={job.tempo_bpm ? handleToggleMetronome : undefined}
           compact={isPhone}
         />
-      </ScreenCard>
+      </div>
       {exportOpen && <ExportDialog jobId={job.id} trackTitle={job.original_filename} stems={stems} onClose={() => setExportOpen(false)} />}
       {lyricsDialog && (
         <LyricsDialog

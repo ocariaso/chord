@@ -14,13 +14,11 @@ export type PlayerAction =
   | { type: "masterChanged"; master: number }
   | { type: "transposeChanged"; transpose: number }
   | { type: "metronomeChanged"; metronome: boolean }
-  | { type: "playingChanged"; playing: boolean }
-  | { type: "timeChanged"; time: number };
+  | { type: "playingChanged"; playing: boolean };
 
 export const INITIAL_PLAYER: PlayerState = {
   view: "mixer",
   playing: false,
-  time: 0,
   duration: 0,
   master: 1,
   transpose: 0,
@@ -30,7 +28,7 @@ export const INITIAL_PLAYER: PlayerState = {
 
 /**
  * The template's PlayerState, changed in one place. An action that changes nothing returns the same state,
- * so the per-frame time update costs no render while playback is paused.
+ * so it costs no render.
  */
 export function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
   switch (action.type) {
@@ -56,7 +54,5 @@ export function playerReducer(state: PlayerState, action: PlayerAction): PlayerS
       return { ...state, metronome: action.metronome };
     case "playingChanged":
       return action.playing === state.playing ? state : { ...state, playing: action.playing };
-    case "timeChanged":
-      return action.time === state.time ? state : { ...state, time: action.time };
   }
 }

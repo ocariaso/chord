@@ -73,7 +73,8 @@ deployment the server isn't published to the host, so reach them through the pro
 | `POST` | `/jobs/{job_id}/resume` | [re-queue a cancelled job](jobs.md#post-jobsjob_idresume) |
 | `POST` | `/jobs/{job_id}/discard` | [cancel or delete](jobs.md#post-jobsjob_iddiscard) |
 | `GET` | `/jobs/{job_id}/thumbnail.jpg` | [cover art](artifacts.md#get-jobsjob_idthumbnailjpg) |
-| `GET` | `/jobs/{job_id}/stems/{stem}.wav` | [one stem](artifacts.md#get-jobsjob_idstemsstem_namewav) |
+| `GET` | `/jobs/{job_id}/stems/{stem}.flac` | [one stem as stored, for playback](artifacts.md#get-jobsjob_idstemsstem_nameflac) |
+| `GET` | `/jobs/{job_id}/stems/{stem}.wav` | [one stem as WAV, converted as it streams](artifacts.md#get-jobsjob_idstemsstem_namewav) |
 | `GET` | `/jobs/{job_id}/download` | [all stems, zipped](artifacts.md#get-jobsjob_iddownload) |
 | `GET` | `/jobs/{job_id}/chords` | [chord segments](analysis.md#get-jobsjob_idchords) |
 | `GET` | `/jobs/{job_id}/lyrics` | [lyrics](analysis.md#get-jobsjob_idlyrics) |

@@ -41,8 +41,7 @@ def separate(input_path: Path, output_dir: Path, on_progress: Callable[[float], 
 
 `X | None`, not `Optional[X]`; `list[X]` / `dict[K, V]`, not `typing.List`; `Callable` from
 `collections.abc`. `pathlib.Path` for every filesystem path — never a string, except where an
-external library demands one (`str(...)` at the soundfile, madmom and Demucs `save_audio` call
-boundaries).
+external library demands one (`str(...)` at the soundfile and madmom call boundaries).
 
 Un-annotated signatures are the exception: helpers that pass an opaque `sqlite3.Row` around
 (`_get_job_row(job_id)`, `_row_to_response(row)`), and generator plumbing (`db_cursor`, the SSE
@@ -129,15 +128,19 @@ _separator: Separator | None = None
 def _get_separator() -> Separator:
     global _separator
     if _separator is None:
-        _separator = Separator(model=settings.demucs_model, device=_resolve_device())
+        _separator = Separator(model=settings.demucs_model, device=_resolve_device(), overlap=settings.demucs_overlap)
     return _separator
 ```
 
 Used in [`separation.py`](../../server/app/pipeline/separation.py) and for the three madmom
-processors in [`chords.py`](../../server/app/pipeline/chords.py). The unguarded `global` is safe
-**only because a single worker thread calls these**. The separator also carries per-job state:
-`separate()` swaps its progress callback in with `update_parameter(callback=…)` on every call.
-Introducing concurrency means adding a lock — or a separator per job.
+processors in [`chords.py`](../../server/app/pipeline/chords.py), each with a public loader
+(`load_model`, `load_models`) that `pipeline.warm_up()` calls on the worker thread before its first
+job, so no job pays for loading. The unguarded `global` is safe **only because one thread calls each
+of these at a time**: the separator runs on the worker thread, and the madmom processors on a job's
+analysis thread — built first by the warm-up, so two analysis threads (an abandoned run's and the
+next job's) don't race to build them unless the warm-up failed. The separator also carries per-job
+state: `separate()` swaps its progress callback in with `update_parameter(callback=…)` on every call.
+More concurrency than that means adding a lock — or a separator per job.
 
 ## Error handling
 

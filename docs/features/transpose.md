@@ -90,7 +90,8 @@ the language boundary; both lists must stay in the same sharps-only convention. 
 ## Where it's applied
 
 Every chord label passes through `transposeChord` at render time — nothing is precomputed or
-memoized, and while playing that means every frame:
+memoized. The chord bar renders when a chord, the lyric line or the elapsed second changes, not every
+frame, so while playing that is about once a second:
 
 | Location | Applied to |
 | --- | --- |

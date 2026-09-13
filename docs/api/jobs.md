@@ -42,9 +42,12 @@ Fields that behave unexpectedly:
   stems would still advertise six. The zip endpoint, by contrast, globs the real directory.
 - **`has_thumbnail` is a `stat` on every serialization**, including each 0.5 s SSE tick.
 - **`progress` is only partly a measurement.** During separation it follows Demucs' own chunk
-  progress across 0.10–0.50, written at most once per percentage point. Everywhere else it is a
-  fixed step: `0 → 0.05` (download) `→ 0.10 … 0.50` (separation) `→ 0.50` (tempo) `→ 0.60`
-  (chords and key) `→ 1.0`. An upload never shows 0.05.
+  progress across 0.10–0.85, written at most once per percentage point. Everywhere else it is a
+  fixed step: `0 → 0.05` (download) `→ 0.10 … 0.85` (separation) `→ 0.85` (tempo) `→ 0.90`
+  (chords and key) `→ 1.0`. An upload never shows 0.05. Tempo, chord and key detection run beside
+  separation, so the 0.85 and 0.90 steps — and `status: "analyzing"` — are written only for a step
+  still running once the stems are; a job whose analysis finished first goes from separation
+  straight to `done`.
 - **`error_message` and `error_log` split one failure by audience.** `error_message` is always
   written for the person using CHORD: the text of a `UserFacingError` — a failed download, a
   track over the duration limit — or else a fixed sentence for the stage that failed, such as
@@ -69,8 +72,8 @@ The row also has an `attempt` column that `JobResponse` deliberately leaves out;
 | --- | --- | --- |
 | `queued` | | row inserted or resumed; the worker hasn't picked it up |
 | `fetching` | | yt-dlp downloading (URL jobs only; skipped when a resumed job already has the audio) |
-| `separating` | | Demucs running — and tempo detection, later in the same status |
-| `analyzing` | | madmom chord/key detection |
+| `separating` | | Demucs running, with tempo, chord and key detection beside it — and tempo detection, if it is still running once the stems are written |
+| `analyzing` | | madmom chord/key detection still running once the stems are written — skipped when it finished during separation |
 | `done` | ✓ | success; all result fields populated |
 | `error` | ✓ | `error_message` is set, and usually `error_log` |
 | `cancelled` | ✓ | user-initiated, or a discard of a running job — the one terminal status a request can reverse |
@@ -184,7 +187,7 @@ data: {"id":"3f2a…","status":"separating","progress":0.1,…}
 
 data: {"id":"3f2a…","status":"separating","progress":0.113,…}
 
-data: {"id":"3f2a…","status":"analyzing","progress":0.6,…}
+data: {"id":"3f2a…","status":"analyzing","progress":0.9,…}
 
 data: {"id":"3f2a…","status":"done","progress":1.0,…}
 ```
@@ -232,8 +235,9 @@ worker, which finds out at its next check:
 | Where the worker is | What happens |
 | --- | --- |
 | hasn't reached the job | skips it |
-| downloading, detecting tempo, detecting chords and key | the stage runs to completion; its writes are dropped — except a download's title and author, which are kept — and the run stops at the next checkpoint |
+| downloading | the download runs to completion; its writes are dropped — except its title and author, which are kept — and the run stops at the next checkpoint |
 | separating | interrupted — the Demucs progress callback checks at most every 2 s and abandons the pass at the next chunk |
+| detecting tempo, or chords and key | the run stops at its next checkpoint, but the step can't be stopped: it runs on the job's analysis thread, started with separation, and finishes on its own, unread — possibly while the next job runs. The same happens to analysis still running when separation is interrupted |
 
 Files already written stay on disk, which is what [resume](#post-jobsjob_idresume) builds on. An
 interrupted separation also leaves an empty `stems.partial/` behind. Cancellation is cooperative
@@ -270,7 +274,7 @@ started with — so the old run can't overwrite the new one, and stops at its ne
 | --- | --- |
 | `original.mp3` of a URL job | kept — the download is skipped when the file exists, and the title and author it found are already on the row |
 | `thumbnail.jpg` | kept — extraction only runs when it's missing |
-| `stems/` | kept when every `STEM_NAMES` WAV is there, and separation is skipped; otherwise separation runs again from the start |
+| `stems/` | kept when every `STEM_NAMES` FLAC is there, and separation is skipped; otherwise separation runs again from the start |
 | tempo, chords, key | always recomputed |
 
 Only `cancelled` qualifies. A job in `error` can't be retried this way, and the web client offers

@@ -2,17 +2,24 @@
 
 ## Detection
 
-[`tempo.py`](../../server/app/pipeline/tempo.py) is eleven lines:
+[`tempo.py`](../../server/app/pipeline/tempo.py) takes samples, not a file:
 
 ```python
-def detect_tempo(audio_path: Path) -> float:
-    y, sr = librosa.load(audio_path, sr=None, mono=True)
-    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+def detect_tempo(samples: np.ndarray, sample_rate: int) -> float:
+    y = np.asarray(samples, dtype=np.float32)
+    if np.issubdtype(samples.dtype, np.integer):
+        y /= np.iinfo(samples.dtype).max
+    tempo, _ = librosa.beat.beat_track(y=y, sr=sample_rate)
     return round(float(np.atleast_1d(tempo)[0]), 1)
 ```
 
-- `sr=None` preserves the file's native sample rate instead of librosa's 22050 default.
-- `mono=True` — tempo is a global property; no reason to analyze channels separately.
+- `samples` is the job's one decode of the original — mono, 44.1 kHz, from
+  [`decode.decode_mono`](../../server/app/pipeline/decode.py) — which chord and key detection read
+  too. madmom's decoder gives integer PCM, scaled to float here.
+- **The tracker runs at that 44.1 kHz**, not librosa's usual 22 050 Hz. At half the rate the onset
+  envelope has half the frames and the estimate coarsens enough to make the metronome drift: a
+  120 BPM click read 117.5.
+- Mono — tempo is a global property; no reason to analyze channels separately.
 - The second return value of `beat_track` is the **beat frame positions, and they are
   discarded**. Only the scalar BPM is kept. This is the direct cause of the phase-alignment
   limitation below.
@@ -20,16 +27,22 @@ def detect_tempo(audio_path: Path) -> float:
   1-element array where older ones returned a scalar.
 - Rounded to one decimal (e.g. `123.0`, `89.1`).
 - A track with no beat to find — silence, or material without a pulse — comes back as `0.0`.
-  `run_job` stores that as null (`tempo.detect_tempo(original_path) or None`), so the API reports
-  no tempo rather than 0 BPM.
+  `run_job` stores that as null (`tempo_future.result() or None`), so the API reports no tempo
+  rather than 0 BPM.
 
-It runs on the **original mix**, not on the drums stem, and happens *after* separation while
-the status is still `separating` — only `progress` (0.5) and `stage_message`
-(*Detecting tempo*) change. There is no `TEMPO` status; the processing screen still lists
-*Detecting tempo* as its own stage because
+It runs on the **original mix**, not on the drums stem, on the job's analysis thread, which starts
+with separation. The status stays `separating` either way. If tempo detection is still running once
+the stems are written, `run_job` sets `progress` 0.85 and *Detecting tempo* while it waits; if it
+finished during separation, that stage is never current and the processing screen shows it done.
+There is no `TEMPO` status; the processing screen lists *Detecting tempo* as its own stage because
 [`processingStage`](../../web/src/design/stages.ts) tells it apart from separation by that stage
-message. The result lands in the row as `tempo_bpm` in the same final `UPDATE` that sets
-`status=done`.
+message. A failure to decode the original surfaces here too, reported as a tempo failure. The result
+lands in the row as `tempo_bpm` in the same final `UPDATE` that sets `status=done`.
+
+numba compiles librosa's beat tracker the first time it runs in a process — about 19 s, longer than
+tracking a whole song — so `tempo.warm_up()` runs it once on two seconds of seeded noise, from the
+worker's warm-up before the first job. Without it the first job after every restart paid those 19 s.
+Noise rather than silence, because silence has no onsets and skips the compiled path.
 
 The analysis bar shows it as *Tempo* — an integer, or one decimal when there is one, through
 `formatBpm` in [`utils/tempo.ts`](../../web/src/utils/tempo.ts) — and `—` for a null or zero tempo,

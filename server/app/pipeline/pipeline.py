@@ -1,20 +1,24 @@
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 from app.core.config import settings
 from app.db.database import db_cursor, now_iso
-from app.models.schemas import STEM_NAMES, JobStatus
-from app.pipeline import chords, metadata, separation, source, tempo, thumbnail
+from app.models.schemas import STEM_NAMES, ChordSegment, JobStatus, KeyEstimate
+from app.pipeline import chords, decode, metadata, separation, source, tempo, thumbnail
 from app.pipeline.errors import TrackTooLongError, UserFacingError
 
 logger = logging.getLogger(__name__)
 
-# Separation is by far the longest stage, so Demucs' own chunk progress is spread across this span
-# of the bar; the rest of the ladder is fixed.
-_SEPARATION_PROGRESS = (0.1, 0.5)
+# Tempo, chord and key detection run beside separation, so Demucs' own chunk progress fills most of the bar; the
+# two steps after it are shown only for analysis still running once the stems are written.
+_SEPARATION_PROGRESS = (0.1, 0.85)
+_TEMPO_PROGRESS = 0.85
+_CHORDS_PROGRESS = 0.9
 # However many chunks Demucs reports: one row write per percentage point of the bar, one
 # cancellation check every two seconds.
 _PROGRESS_WRITE_STEP = 0.01
@@ -33,6 +37,16 @@ _STAGE_FAILURE_MESSAGES = {
 
 class _Superseded(Exception):
     """Raised inside a long stage to abandon a run whose job was cancelled, deleted or resumed."""
+
+
+@contextmanager
+def _timed(step: str) -> Iterator[None]:
+    # The log is the only record of where a job's time goes, so a step is timed whether it finished or raised.
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        logger.info("%s took %.1f s", step, time.monotonic() - started)
 
 
 def _update_job(job_id: str, attempt: int, **fields) -> None:
@@ -72,7 +86,17 @@ def job_dir(job_id: str) -> Path:
 
 
 def _stems_complete(stems_dir: Path) -> bool:
-    return all((stems_dir / f"{name}.wav").exists() for name in STEM_NAMES)
+    return all((stems_dir / f"{name}{separation.STEM_SUFFIX}").exists() for name in STEM_NAMES)
+
+
+def warm_up() -> None:
+    """Loads the separation and analysis models and compiles the beat tracker, so the first job after a start doesn't
+    wait for them."""
+    with _timed("Model warm-up"):
+        separation.load_model()
+        tempo.warm_up()
+        if settings.enable_chord_detection:
+            chords.load_models()
 
 
 def _separation_progress(job_id: str, attempt: int) -> Callable[[float], None]:
@@ -94,6 +118,34 @@ def _separation_progress(job_id: str, attempt: int) -> Callable[[float], None]:
     return on_progress
 
 
+def _start_analysis(
+    job_id: str, original_path: Path, executor: ThreadPoolExecutor
+) -> tuple["Future[float]", "Future[tuple[list[ChordSegment], KeyEstimate]] | None"]:
+    """Queues tempo detection, then chord and key detection, on `executor`, sharing one decode of the original.
+
+    A decode failure is raised by the tempo future, as librosa's own read failing once was."""
+
+    def decode_original():
+        with _timed(f"Job {job_id}: analysis decode"):
+            return decode.decode_mono(original_path)
+
+    signal = executor.submit(decode_original)
+
+    def detect_tempo() -> float:
+        samples = signal.result()
+        with _timed(f"Job {job_id}: tempo detection"):
+            return tempo.detect_tempo(samples, samples.sample_rate)
+
+    def detect_chords() -> tuple[list[ChordSegment], KeyEstimate]:
+        samples = signal.result()
+        with _timed(f"Job {job_id}: chord and key detection"):
+            return chords.analyze_audio(samples)
+
+    tempo_future = executor.submit(detect_tempo)
+    chords_future = executor.submit(detect_chords) if settings.enable_chord_detection else None
+    return tempo_future, chords_future
+
+
 def _describe_failure(stage: str, exc: Exception) -> tuple[str, str | None]:
     if isinstance(exc, UserFacingError):
         return str(exc), str(exc.__cause__) if exc.__cause__ else None
@@ -107,6 +159,7 @@ def run_job(job_id: str) -> None:
     if row is None or row["status"] != JobStatus.QUEUED.value:
         return
     attempt = row["attempt"]
+    started = time.monotonic()
 
     directory = job_dir(job_id)
     stems_dir = directory / "stems"
@@ -122,9 +175,10 @@ def run_job(job_id: str) -> None:
                 _update_job(
                     job_id, attempt, status=JobStatus.FETCHING.value, progress=0.05, stage_message="Downloading audio"
                 )
-                downloaded_path, title, author = source.download_audio(
-                    row["source_url"], directory, settings.max_duration_seconds
-                )
+                with _timed(f"Job {job_id}: download"):
+                    downloaded_path, title, author = source.download_audio(
+                        row["source_url"], directory, settings.max_duration_seconds
+                    )
                 if downloaded_path != original_path:
                     downloaded_path.rename(original_path)
                 _record_track_identity(job_id, title, author)
@@ -158,47 +212,64 @@ def run_job(job_id: str) -> None:
             duration_seconds=duration_seconds,
             audio_format=audio_format,
         )
-        if not _stems_complete(stems_dir):
-            separation.separate(original_path, stems_dir, on_progress=_separation_progress(job_id, attempt))
 
-        if _is_superseded(job_id, attempt):
-            return
+        # Tempo, chord and key detection read only the original, never the stems, so they run on a thread of their
+        # own while Demucs separates rather than after it — on a GPU they would otherwise be most of the wait.
+        # Results are collected and written only here, so an abandoned run's analysis writes nothing.
+        analysis = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chord-analysis")
+        try:
+            tempo_future, chords_future = _start_analysis(job_id, original_path, analysis)
 
-        done_fields = dict(status=JobStatus.DONE.value, progress=1.0, stage_message="Done")
+            if not _stems_complete(stems_dir):
+                with _timed(f"Job {job_id}: separation"):
+                    separation.separate(original_path, stems_dir, on_progress=_separation_progress(job_id, attempt))
 
-        stage = "tempo"
-        _update_job(job_id, attempt, progress=_SEPARATION_PROGRESS[1], stage_message="Detecting tempo")
-        # librosa reports 0 BPM when it finds no beat at all; null says the same to the API, and keeps the
-        # metronome disabled rather than enabled with nothing to click at.
-        done_fields["tempo_bpm"] = tempo.detect_tempo(original_path) or None
+            if _is_superseded(job_id, attempt):
+                return
 
-        if _is_superseded(job_id, attempt):
-            return
+            done_fields = dict(status=JobStatus.DONE.value, progress=1.0, stage_message="Done")
 
-        if settings.enable_chord_detection:
-            stage = "analyzing"
-            _update_job(
-                job_id,
-                attempt,
-                status=JobStatus.ANALYZING.value,
-                progress=0.6,
-                stage_message="Detecting chords and key",
-            )
-            analysis_dir.mkdir(parents=True, exist_ok=True)
-            segments, key_estimate = chords.analyze_audio(original_path)
+            stage = "tempo"
+            # A step that finished during separation never becomes the current stage; the screen shows it as done.
+            if not tempo_future.done():
+                _update_job(job_id, attempt, progress=_TEMPO_PROGRESS, stage_message="Detecting tempo")
+            # librosa reports 0 BPM when it finds no beat at all; null says the same to the API, and keeps the
+            # metronome disabled rather than enabled with nothing to click at.
+            done_fields["tempo_bpm"] = tempo_future.result() or None
 
-            (analysis_dir / "chords.json").write_text(
-                json.dumps([segment.model_dump() for segment in segments], indent=2)
-            )
-            (analysis_dir / "key.json").write_text(json.dumps(key_estimate.model_dump(), indent=2))
+            if _is_superseded(job_id, attempt):
+                return
 
-            done_fields["key_estimate"] = f"{key_estimate.key} {key_estimate.mode}"
-            done_fields["key_confidence"] = key_estimate.confidence
+            if chords_future is not None:
+                stage = "analyzing"
+                if not chords_future.done():
+                    _update_job(
+                        job_id,
+                        attempt,
+                        status=JobStatus.ANALYZING.value,
+                        progress=_CHORDS_PROGRESS,
+                        stage_message="Detecting chords and key",
+                    )
+                segments, key_estimate = chords_future.result()
+
+                analysis_dir.mkdir(parents=True, exist_ok=True)
+                (analysis_dir / "chords.json").write_text(
+                    json.dumps([segment.model_dump() for segment in segments], indent=2)
+                )
+                (analysis_dir / "key.json").write_text(json.dumps(key_estimate.model_dump(), indent=2))
+
+                done_fields["key_estimate"] = f"{key_estimate.key} {key_estimate.mode}"
+                done_fields["key_confidence"] = key_estimate.confidence
+        finally:
+            # Drops analysis that hasn't started. A step already running can't be interrupted, so an abandoned run's
+            # finishes on its own, unread, while the next job starts.
+            analysis.shutdown(wait=False, cancel_futures=True)
 
         if _is_superseded(job_id, attempt):
             return
 
         _update_job(job_id, attempt, **done_fields)
+        logger.info("Job %s: finished in %.1f s", job_id, time.monotonic() - started)
     except _Superseded:
         return
     except Exception as exc:  # noqa: BLE001 - any failure must reach the job row
