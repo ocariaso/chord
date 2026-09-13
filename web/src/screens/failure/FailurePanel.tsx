@@ -1,6 +1,6 @@
 import { ScreenCard } from "../../components/ScreenCard";
 
-/** INSTRUCTIONS §4.7: the dot is the only status hue — danger for hard failures, warn for recoverable ones. */
+/** The dot is the only status hue — danger for hard failures, warn for recoverable ones (design.md#processing-and-failure). */
 export type FailureTone = "danger" | "warn" | "neutral";
 
 const DOT_COLORS: Record<FailureTone, string> = {

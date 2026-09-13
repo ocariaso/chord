@@ -21,7 +21,7 @@ interface ChordBarProps {
 
 const NO_CHORD = "N";
 const UPCOMING_CHORDS = 3;
-// The harness dims the second and third upcoming chords one and two ramp steps below the first.
+// The design dims the second and third upcoming chords one and two ramp steps below the first.
 const UPCOMING_COLORS = [undefined, "var(--color-neutral-600)", "var(--color-neutral-700)"];
 // A segment too narrow for its label shows none: clipped text would read as a different chord.
 const LABEL_PX_PER_CHARACTER = 7;
@@ -36,7 +36,7 @@ function LyricRow({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-/** The chords and lyric section (INSTRUCTIONS §4.5): the chord now and the next three, the strip, and the lyric row. */
+/** The chords and lyric section (design.md#chords-and-lyrics): the chord now and the next three, the strip, and the lyric row. */
 export function ChordBar({ segments, time, duration, transpose, onSeek, lyrics, onOpenLyricSheet, onAddLyrics }: ChordBarProps) {
   const [stripRef, stripWidth] = useElementWidth<HTMLDivElement>();
   const seekDrag = useSeekDrag(duration, onSeek);

@@ -125,7 +125,7 @@ One chip, three presses, handled by `handleLoopPress` in `ResultsScreen`:
 | second | marks **B**; the loop is the earlier to the later of the two, and `engine.setLoop` jumps playback to its start | `Loop 0:42–1:10`, `aria-pressed` |
 | third | `engine.clearLoop()`; playback carries on from where it is | `Loop off` |
 
-Nothing marks A or B on the chord strip, which the template draws with its playhead alone, so the
+Nothing marks A or B on the chord strip, which the design draws with its playhead alone, so the
 chip's label is the only place a loop shows.
 
 ### How a loop plays

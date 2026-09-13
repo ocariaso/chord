@@ -54,12 +54,11 @@ Fields that behave unexpectedly:
   panel's body and the second in a copyable log. See
   [../conventions/python.md](../conventions/python.md#error-handling).
 - **`stage_message` usually survives a failure.** The `error` write leaves it alone, so a failed
-  job still carries the last stage message written, and the client turns that into the panel's
-  title (*Download failed*, *Separation failed*…). The exception is a failure while the worker
+  job still carries the last stage message written. The exception is a failure while the worker
   reads the audio — after a link's download, before separation — which sets it to `null`, so an
-  unreadable or over-long download doesn't inherit *Download failed*. A failed row with no stage
-  message, including an upload that can't be read or is too long, is titled *Couldn't start
-  separation*.
+  unreadable or over-long download doesn't keep *Downloading audio*. The web client doesn't read it
+  on a failed job: every failure panel is titled *Separation failed*, and `error_message` says what
+  happened.
 
 The row also has an `attempt` column that `JobResponse` deliberately leaves out; see
 [resume](#post-jobsjob_idresume).

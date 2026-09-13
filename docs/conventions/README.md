@@ -7,7 +7,7 @@ them; where you disagree, change them everywhere rather than introducing a secon
 | --- | --- |
 | [python.md](python.md) | server-side style, layering rules, error handling |
 | [typescript.md](typescript.md) | web-side style, React patterns, hooks, styling |
-| [design.md](design.md) | the design template as the source of truth: which part wins, reproducing the harness, copy, state, responsive rules, the design check, recorded departures |
+| [design.md](design.md) | the design standard: rules, classes, screen states, controls, copy, state, responsive rules, the design check, recorded decisions |
 
 ## Shared across both halves
 
@@ -104,12 +104,11 @@ No formatter or linter config is enforced in CI — there is no CI. Observed con
 | Trailing commas | yes, multiline | yes, multiline |
 
 `web/.oxlintrc.json` configures two rules on top of oxlint's defaults (`react/rules-of-hooks` as
-an error, `react/only-export-components` as a warning) and ignores `template/**`, the vendored
-design template. `npm run lint` runs it, then
-[`web/scripts/check-design.mjs`](../../web/scripts/check-design.mjs), the design template's
+an error, `react/only-export-components` as a warning). `npm run lint` runs it, then
+[`web/scripts/check-design.mjs`](../../web/scripts/check-design.mjs), the design's
 adherence rules ([design.md](design.md#the-design-check)); nothing runs on the server.
 
-The two stylesheets in `web/src/styles/` are vendored from that template and keep its formatting.
+The two stylesheets in `web/src/styles/` came from the design template and keep its formatting.
 
 ## Naming
 

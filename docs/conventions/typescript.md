@@ -29,9 +29,9 @@ export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSna
 - **Props destructured in the signature**, with defaults there too (`small = false`,
   `outlined = true`).
 - **Named exports** everywhere except `App.tsx`, which is the Vite scaffold's default export.
-- A component names the part of the template it is in its doc comment — the class, the scenario
-  ids or the INSTRUCTIONS section (`` /** `.ch-stemrow` (INSTRUCTIONS §4.1): … */ ``) — which is
-  how the code maps back to the template.
+- A component names the part of the design it is in its doc comment — the class, the state ids or
+  the section of design.md (`` /** `.ch-stemrow` (design.md#controls): … */ ``) — which is how the
+  code maps back to the standard.
 - Small pieces used by one file live there as unexported functions (`Alert` in
   `LandingScreen.tsx`, `SeekSlider` and `SpeedChip` in `Transport.tsx`, `LyricRow` in
   `ChordBar.tsx`); shared ones move to `components/icons.tsx` or `components/controls/`.
@@ -40,7 +40,7 @@ export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSna
 
 | Folder | Holds |
 | --- | --- |
-| [`screens/`](../../web/src/screens/) | a folder per template screen — `landing`, `processing`, `failure`, `results` — with a file for each part INSTRUCTIONS §4 names (`StemRow`, `ConsoleStrip`, `MasterStrip`, `AnalogModule`, `OutputDial`, `ChordBar`, `Transport`) |
+| [`screens/`](../../web/src/screens/) | a folder per template screen — `landing`, `processing`, `failure`, `results` — with a file for each part design.md names (`StemRow`, `ConsoleStrip`, `MasterStrip`, `AnalogModule`, `OutputDial`, `ChordBar`, `Transport`) |
 | [`components/`](../../web/src/components/) | generic pieces (`ScreenCard`, `CoverArt`, `Dialog`, `icons.tsx`), the page `Footer`, and the template's controls in `controls/` |
 | [`design/`](../../web/src/design/) | the template's non-visual vocabulary — copy, the state model, stem identity, the stage list, the breakpoint. No components, and nothing imported from `screens/` or `components/` |
 | `hooks/`, `utils/`, `audio/`, `api/` | behavior with no design in it |
@@ -291,10 +291,10 @@ properties.** Two stylesheets vendored from the design template are imported in
 | Sheet | Contents |
 | --- | --- |
 | [`styles/nocturne.css`](../../web/src/styles/nocturne.css) | Nocturne's tokens (`--color-*`, `--space-*`, `--radius-*`, `--font-body`) and base classes (`.btn`, `.input`, `.field`, `.dialog`, `.lighten`), minus the template's font `@import` — `index.html` loads Inter instead |
-| [`styles/chord-theme.css`](../../web/src/styles/chord-theme.css) | the `ch-` component layer, the six stem hues, two status hues and surfaces — byte-identical to `web/template/template/chord-theme.css` |
+| [`styles/chord-theme.css`](../../web/src/styles/chord-theme.css) | the `ch-` component layer, the six stem hues, two status hues and surfaces — as it came from the design template, now owned here |
 
 [`index.css`](../../web/src/index.css) adds only the Tailwind import, the page's minimum height,
-the harness's canvas as the page ground (in tokens) and button cursors. It defines no classes and
+the design's canvas as the page ground (in tokens) and button cursors. It defines no classes and
 overrides nothing in the vendored sheets. [design.md](design.md) is the standard the rest of this
 section applies.
 
@@ -320,10 +320,10 @@ A component is a class plus one variable:
   `transform` or `background` for a fader cap, knob, meter or playhead — the class maps the
   variable onto the right property. The one computed shape is the waveform's `clip-path`, from
   `waveformPolygon`, which the template names as the thing to generate.
-- **Inline styles repeat the harness's own declarations**, with a token wherever a token carries
+- **Inline styles carry the design's own declarations**, with a token wherever a token carries
   the value (`color: "var(--color-neutral-600)"`, `gap: "var(--space-4)"`), or do layout.
   **Tailwind utilities are layout only** — `flex`, `min-w-0`, `max-[720px]:hidden`,
-  `px-(--space-8)`. [design.md](design.md#reproducing-a-harness-screen) has the token mapping.
+  `px-(--space-8)`. [design.md](design.md#ground-rules) has the rules.
 - **No new colors.** The palette is the six stem hues (`--ch-vocals` … `--ch-other`), the two
   status hues (`--ch-danger`, `--ch-warn`, for dots and hairlines only) and the Nocturne ramps
   (`--color-neutral-*`, `--color-accent-*`). Hairlines mix a token toward transparent
@@ -341,11 +341,11 @@ A component is a class plus one variable:
 - **One breakpoint, 720px, shared with the stylesheet.** Components read `PHONE_QUERY` from
   [`design/layout.ts`](../../web/src/design/layout.ts) with `useMediaQuery`; `App` and `MixerView`
   use Tailwind's `max-[720px]:`; `chord-theme.css` stacks `.ch-stemrow` at the same width.
-  `LandingScreen` and `ProcessingScreen` branch to the harness's phone frames. The results screen
-  keeps its markup, as INSTRUCTIONS §5 asks: `ResultsScreen` forces the Mixer and passes no
+  `LandingScreen` and `ProcessingScreen` branch to their phone arrangements. The results screen
+  keeps its markup, as [design.md](design.md#responsive) asks: `ResultsScreen` forces the Mixer and passes no
   `onViewChange`, and `Transport`'s `compact` prop swaps in `.ch-m-bar`.
-- **Layout follows the template**, in the order
-  [design.md](design.md#which-part-of-the-template-wins) gives. See
+- **Layout follows the design**, as
+  [design.md](design.md#screens-and-their-states) records it. See
   [../features/results-views.md](../features/results-views.md).
 - `touch-action: none` on the seek bar's hit area, where every direction drags.
 - Under `prefers-reduced-motion` the playhead steps once a second instead of gliding every frame.
@@ -356,7 +356,7 @@ Every fader and knob is a `role="slider"` element with `aria-valuemin`, `aria-va
 `aria-valuenow`, an `aria-label` naming the stem and current value, and `aria-valuetext`. One hook,
 [`useSliderControl`](../../web/src/hooks/useSliderControl.ts), supplies the behavior: pointer drag
 by axis (a knob drags vertically, 160 px for the full range), the arrows and Home and End that
-INSTRUCTIONS §4.1 asks for, Page Up and Down from the ARIA slider pattern, and no double-click reset.
+the design asks for, Page Up and Down from the ARIA slider pattern, and no double-click reset.
 MUTE and SOLO are real `<button>`s with `aria-pressed`. The one pointer-only shortcut — dragging the
 chord strip to seek — is
 `aria-hidden`, with the transport's seek slider as the accessible way to do the same thing.

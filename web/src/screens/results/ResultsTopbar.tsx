@@ -43,7 +43,7 @@ export function ResultsTopbar({ job, duration, stemCount, view, panelId, onViewC
     <div className="ch-topbar">
       <CoverArt jobId={job.id} hasThumbnail={job.has_thumbnail} size={44} radius={6} />
       <div className="ch-topbar-title">
-        {/* An h1 for the document outline; letter-spacing undoes the heading rule so it reads as the harness's span. */}
+        {/* An h1 for the document outline; letter-spacing undoes the heading rule so it reads like the title class alone. */}
         <h1 className="ch-title" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: "normal" }}>
           {job.original_filename}
         </h1>

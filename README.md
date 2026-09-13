@@ -37,12 +37,11 @@ chord/
       audio/                the Web Audio engine, meter math, the time-stretch worklet
       components/           shared pieces: screen card, dialog, cover art, footer, icons
         controls/           faders, knobs, MUTE/SOLO toggles, stem waveforms
-      design/               what the design template specifies: copy, player state, stems, stages, breakpoint
+      design/               the design's vocabulary: copy, player state, stems, stages, breakpoint
       hooks/                job events, lyrics, slider and seek input, animation frames, etc.
       screens/              landing, processing, failure; results with its Mixer, Console and Analog views
       styles/               vendored Nocturne tokens and the ch- component layer
       utils/                dB and pan/tone conversions, waveform peaks, transpose, time, etc.
-    template/               the design template — the UI's source of truth, never shipped
     Dockerfile
     nginx.conf              serves the build and proxies /api to the server
   scripts/

@@ -10,7 +10,7 @@ interface StemRowProps {
   controls: StemControls;
 }
 
-/** `.ch-stemrow` (INSTRUCTIONS §4.1): name, level fader and value, MUTE/SOLO, waveform. Below 720px the stylesheet stacks it. */
+/** `.ch-stemrow` (design.md#controls): name, level fader and value, MUTE/SOLO, waveform. Below 720px the stylesheet stacks it. */
 export function StemRow({ stem, controls }: StemRowProps) {
   const { state } = stem;
   const value = fmtDb(state.gain, state.muted);

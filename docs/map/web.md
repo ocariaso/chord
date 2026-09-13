@@ -2,10 +2,11 @@
 
 React 19 + TypeScript + Vite SPA, served by nginx. Runtime dependencies: `react` and `react-dom` —
 nothing else. The look is the Nocturne design system's token sheet plus the `ch-` component layer,
-both vendored from [`template/`](../../web/template/); Tailwind 4 supplies layout utilities only.
-Every icon is hand-written inline SVG. The rest of what the template defines — its copy, player
-state model, stems, stage list and breakpoint — lives in [`src/design/`](../../web/src/design/), and
-[`scripts/check-design.mjs`](../../web/scripts/check-design.mjs) checks the template's ground rules
+both vendored from the design template the UI was built from and owned here since; Tailwind 4
+supplies layout utilities only. Every icon is hand-written inline SVG. The rest of what the design
+defines — its copy, player state model, stems, stage list and breakpoint — lives in
+[`src/design/`](../../web/src/design/), and
+[`scripts/check-design.mjs`](../../web/scripts/check-design.mjs) checks the design's ground rules
 on every `npm run lint` (see [../conventions/design.md](../conventions/design.md)).
 
 ```
@@ -14,7 +15,6 @@ web/
 ├── package.json  vite.config.ts  tsconfig*.json  .oxlintrc.json
 ├── public/      favicon.svg  icons.svg
 ├── scripts/     check-design.mjs
-├── template/    the design reference — harness, mockups, stylesheet sources (never built)
 └── src/
     ├── main.tsx  App.tsx  index.css  vite-env.d.ts
     ├── api/          client.ts
@@ -40,8 +40,9 @@ web/
                          ExportDialog  LyricsDialog
 ```
 
-Phones — below 720px, `PHONE_QUERY` in `design/layout.ts` — follow the harness's phone frames. The
-landing and processing screens branch into their phone arrangements on `useMediaQuery(PHONE_QUERY)`;
+Phones — below 720px, `PHONE_QUERY` in `design/layout.ts` — follow
+[Responsive](../conventions/design.md#responsive). The landing and processing screens branch into
+the phone arrangements the template's harness drew on `useMediaQuery(PHONE_QUERY)`;
 the results screen locks to the Mixer with no view tabs and a compact transport, and otherwise keeps
 the web markup — `chord-theme.css` stacks the stem rows, and `max-[720px]:` utilities hide the
 Mixer's column labels and the analysis bar's dividers.
@@ -57,8 +58,8 @@ In the entries below, `landing/`, `processing/`, `failure/` and `results/` are t
 **Notes:** `node:20-alpine` runs `npm ci` (before the source copy, so a code change doesn't
 reinstall deps) then `npm run build`; `nginx:1.27-alpine` receives `dist/` and `nginx.conf`.
 Because the build is `tsc -b && vite build`, **a type error fails the image build** — lint, and so
-the design check, never runs there. `COPY . .` also copies `template/` and `scripts/` into the build
-stage; nothing imports either, so neither reaches `dist/`.
+the design check, never runs there. `COPY . .` also copies `scripts/` into the build stage; nothing
+imports it, so it never reaches `dist/`.
 
 ### `.dockerignore` — keeps `node_modules/` and `dist/` out of the build context
 **Notes:** without it, `COPY . .` would lay the host's `node_modules` over the image's own `npm ci`
@@ -104,17 +105,16 @@ runs inside Docker. `allowJs` is off, so `audio/stretchProcessor.js` is **not ty
 **Notes:** plugins `react`, `typescript`, `oxc`; two rules configured —
 `react/rules-of-hooks` (error) and `react/only-export-components` (warn, constants allowed) — on
 top of oxlint's defaults, which include the React compiler-derived checks (`refs`,
-`set-state-in-effect`, `purity`). `ignorePatterns: ["template/**"]` keeps the vendored harness
-runtime out of the report. The design system's own adherence config is written as ESLint selectors
-oxlint doesn't implement; those rules run as `scripts/check-design.mjs` instead.
+`set-state-in-effect`, `purity`). The design system's own adherence config was written as ESLint
+selectors oxlint doesn't implement; those rules run as `scripts/check-design.mjs` instead.
 
-### `scripts/check-design.mjs` — the design template's ground rules as a lint step (202 lines)
+### `scripts/check-design.mjs` — the design's ground rules as a lint step (201 lines)
 **Exports:** — (a Node script: prints `path:line  message` for each violation and exits 1)
 **Imports from:** — (reads `src/` from disk)
 **Used by:** `package.json`'s `lint` script, after oxlint
 **Notes:** the rules the design system ships as ESLint `no-restricted-syntax` selectors
-(`template/_ds/…/_adherence.oxlintrc.json`), plus the parts of `INSTRUCTIONS.md` §0 and §10 a
-script can see. It first reads `src/styles/`, collecting every custom property, class and
+(the template's `_ds/…/_adherence.oxlintrc.json`), plus the parts of design.md's
+[Ground rules](../conventions/design.md#ground-rules) a script can see. It first reads `src/styles/`, collecting every custom property, class and
 `--space-N` px value the two vendored sheets define, then walks every other `.ts`, `.tsx`, `.js` and
 `.css` file under `src/` and reports: a hex colour; a colour function other than a plain-black
 `rgba(0, 0, 0, a)` shadow; a spacing token's px value written out (`8.4px` rather than
@@ -130,22 +130,6 @@ in `-` is the head of one built at runtime (`` `var(--ch-${key})` ``), and it is
 what it completes to can't be checked. `scripts/` is in neither tsconfig project, so the script
 isn't type-checked.
 **See:** [../conventions/design.md](../conventions/design.md)
-
-### `template/` — the design reference
-**Notes:** everything the redesign was built from, kept for comparison. At the top of
-`web/template/`: the working harness `CHORD Template.dc.html` (every scenario at web and phone
-widths, routed by `#/<scenario-id>`), the static board `CHORD Mockups.dc.html`, `support.js` (the
-runtime those two files need), `_ds/nocturne-…/` (the Nocturne design system: `styles.css`,
-`readme.md`, a manifest, its adherence lint config — which `scripts/check-design.mjs`
-re-implements — and `_ds_bundle.js`), `uploads/` (review screenshots and the build of the previous
-design's review demo) and a `.thumbnail`. Under `web/template/template/`: `chord-theme.css` and
-`vendor/nocturne-styles.css` (the sources of `src/styles/`), `README.md` and `INSTRUCTIONS.md`
-(class inventory, state model, responsive rules, QA checklist), and `reference/` (copies of the two
-HTML files). **Nothing here is built, served or linted.** It is the layout source of truth: open the
-harness in a browser beside the app when changing a screen; the screens' doc comments and
-`failureCopy`'s keys use its scenario ids. Where its written rules and its phone frames disagree —
-`INSTRUCTIONS.md` stacks the mixer rows below 720px, the phone frame shows stem cards — the app
-follows the written rules, so `.ch-m-stem` goes unused.
 
 ### `.gitignore`, `README.md`, `package-lock.json`, `public/`, `src/assets/` — everything else
 **Notes:** `.gitignore` is web-local; `README.md` is the unmodified create-vite React + TypeScript
@@ -167,7 +151,7 @@ Nocturne's variables. Vite scaffold style (single quotes, no semicolons). `Stric
 **Used by:** `main.tsx`
 **Notes:** `@import "tailwindcss"`; `min-height: 100%` on `html`, `body` and `#root` (the page's
 full height comes from `min-h-screen` in `App.tsx`); the page ground; and button cursors (`pointer`,
-or `not-allowed` when disabled). The ground is the harness's canvas in tokens: `html` in
+or `not-allowed` when disabled). The ground is the canvas the template's harness drew, in tokens: `html` in
 `--ch-well`, and on `body` a radial glow from `--ch-panel-raised` at the top left through
 `--color-bg` to `--ch-well`, sized to the first screen (`100% 100vh`, no repeat), so a longer page
 carries on in the well colour without a seam. It defines no class and no keyframes — app CSS that
@@ -203,7 +187,7 @@ cancel, resume and copy-log handlers; a cancel that fails is ignored (a job that
 answers 409), since the stream reports the real state. **Leaving a job discards it**: `handleBack`
 — *New track*, *Try another source* and *Discard* — clears `activeJobId`, and `useJobEvents`'
 cleanup fires the beacon: the server cancels a job still running (keeping its files) and deletes a
-finished one. Lays the screens out like the harness canvas: 28px top, `--space-8` (22.4px) sides
+finished one. Lays the screens out like the template harness's canvas: 28px top, `--space-8` (22.4px) sides
 and 40px bottom around a 1120px column, with 12px side gutters from a `max-[720px]:` utility below
 720px.
 **See:** [../architecture/web.md](../architecture/web.md)
@@ -309,21 +293,22 @@ request every 8th hop is the one place that allocates.
 
 ### `src/styles/nocturne.css` — the design system's tokens and base components (295 lines)
 **Used by:** `main.tsx`
-**Notes:** vendored from `template/template/vendor/nocturne-styles.css`, **minus its Google Fonts
-`@import`** — bundled after other CSS it would be invalid, so `index.html` loads Inter instead.
+**Notes:** vendored from the design template's Nocturne sheet, **minus its Google Fonts
+`@import`** — bundled after other CSS it would be invalid, so `index.html` loads Inter instead. The
+template is gone, so this copy is owned here now.
 Defines `--color-*` (the neutral and accent ramps), `--font-*`, `--space-*`, `--radius-*`,
 `--shadow-*`, global element rules (box-sizing, heading scale, the `:focus-visible` accent ring,
 `::selection`), and the classes `.btn`, `.input`/`.field`, `.tag`, `.card`, `.dialog*`, `.hr`,
 `.radio`, `.seg*`, `.nav*`, `.table`, `.elev-*`, `.text-muted` and `.lighten`. Colors, type and
-spacing go through these tokens; geometry the harness writes inline (paddings, column widths) is
-copied into the components as literals, the way the harness has it. With `chord-theme.css` it is
+spacing go through these tokens; geometry the template's harness wrote inline (paddings, column widths)
+was copied into the components as literals, the way the harness had it. With `chord-theme.css` it is
 the vocabulary `scripts/check-design.mjs` checks against: a token or owned class neither sheet
 defines fails lint.
 
 ### `src/styles/chord-theme.css` — the `ch-` component layer (611 lines)
 **Used by:** `main.tsx`
-**Notes:** vendored **unmodified** from `template/template/chord-theme.css` — byte-identical; keep it
-that way, or record the divergence here. Every `ch-` class the screens use; the stem hues
+**Notes:** vendored **unmodified** from the design template, which is gone, so this copy is owned
+here now; record any change to it here. Every `ch-` class the screens use; the stem hues
 `--ch-vocals` … `--ch-other` and the two status hues; the panel and well surfaces. Components pass
 runtime state through custom properties — **`--v`** (control position), **`--l`** (meter level),
 **`--p`** (playback position), **`--stem`** (hue), the only four `check-design.mjs` lets a component
@@ -331,7 +316,7 @@ set — though some geometry is still set inline (chord segments' `flex`, the wa
 `clip-path`). Its one breakpoint, `@media (max-width: 720px)`, stacks `.ch-stemrow` — the name on
 the first line, then level, routing (toggles at a 44px hit height) and waveform on lines of their
 own — which is the phone Mixer; **`PHONE_QUERY` uses the same width**. Unused by the app: `.ch-nav*`
-(harness chrome), `.ch-scale`, `.ch-wave-a/-b/-c` (placeholder envelopes, replaced by
+(the template harness's chrome), `.ch-scale`, `.ch-wave-a/-b/-c` (placeholder envelopes, replaced by
 `utils/peaks`), `.ch-m-stem` (the phone frame's stem card) and `.ch-lyric-past`.
 **See:** [../features/theming.md](../features/theming.md)
 
@@ -393,7 +378,7 @@ trips the React refs lint.
 **Used by:** `controls/Fader`, `controls/Knob`
 **Notes:** returns pointer handlers and `onKeyDown`, spread onto the element. `horizontal` maps
 pointer x across the element, `vertical` maps `(bottom − y) / height` (the formula
-`INSTRUCTIONS.md` gives), `knob` is **vertical drag, 160 px for the full range** — rotational drag
+the design template gave), `knob` is **vertical drag, 160 px for the full range** — rotational drag
 is unusable with a mouse — and doesn't jump on press. Keys: arrows ±0.01, Shift ±0.1,
 PageUp/PageDown ±0.1, Home/End. **There is no default value and no double-click reset.** Values are
 rounded to 0.001 so arrow steps don't accumulate float noise into `aria-valuenow`. A press focuses
@@ -491,13 +476,13 @@ the async Clipboard API is missing on plain-HTTP origins other than localhost.
 
 ---
 
-## `src/design/` — the template's vocabulary in code
+## `src/design/` — the design's vocabulary in code
 
-Everything the design template defines that isn't CSS. Screens and controls take their words, state
+Everything the design defines that isn't CSS. Screens and controls take their words, state
 shapes, tapers and stem identities from here rather than writing their own;
 [../conventions/design.md](../conventions/design.md) explains the rules.
 
-### `src/design/copy.ts` — every rendered string (233 lines)
+### `src/design/copy.ts` — every rendered string (232 lines)
 **Exports:** `countWord`, `brand`, `stemNames`, `landingCopy`, `processingCopy`, `resultsCopy`,
 `failureCopy`, `dialogCopy`, `footerCopy`
 **Imports from:** —
@@ -507,15 +492,15 @@ shapes, tapers and stem identities from here rather than writing their own;
 `results/MixerView`, `results/StemRow`, `results/ConsoleStrip`, `results/MasterStrip`,
 `results/AnalogView`, `results/AnalogModule`, `results/OutputDial`, `results/ExportDialog`,
 `results/LyricsDialog`
-**Notes:** strings are verbatim from `CHORD Template.dc.html` unless they sit under an
-*App-authored* comment — states the template doesn't draw: empty files, busy and failure states,
+**Notes:** strings are verbatim from the design template's harness unless they sit under an
+*App-authored* comment — states the template didn't draw: empty files, busy and failure states,
 accessible names, both dialogs and the footer. Two template lines are **reworded by decision**,
 each marked: the *Cancelled* body (the template promised a 24-hour queue) and *Connection lost*'s
 secondary action, *New track* in place of *Work offline*. Grouped by screen; values that need data
 are functions (`rejectedBody(fileName)`, `levelLabel(stem, value)`) — `processingCopy.estimate`
 takes seconds and rounds them itself, to the nearest 5 s with a 5 s floor under a minute and to whole
-minutes above, because the estimate is rough — and `failureCopy` is keyed by the template's scenario
-ids. **Some strings restate server facts and must change with them:**
+minutes above, because the estimate is rough — and `failureCopy` is keyed by the state ids in
+[Screens and their states](../conventions/design.md#screens-and-their-states). **Some strings restate server facts and must change with them:**
 `processingCopy.stages` is `PROCESSING_STAGES`, whose last four labels are the server's
 `stage_message` strings; *up to 12 minutes* (`dropHint`, `phoneDropHint`) is
 `max_duration_seconds`' default; *44.1 / 48 kHz preserved* is `_PRESERVED_SAMPLE_RATES`; *MP3 or
@@ -525,7 +510,7 @@ read by key, through `stemName` in `design/stems`. `countWord` spells counts up 
 stem-failure body); `footerCopy.copyright` hardcodes the author's name.
 **See:** [../conventions/design.md](../conventions/design.md)
 
-### `src/design/player.ts` — the template's state model and what derives from it (88 lines)
+### `src/design/player.ts` — the design's state model and what derives from it (88 lines)
 **Exports:** types `StemKey`, `StemState`, `ResultView`, `PlayerState`; `MIN_TRANSPOSE`,
 `MAX_TRANSPOSE`, `FADER_RANGE_DB`, `db`, `masterDb`, `fmtDb`, `audible`, `STEM_METER_SCALE`,
 `MASTER_METER_SCALE`
@@ -533,18 +518,18 @@ stem-failure body); `footerCopy.copyright` hardcodes the author's name.
 **Used by:** `design/stems` (type), `results/ResultsScreen`, `results/playerReducer`,
 `results/types` (types), `results/ResultsTopbar` (type), `results/AnalysisBar`, `results/StemRow`,
 `results/ConsoleView`, `results/ConsoleStrip`, `results/MasterStrip`, `results/AnalogModule`
-**Notes:** `INSTRUCTIONS.md` §3 as types. `StemState` and `PlayerState` hold **0…1 UI positions,
+**Notes:** design.md's [State](../conventions/design.md#state) as types. `StemState` and `PlayerState` hold **0…1 UI positions,
 not dB** (gain, tone, pan, master); everything else is derived, never stored, under the template's
-own function names. `StemKey` is the six template stems. **Two fader tapers, each matching its
+own function names. `StemKey` is the design's six stems. **Two fader tapers, each matching its
 strip's ticks.** `db()` maps a stem position linearly onto −36…0 dB with the bottom silent — the
 scale of the `0 / −12 / −24 / −∞` `TICKS` in `results/ConsoleStrip`, so change `FADER_RANGE_DB`
-and those labels together (the template's demo uses −12…0 and asks for the audio graph's own
+and those labels together (the template's demo used −12…0 and asked for the audio graph's own
 taper). `masterDb()` goes through `MASTER_TICKS`, the master strip's `0 / −6 / −18 / −∞`, giving the
 top of the travel more room; `MASTER_METER_SCALE` is those anchors inverted, so master fader, meter
 and ticks can't drift apart, while `STEM_METER_SCALE` is written out to match the stem ticks.
 `fmtDb(v, muted)` reads *−∞* for a muted stem. `audible()` — not muted, and nothing soloed or this
 one — puts **mute over solo**, as `isAudible()` in the engine does; it dims the Mixer's waveforms,
-but the Console strip's label and the strip and module panels follow the harness instead (see
+but the Console strip's label and the strip and module panels show solo first instead (see
 `results/ConsoleStrip`). `MIN_TRANSPOSE` / `MAX_TRANSPOSE` are ±11: twelve semitones is the same
 pitch class.
 
@@ -552,7 +537,7 @@ pitch class.
 **Exports:** `STEM_KEYS`, `templateStems`, `stemName`, `stemHue`, `tonePivotHz`
 **Imports from:** `design/copy`, `design/player` (type)
 **Used by:** `results/ResultsScreen`
-**Notes:** `STEM_KEYS` is vocals, drums, bass, guitar, piano, other — the template's order, and
+**Notes:** `STEM_KEYS` is vocals, drums, bass, guitar, piano, other — the design's order, and
 `STEM_NAMES`'. **`templateStems(names)` keeps only the job's stems that are in `STEM_KEYS`, in that
 order, so a stem outside the six is never loaded**, played or offered for single download (the zip
 still carries it): the design has no name or hue for it. Change `STEM_KEYS` with the Demucs model.
@@ -579,7 +564,7 @@ module-private.
 **Exports:** `PHONE_QUERY`
 **Imports from:** —
 **Used by:** `landing/LandingScreen`, `processing/ProcessingScreen`, `results/ResultsScreen`
-**Notes:** `"(max-width: 720px)"`, the template's one breakpoint. Its comment names every place that
+**Notes:** `"(max-width: 720px)"`, the design's one breakpoint. Its comment names every place that
 must agree: `@media (max-width: 720px)` in `chord-theme.css`, and the `max-[720px]:` utilities in
 `App.tsx`, `results/MixerView` (its column labels) and `results/AnalysisBar` (its dividers).
 
@@ -591,7 +576,7 @@ must agree: `@media (max-width: 720px)` in `chord-theme.css`, and the `max-[720p
 **Exports:** `ScreenCard`
 **Used by:** `landing/LandingScreen`, `processing/ProcessingScreen`, `failure/FailurePanel`,
 `results/ResultsScreen`
-**Notes:** `.ch-app` with the harness's 10px radius, ring and shadow, and an optional `maxWidth`
+**Notes:** `.ch-app` with the template harness's 10px radius, ring and shadow, and an optional `maxWidth`
 (520 for the processing and failure cards). `overflow: hidden` clips everything to the radius — and
 makes the card a scroll container, so a `position: sticky` child would stick to the card, not the
 viewport. Nothing inside is sticky today.
@@ -600,10 +585,10 @@ viewport. Nothing inside is sticky today.
 **Exports:** `CoverArt`
 **Imports from:** `api/client`
 **Used by:** `processing/ProcessingScreen`, `results/ResultsTopbar`
-**Notes:** the accent-gradient tile from the harness, with the thumbnail drawn through Nocturne's
+**Notes:** the accent-gradient tile the template's harness drew, with the thumbnail drawn through Nocturne's
 `.lighten` (dark artwork falls into the gradient). Hides the image if it fails to load. The hairline
 edge is an overlay, so the image can't cover it, and is drawn only when `outlined` (the default) —
-the phone processing screen passes `false`, as the harness's phone tile has none.
+the phone processing screen passes `false`, as the harness's phone tile had none.
 
 ### `src/components/Dialog.tsx` — modal (89 lines)
 **Exports:** `Dialog`
@@ -617,7 +602,7 @@ the focus effect runs once. `width` widens it past Nocturne's 440px.
 **Exports:** `Footer`
 **Imports from:** `design/copy`
 **Used by:** `App`
-**Notes:** the template has no footer; this one is kept by decision. GitHub, a bug-report `mailto:`
+**Notes:** the template had no footer; this one is kept by decision. GitHub, a bug-report `mailto:`
 and Ko-fi as Nocturne ghost icon buttons (`.btn-icon`), plus `footerCopy.copyright` —
 `© <year> Ormin Cariaso · v{__APP_VERSION__}`. In the page flow, not fixed. Hardcodes the author's
 URLs and email.
@@ -627,7 +612,7 @@ URLs and email.
 **Used by:** `landing/LandingScreen` (`UploadIcon`), `processing/ProcessingScreen` (`CheckIcon`),
 `results/ResultsTopbar` (`PlusIcon`), `results/Transport` (`PlayIcon`, `PauseIcon`,
 `MetronomeIcon`)
-**Notes:** the harness's paths, drawn in `currentColor` except `CheckIcon`, whose stroke is the
+**Notes:** the template harness's paths, drawn in `currentColor` except `CheckIcon`, whose stroke is the
 `color` it is given — the accent for a done stage, transparent otherwise.
 
 ---
@@ -670,17 +655,18 @@ chord strip and the transport do.
 
 ---
 
-## `src/screens/` — one folder per template screen
+## `src/screens/` — one folder per screen
 
-Each screen follows its scenarios in `CHORD Template.dc.html` element for element and takes every
-string from `design/copy`.
+Each screen renders its states from
+[Screens and their states](../conventions/design.md#screens-and-their-states) and takes every string
+from `design/copy`; together they are the design's reference implementation.
 
 ### `src/screens/landing/LandingScreen.tsx` — the landing screen (250 lines)
 **Exports:** `LandingScreen`, `Submission`, `SubmitError`
 **Imports from:** `components/icons`, `components/ScreenCard`, `design/copy`, `design/layout`,
 `hooks/useMediaQuery`
 **Used by:** `App`
-**Notes:** the template's `upload`, `upload-submitting` and `upload-error` scenarios, in two
+**Notes:** the `upload`, `upload-submitting` and `upload-error` states, in two
 arrangements: web, and the phone frame below 720px — no *Choose file* button (the column dropzone is
 itself the control: `role="button"`, Enter or Space), a full-width *Fetch track*, no intro paragraph
 or divider. Client-side rejection of anything but `.mp3`/`.flac` (`ACCEPTED_EXTENSIONS`, plus the
@@ -689,8 +675,8 @@ and names the file, and an alert explains. Server failures arrive through `error
 alert takes the place of a server error's. *Submitting…* replaces the label of the button that sent
 the request (`Submission`) — on phones the one *Fetch track* button shows it for a file too — and
 every control is disabled while busy; there is no upload progress. The URL input is `required`, so
-the button stays enabled like the harness's. `Track URL` renders at 12px because Nocturne's
-`.field > label` outranks `.ch-label` — as it does in the harness.
+the button stays enabled, as the template harness's did. `Track URL` renders at 12px because
+Nocturne's `.field > label` outranks `.ch-label` — as it did in the harness.
 **See:** [../features/ingest.md](../features/ingest.md)
 
 ### `src/screens/processing/ProcessingScreen.tsx` — live progress (186 lines)
@@ -699,7 +685,7 @@ the button stays enabled like the harness's. `Track URL` renders at 12px because
 `components/ScreenCard`, `design/copy`, `design/layout`, `design/stages`, `hooks/useMediaQuery`,
 `utils/time`
 **Used by:** `App`, **and `results/ResultsScreen`** (as its stem-loading screen, via `loading`)
-**Notes:** the template's `processing-*` scenarios. The fixed five-stage list: stages before the
+**Notes:** the `processing-*` states. The fixed five-stage list: stages before the
 current one are `.is-done`, and a skipped stage shows done rather than disappearing. A done stage's
 time is the gap between the server `updated_at` of the first update seen in it and in the next
 stage seen (`stageSnapshots`) — *Queued* starts at `job.created_at` — so **no client clock is
@@ -718,11 +704,11 @@ the same `stageSnapshots`, so the done stages keep their times; its *Cancel* is 
 **Exports:** `FailurePanel`, `FailureTone`, `FailureAction`
 **Imports from:** `components/ScreenCard`
 **Used by:** `App`, `results/ResultsScreen`
-**Notes:** the template's `job-error`, `job-cancelled`, `connection-error` and `results-load-error`:
+**Notes:** the `job-error`, `job-cancelled`, `connection-error` and `results-load-error` states:
 `.ch-alert` + optional `.ch-log` (newlines kept — a stem failure logs one request per line) + a
 primary and optional secondary action, in a 520px card. The tone picks **only the dot color** —
 `--ch-danger`, `--ch-warn` or `--color-neutral-600` — and the panel itself is never tinted. Every
-template state has a secondary action; only *Job not found* leaves it out. The words come from the
+one of those states has a secondary action; only *Job not found* leaves it out. The words come from the
 caller. `role="alert"` announces it on mount.
 
 ---
@@ -738,9 +724,9 @@ caller. `role="alert"` announces it on mount.
 `results/ConsoleView`, `results/ExportDialog`, `results/LyricsDialog`, `results/MixerView`,
 `results/playerReducer`, `results/ResultsTopbar`, `results/Transport`, `results/types`
 **Used by:** `App`
-**Notes:** owns the engine and **all** playback state: the template's `PlayerState` through
+**Notes:** owns the engine and **all** playback state: `PlayerState` through
 `useReducer(playerReducer)` — view, playing, time, duration, master, transpose, metronome and each
-stem's gain, mute, solo, tone and pan — plus what the template leaves to the app: load phase and
+stem's gain, mute, solo, tone and pan — plus what the state model leaves to the app: load phase and
 failures, waveform envelopes, speed and whether it's supported, loop, chords (`undefined` loading /
 `null` after any failed fetch), `hasVocals`, lyrics, and which dialog is open. Every view gets the
 same `StemDisplay[]` and `StemControls`, so switching views mid-song is seamless. Loads only
@@ -800,7 +786,7 @@ which is how phones get none; there is no other phone arrangement.
 **Imports from:** `controls/Fader`, `design/copy`, `design/player`, `utils/levels`, `utils/tempo`,
 `utils/transpose`
 **Used by:** `results/ResultsScreen`
-**Notes:** rendered once above all three views, as the template requires (`INSTRUCTIONS.md` §8) —
+**Notes:** rendered once above all three views, as the design requires ([Chords and lyrics](../conventions/design.md#chords-and-lyrics)) —
 on phones too, where its groups wrap into a column and the dividers between them hide
 (`max-[720px]:hidden`). The key label follows transpose, with *N% confident* when the server sent a
 confidence; the − / + buttons stop at `MIN_TRANSPOSE` / `MAX_TRANSPOSE`. Tempo shows one decimal
@@ -812,7 +798,7 @@ follows `masterDb()`.
 **Imports from:** `api/client` (types), `design/copy`, `hooks/useElementWidth`, `hooks/useSeekDrag`,
 `utils/lyrics`, `utils/time`, `utils/transpose`
 **Used by:** `results/ResultsScreen`
-**Notes:** `INSTRUCTIONS.md` §4.5: the current chord — *—* before the first chord, in a gap or in a
+**Notes:** design.md's [Chords and lyrics](../conventions/design.md#chords-and-lyrics): the current chord — *—* before the first chord, in a gap or in a
 no-chord (`N`) segment — plus the next three (skipping `N`, the later two each a ramp step dimmer)
 and the time. The strip spans the whole track: segments take `flex: <duration>`, with spacers for
 any gap before the first or after the last so the playhead's `--p` lines up. An `N` segment has no
@@ -831,7 +817,7 @@ them. Any failed chords fetch shows *No chord analysis for this track.*
 `utils/time`, `results/types`
 **Used by:** `results/ResultsScreen`
 **Notes:** `.ch-transport` — play, both times, seek, speed, loop and metronome — closing the results
-card; **not sticky**. `compact` renders the template's `.ch-m-bar` instead: play, seek and *Click*
+card; **not sticky**. `compact` renders `.ch-m-bar` instead: play, seek and *Click*
 only, so phones have no speed or loop control. The 4px `.ch-seek` sits in a transparent full-height
 wrapper that takes the pointer; the slider keeps the keyboard (±5 s, Shift ±30 s, PageUp/PageDown
 ±30 s, Home/End). The speed chip opens a popover of `SPEED_OPTIONS` (0.5–1.25×) and is disabled with
@@ -856,7 +842,7 @@ places `PHONE_QUERY`'s comment lists.
 **Imports from:** `controls/Fader`, `controls/RoutingToggles`, `controls/StemWaveform`,
 `design/copy`, `design/player`, `results/types`
 **Used by:** `results/MixerView`
-**Notes:** `.ch-stemrow` (`INSTRUCTIONS.md` §4.1) in the stem's `--stem` hue: dot and name, a thin
+**Notes:** `.ch-stemrow` ([Controls](../conventions/design.md#controls)) in the stem's `--stem` hue: dot and name, a thin
 level fader with its `fmtDb` value, MUTE/SOLO, and the waveform, dimmed while the stem isn't
 `audible`. Below 720px the stylesheet stacks it and holds MUTE/SOLO at a 44px hit height.
 
@@ -879,11 +865,11 @@ re-renders never touch the imperatively written value. The master *Peak* is the 
 **Imports from:** `controls/Fader`, `controls/RoutingToggles`, `design/copy`, `design/player`,
 `utils/levels`, `results/types`
 **Used by:** `results/ConsoleView`
-**Notes:** `.ch-panel.ch-strip` (`INSTRUCTIONS.md` §4.2): name and state label, a `VerticalFader`, a
+**Notes:** `.ch-panel.ch-strip` ([Controls](../conventions/design.md#controls)): name and state label, a `VerticalFader`, a
 stereo `.ch-meter` (`data-meter` = the stem key, `data-channel` 0 and 1) beside the
 `0 / −12 / −24 / −∞` `TICKS` that `db()` and `STEM_METER_SCALE` are spaced for, then Level and Pan
 readouts and MUTE/SOLO. The label reads *Soloed*, *Muted*, *Silent* (a muted instrumental vocals),
-*Held* (another stem is soloed) or *Playing*. **It follows the harness's order, not the audio**: a
+*Held* (another stem is soloed) or *Playing*. **It shows solo first, not the audio**: a
 soloed strip reads *Soloed* and lifts (`.is-active`) even when it is also muted, though mute wins in
 the engine and in `audible()`; a muted one dims (`.is-off`).
 
@@ -902,7 +888,8 @@ the engine and in `audible()`; a muted one dims (`.is-off`).
 `utils/levels`, `results/AnalogModule`, `results/OutputDial`, `results/types`
 **Used by:** `results/ResultsScreen`
 **Notes:** five `OutputDial`s in a `repeat(5, minmax(180px, 1fr))` grid that scrolls rather than
-shrinking — `INSTRUCTIONS.md` calls the 180px floor load-bearing for the in-SVG type — above a
+shrinking — [Metering](../conventions/design.md#metering) calls the 180px floor load-bearing for the
+in-SVG type — above a
 `.ch-striprow` of `AnalogModule`s. Output L/R (peak, 20 dB/s release), true peak (1.5 s hold),
 momentary loudness (300 ms smoothing, *−∞* in silence) and correlation (300 ms smoothing); needles
 are rotated with `setAttribute` every frame and readouts rewritten at 8 Hz, both bypassing React.
@@ -916,18 +903,18 @@ value means nothing there.
 `utils/levels`, `results/types`
 **Used by:** `results/AnalogView`
 **Notes:** `.ch-panel.ch-module`: dot and name, a Level knob in the stem hue with its dB value, Tone
-and Pan knobs in `--color-neutral-700` (`INSTRUCTIONS.md` §4.3: only Level carries the hue), each
-with its value under its label (§0.3; the harness draws them with a label only), and MUTE/SOLO. Like
-the Console strip it follows the harness's order: a soloed module lifts
+and Pan knobs in `--color-neutral-700` ([Controls](../conventions/design.md#controls): only Level carries the hue), each
+with its value under its label ([Ground rules](../conventions/design.md#ground-rules); the template's
+harness drew them with a label only), and MUTE/SOLO. Like the Console strip it shows solo first: a soloed module lifts
 (`.is-active`) even when muted; a muted one dims.
 
 ### `results/OutputDial.tsx` — one needle meter (116 lines)
 **Exports:** `OutputDial`, `DialScale`, `OUTPUT_DIALS`, `NEEDLE_SWEEP_DEGREES`, `NEEDLE_MID_DEGREES`
 **Imports from:** `design/copy`
 **Used by:** `results/AnalogView`
-**Notes:** the template's SVG on a `0 0 200 140` viewBox, the needle pivoting at `(100, 108)` over
+**Notes:** the SVG the template's harness drew, on a `0 0 200 140` viewBox, the needle pivoting at `(100, 108)` over
 ±70°. Each scale is three anchors — left end, the mid label at −10°, right end — so the spacing is
-non-linear, like a VU face. The accent arcs, as the harness draws them, start at +56° on L/R and
+non-linear, like a VU face. The accent arcs, as the harness drew them, start at +56° on L/R and
 true peak (about −2.1 dB and −1.6 dB), +40° on loudness (about −14 LUFS) and +30° on correlation
 (+0.5). Colors go through `style` so SVG strokes can take tokens. The needle and readout elements
 are handed back through `needleRef` and `valueRef` for `AnalogView` to write.
@@ -936,7 +923,7 @@ are handed back through `needleRef` and `valueRef` for `AnalogView` to write.
 **Exports:** `ExportDialog`
 **Imports from:** `api/client`, `components/Dialog`, `design/copy`, `utils/download`, `results/types`
 **Used by:** `results/ResultsScreen`
-**Notes:** the template draws no export dialog, so this composes Nocturne's dialog with `.ch-stemrow`
+**Notes:** the template drew no export dialog, so this composes Nocturne's dialog with `.ch-stemrow`
 rows: one per stem on the mixer, plus *Download all (.zip)*. Files are named
 `"<title> - <stem key>.wav"` and `"<title>_stems.zip"`, with `.mp3`/`.flac` stripped from an
 upload's title. Each download shows its own in-flight label; a failed one shows a one-line note
@@ -947,7 +934,7 @@ instead of being swallowed.
 **Exports:** `LyricsDialog`, `LyricsDialogMode`
 **Imports from:** `api/client`, `components/Dialog`, `design/copy`
 **Used by:** `results/ResultsScreen`
-**Notes:** the template draws neither dialog. `sheet` — opened by the plain row's *Open lyric sheet*
+**Notes:** the template drew neither dialog. `sheet` — opened by the plain row's *Open lyric sheet*
 — shows `lyrics.plain` with its line breaks in a 560px dialog that scrolls past 60vh, with *Close*
 only: it never shows synced lines and cannot replace the lyrics. `edit` — opened by *Add lyrics
 manually* — is a textarea whose save goes through `saveLyrics` and replaces the lyrics state;

@@ -1,12 +1,11 @@
 /**
  * Every string the screens render.
  *
- * The design template (web/template) is the source of truth for copy. Strings are verbatim from
- * `CHORD Template.dc.html` unless they sit under an "App-authored" comment, which marks states the
- * template doesn't show; keep those minimal and in the template's voice. Two template lines are reworded
+ * Strings keep the design template's wording unless they sit under an "App-authored" comment, which marks
+ * states the template didn't show; keep those minimal and in the same voice. Two template lines are reworded
  * by decision because they described behavior the app doesn't have — each is marked where it lives. Stage
  * messages double as the API's `stage_message` values, so they must never be edited here alone.
- * See docs/conventions/design.md.
+ * See docs/conventions/design.md#copy.
  */
 
 const COUNT_WORDS = ["no", "one", "two", "three", "four", "five", "six"];

@@ -16,7 +16,7 @@ Two reasons, both practical:
 
 ## State and range
 
-`transpose` is part of the template's `PlayerState` (INSTRUCTIONS §3), held in
+`transpose` is part of the design's `PlayerState` ([State](../conventions/design.md#state)), held in
 [`ResultsScreen`](../../web/src/screens/results/ResultsScreen.tsx)'s reducer. The range is declared
 **once**, in [`design/player.ts`](../../web/src/design/player.ts), and exported:
 

@@ -440,7 +440,7 @@ of the image build and cannot be skipped. Run `npm run build` locally first.
 
 After oxlint, `npm run lint` runs [`scripts/check-design.mjs`](../../web/scripts/check-design.mjs),
 which prints each violation as `path:line  message` and exits non-zero. It checks `src/` against the
-template's mechanical rules — values through the vendored stylesheets' tokens, no new colours or
+design's mechanical [ground rules](../conventions/design.md#ground-rules) — values through the vendored stylesheets' tokens, no new colours or
 fonts, only classes those stylesheets define, only `--v`, `--l`, `--p` and `--stem` set inline, no
 class definitions in app CSS — so the fix is almost always a token or an existing class; the rules
 are in [../conventions/design.md](../conventions/design.md). It reads string literals rather than

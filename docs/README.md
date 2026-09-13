@@ -16,7 +16,7 @@ Every category below is a folder. This page is the only file at the top level.
 | Know what's stored, where, and in what shape | [data/](data/) |
 | Run, build, deploy, or debug an environment | [operations/](operations/) |
 | Match the existing code style | [conventions/](conventions/) |
-| Change what a screen looks like or says | [conventions/design.md](conventions/design.md) — the design template is the source of truth |
+| Change what a screen looks like or says | [conventions/design.md](conventions/design.md) — the design standard |
 | Know *why* something is built this way | [architecture/decisions.md](architecture/decisions.md) |
 
 ## The two halves
@@ -29,9 +29,8 @@ A monorepo of two deployables plus a thin script layer:
 - **[`web/`](../web/)** — a React + TypeScript + Vite single-page app served by nginx, which also
   reverse-proxies `/api` to the server. Owns the landing screen, the live processing screen, the
   failure panels, and the results: one mixer state shown as three views (Mixer, Console,
-  Analog), played through a Web Audio engine with metering and pitch-preserving speed. The design
-  template in [`web/template/`](../web/template/) is the source of truth for its design, copy and
-  UX — see [conventions/design.md](conventions/design.md).
+  Analog), played through a Web Audio engine with metering and pitch-preserving speed. Its design,
+  copy and UX follow [conventions/design.md](conventions/design.md), the design standard.
 
 They share no code and no generated types — the TypeScript interfaces in
 [`web/src/api/client.ts`](../web/src/api/client.ts) are hand-mirrored from the Pydantic models in
@@ -95,7 +94,7 @@ docs/
 │
 └── conventions/
     ├── README.md                  patterns shared across both halves
-    ├── design.md                  the design template as source of truth, and the design check
+    ├── design.md                  the design standard, and the design check
     ├── python.md                  server-side style, layering, error handling
     └── typescript.md              web-side style, React patterns, ch- styling
 ```

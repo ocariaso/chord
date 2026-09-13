@@ -1,10 +1,9 @@
 /**
  * The design template's ground rules as a check, run by `npm run lint` after oxlint.
  *
- * The design system ships its adherence rules as ESLint `no-restricted-syntax` selectors
- * (web/template/_ds/.../_adherence.oxlintrc.json), which oxlint doesn't implement, so they live here,
- * together with the parts of INSTRUCTIONS.md §0 and §10 a script can see. docs/conventions/design.md
- * explains each rule.
+ * The design system shipped its adherence rules as ESLint `no-restricted-syntax` selectors, which oxlint
+ * doesn't implement, so they live here, together with the parts of the design's ground rules a script can
+ * see. docs/conventions/design.md explains each rule.
  *
  * It reads string literals rather than an AST, so a regex literal or JSX text can occasionally trip it;
  * every report names the line.
@@ -15,10 +14,10 @@ import { fileURLToPath } from "node:url";
 
 const WEB_DIR = fileURLToPath(new URL("..", import.meta.url));
 const SOURCE_DIR = join(WEB_DIR, "src");
-// Vendored from the template unmodified: they define the vocabulary instead of following it.
+// The stylesheets define the vocabulary instead of following it.
 const VENDORED_DIR = join(SOURCE_DIR, "styles");
 
-// INSTRUCTIONS.md §0.2: the only custom properties a component sets.
+// The only custom properties a component sets (design.md#runtime-values).
 const RUNTIME_PROPERTIES = new Set(["--v", "--l", "--p", "--stem"]);
 // The class families the stylesheets own; any other class is a Tailwind layout utility.
 const OWNED_CLASS = /^(?:ch-[\w-]+|is-[\w-]+|btn(?:-[\w-]+)?|dialog(?:-[\w-]+)?|field|input|lighten)$/;

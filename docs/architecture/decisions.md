@@ -25,8 +25,8 @@ progressive start, and that number is why the
 and the design draws a waveform as a `.ch-wave` bar pattern.
 
 **Choice:** no waveform library. [`waveformPolygon`](../../web/src/utils/peaks.ts) reduces each
-decoded buffer to a 160-bin peak envelope expressed as a CSS `polygon()` — what INSTRUCTIONS §8 asks
-for in place of the template's placeholder shapes — and
+decoded buffer to a 160-bin peak envelope expressed as a CSS `polygon()` — what the design template asked
+for in place of its placeholder shapes — and
 [`StemWaveform`](../../web/src/components/controls/StemWaveform.tsx) sets it as the element's
 `clip-path`. This replaced WaveSurfer, which needed every stem fetched twice — an `ArrayBuffer` for
 the engine, a media element for its cursor.
@@ -258,7 +258,7 @@ mode.
 
 **Constraint:** a detected key is often a semitone off, or the player wants a capo position.
 
-**Choice:** `transpose` is part of the template's `PlayerState`, clamped to ±11 by
+**Choice:** `transpose` is part of the design's `PlayerState`, clamped to ±11 by
 [`playerReducer`](../../web/src/screens/results/playerReducer.ts) with `MIN_TRANSPOSE` and
 `MAX_TRANSPOSE`, which are declared once, in [`design/player.ts`](../../web/src/design/player.ts) —
 twelve semitones is the same pitch class as zero. `transposeChord` / `transposeKeyLabel` rewrite
@@ -274,10 +274,10 @@ is not persisted anywhere: every visit starts at 0.
 
 **Constraint:** a fader position has to read as a level, and each console strip's tick column is
 evenly spaced — 0 / −12 / −24 / −∞ beside a stem, 0 / −6 / −18 / −∞ beside the master — columns
-the template's demo mapping, 0…1 onto −12…0 dB, can't fill.
+the template's demo mapping, 0…1 onto −12…0 dB, couldn't fill.
 
-**Choice:** keep the template's `db()` — INSTRUCTIONS §3 says to change only its body when the audio
-graph's taper differs — and give it a 36 dB span. In [`design/player.ts`](../../web/src/design/player.ts)
+**Choice:** keep the template's `db()` — its instructions said to change only its body when the
+audio graph's taper differs — and give it a 36 dB span. In [`design/player.ts`](../../web/src/design/player.ts)
 a stem fader's position maps linearly onto −36…0 dB, with position 0 silent. The stem meter scale,
 `STEM_METER_SCALE`, is linear over the same 36 dB, so a fader cap sits level with its tick. Level
 faders and knobs share that law. The master fader follows its own ticks instead: `masterDb` runs
@@ -291,41 +291,45 @@ keyboard step is fixed in position, so one arrow press is 0.36 dB anywhere on a 
 anything from 0.18 dB near the top of the master to 0.54 dB near its bottom. And the two laws
 disagree about the same position: halfway up is −18 dB on a stem and −12 dB on the master.
 
-## The design template is the source of truth
+## The UI was built from a design template
 
-**Constraint:** the design arrives as a template in [`web/template/`](../../web/template/), not as
-components: written rules ([`INSTRUCTIONS.md`](../../web/template/template/INSTRUCTIONS.md) and
-[`README.md`](../../web/template/template/README.md)), vendored stylesheets, a markup harness
-(`CHORD Template.dc.html`) and a static Mockups board (`CHORD Mockups.dc.html`). The four don't
-always agree with each other, and the app had grown behavior none of them draws.
+**Constraint:** the design arrived as a template in a `web/template/` folder, not as components:
+written rules (`INSTRUCTIONS.md` and `README.md`), vendored stylesheets, a markup harness
+(`CHORD Template.dc.html`) and a static Mockups board (`CHORD Mockups.dc.html`). The four didn't
+always agree with each other, and the app had grown behavior none of them drew. The originals can
+still be read from git, as `git show 2a9783e:web/template/template/INSTRUCTIONS.md` and
+`git show "2a9783e:web/template/CHORD Template.dc.html"`.
 
-**Choice:** build to the template and, where it disagrees with itself, take the written rules
-first, then the stylesheets, then the harness markup, then the Mockups board. The screens' copy
-lives in [`design/copy.ts`](../../web/src/design/copy.ts), verbatim from the harness unless marked
-app-authored, and the template's state model in [`design/player.ts`](../../web/src/design/player.ts);
-the standard is [../conventions/design.md](../conventions/design.md). The calls that took a
-decision:
+**Choice:** build to the template and, where it disagreed with itself, take the written rules
+first, then the stylesheets, then the harness markup, then the Mockups board. Once the UI was
+built, the template's binding rules moved into [../conventions/design.md](../conventions/design.md),
+which is now the design standard, with the screens in [`web/src/screens/`](../../web/src/screens/)
+as its reference implementation, and the folder was removed. The screens' copy lives in
+[`design/copy.ts`](../../web/src/design/copy.ts), verbatim from the harness unless marked
+app-authored, and the template's state model in [`design/player.ts`](../../web/src/design/player.ts).
+The calls that took a decision:
 
-- **Phones follow the written rules, not the harness's phone frame.** INSTRUCTIONS §5 locks a phone
-  to the Mixer and lets the stylesheet stack `.ch-stemrow` with 44 px MUTE/SOLO. The harness's phone
-  frame draws a different screen — stem cards, a compact header with key and tempo, an *Export*
-  chip, two upcoming chords — which the app used to follow. The rules outrank the markup, so a phone
-  now gets the desktop screen reflowed ([what that costs](#narrow-screens-get-the-mixer-view-only)).
+- **Phones follow the written rules, not the harness's phone frame.** The template's responsive
+  rules locked a phone to the Mixer and let the stylesheet stack `.ch-stemrow` with 44 px
+  MUTE/SOLO. The harness's phone frame drew a different screen — stem cards, a compact header with
+  key and tempo, an *Export* chip, two upcoming chords — which the app used to follow. The rules
+  outranked the markup, so a phone now gets the desktop screen reflowed
+  ([what that costs](#narrow-screens-get-the-mixer-view-only)).
 - **Two template lines are reworded, because they promise behavior the app doesn't have.** The
   cancelled panel's *"The upload is still in your queue for 24 hours"* reads *"The upload is kept
   until you leave this page"*, since [leaving discards the job](#discard-on-leave); the connection
   panel's *Work offline* names a mode that doesn't exist, so it reads *New track*. Both are marked
   where they live in `copy.ts`.
-- **The footer stays**, though the template has none; its strings are app-authored in `copy.ts`.
-- **Four things the app had and the template doesn't draw were removed:** the sticky transport,
+- **The footer stays**, though the template had none; its strings are app-authored in `copy.ts`.
+- **Four things the app had and the template didn't draw were removed:** the sticky transport,
   the upload progress bar, the loop A/B markers on the chord strip, and the speed chip on phones.
-- **Solo shows before mute.** The written rules give `.is-active` to a soloed strip and `.is-off` to
-  a muted one without saying which wins; the harness picks solo, so a soloed Console strip or Analog
+- **Solo shows before mute.** The written rules gave `.is-active` to a soloed strip and `.is-off` to
+  a muted one without saying which wins; the harness picked solo, so a soloed Console strip or Analog
   module reads *Soloed* and lifts even when it is also muted. The audio is unchanged —
   [mute still beats solo](audio-playback.md#mute-solo-and-volume).
-- **Every control shows its value, the Analog Tone and Pan knobs included.** INSTRUCTIONS §0.3 asks
-  for a visible label and value on every control; the harness draws those two knobs with a label
-  only, so the written rule wins.
+- **Every control shows its value, the Analog Tone and Pan knobs included.** The template's ground
+  rules asked for a visible label and value on every control; the harness drew those two knobs with
+  a label only, so the written rule won.
 - **Loading stems is the template's `processing-loading` state:** the processing screen at 100%,
   *Loading stems…*, *Decoding six stems in your browser*. `PlaybackEngine.load` no longer reports
   progress.
@@ -339,11 +343,12 @@ decision:
   scrolls the transport out of view.
 - Every job error is titled *Separation failed*, the template's title, a failed download or an
   unreadable file included, so the body has to carry the specifics.
-- A stem the template has no name or hue for isn't loaded at all; a Demucs model with a different
+- A stem the design has no name or hue for isn't loaded at all; a Demucs model with a different
   stem set needs `STEM_KEYS` changed with it.
-- A string changed in the harness has to be copied into `copy.ts` by hand, and nothing compares the
-  two: `npm run lint` checks tokens, classes and colours against the stylesheets, not copy or layout
-  against the harness.
+- With the template gone, nothing outside the code shows a screen as designed: a UI change is
+  checked by hand against design.md and the existing screens
+  ([Checking a UI change](../conventions/design.md#checking-a-ui-change)), and `npm run lint` checks
+  tokens, classes and colours against the stylesheets, not copy or layout.
 
 ## A fixed Nocturne palette instead of per-song accents
 
@@ -358,16 +363,16 @@ the artwork appears only inside its own tile, blended over an accent gradient th
 colors at runtime.
 
 **Cost:** every song looks the same. A new color means a new token in a vendored stylesheet —
-the template's rule is a token in Nocturne, never a hex in a component, and `npm run lint` rejects
-a hex colour or colour function in app code, a shadow's black apart — and a stylesheet edited here
-stops matching the template it came from. What went away with the per-song accent: a color that
+the design's rule is a token in Nocturne, never a hex in a component, and `npm run lint` rejects
+a hex colour or colour function in app code, a shadow's black apart — and with the template
+removed, no upstream copy shows what a stylesheet edited here was. What went away with the per-song accent: a color that
 resolved after first paint, the effects that re-applied it, and a canvas-taint fallback for
 cross-origin art.
 
 ## Vendored stylesheets, driven by custom properties
 
-**Constraint:** the design arrives as a stylesheet plus markup to diff against
-(`web/template/`), not as components, and many controls change continuously — fader drags,
+**Constraint:** the design arrived as a stylesheet plus markup to diff against (the template, since
+removed), not as components, and many controls change continuously — fader drags,
 meters at frame rate.
 
 **Choice:** vendor `chord-theme.css` unmodified and `nocturne.css` with only its font `@import`
@@ -380,10 +385,9 @@ geometry and color. App CSS defines no classes of its own. See [web.md](web.md#s
 `dialog` class the stylesheets don't define, and a custom property outside the four, but only when
 someone runs it. The 720px breakpoint lives in the stylesheet and is repeated by hand in
 `PHONE_QUERY` and in Tailwind `max-[720px]:` utilities. Because the check also rejects a class
-defined in app CSS, a departure from the template can't be a local override: it has to be a
-composition of the template's classes plus inline layout, or nothing. Both sheets are global and
-unscoped. In exchange, a control update is one property write, and both sheets can still be
-compared to the template with `diff`.
+defined in app CSS, a departure from the design can't be a local override: it has to be a
+composition of the vendored classes plus inline layout, or nothing. Both sheets are global and
+unscoped. In exchange, a control update is one property write.
 
 ## Prop threading instead of context or a store
 
@@ -391,9 +395,9 @@ compared to the template with `diff`.
 its descendants, at most three levels below it.
 
 **Choice:** pass props. Per-stem state goes down as one `stems: StemDisplay[]` array, each entry
-carrying the template's `StemState`, and the per-stem callbacks as one `controls: StemControls`
+carrying the design's `StemState`, and the per-stem callbacks as one `controls: StemControls`
 object, both rebuilt every render; the metering views receive a single `readMeters` callback rather
-than the engine. The template's `PlayerState` itself changes only through one reducer.
+than the engine. `PlayerState` itself changes only through one reducer.
 
 **Cost:** verbosity — `Transport` alone takes twelve props — and every new piece of state
 touches several signatures. Because `stems` and `controls` are new objects on every render,
@@ -412,8 +416,9 @@ them must not interrupt playback.
 mounted. No view holds playback state. See [../features/results-views.md](../features/results-views.md).
 
 **Cost:** each view has its own per-stem component — `StemRow`, `ConsoleStrip`, `AnalogModule` —
-because each follows the harness's markup rather than a shared strip, and the copies can drift.
-`ConsoleStrip` and `AnalogModule` both pick `is-active` / `is-off` solo first, as the harness does,
+because each followed the template harness's markup rather than a shared strip, and the copies can
+drift. `ConsoleStrip` and `AnalogModule` both pick `is-active` / `is-off` solo first, as the harness
+did,
 and nothing but review keeps the two in step. The views don't expose the same controls either: Pan
 and Tone can be changed only on the Analog knobs, and the Console shows pan as text. A switch
 unmounts the old view, so its meter ballistics start over, and the choice isn't remembered —
@@ -425,16 +430,17 @@ engine never stops.
 **Constraint:** Console strips need 112 px each, Analog modules 120 px and its dials 180 px, or
 their controls collapse; a phone is about 360 px wide.
 
-**Choice:** a single breakpoint at 720px and, below it, INSTRUCTIONS §5: lock to the Mixer and
+**Choice:** a single breakpoint at 720px and, below it, the template's responsive rules, now
+[Responsive](../conventions/design.md#responsive): lock to the Mixer and
 render no view tabs. The same screen reflows rather than switching to a separate phone layout — the
 stylesheet stacks each `.ch-stemrow` into name, fader with its readout, MUTE/SOLO at 44 px and
 waveform; `MixerView` hides the column labels whose columns are gone, and `AnalysisBar` the
 dividers between its wrapped groups; the analysis bar and the full chord bar stay; and only the
-transport changes markup, to the template's `.ch-m-bar` with play,
+transport changes markup, to `.ch-m-bar` with play,
 seek and a *Click* metronome chip. Above the breakpoint, strip rows scroll horizontally at their
 floors rather than shrink. This replaced `ScaleToFit`, which kept fixed-width layouts intact by
 transform-scaling them, text included, and later a phone layout built from the harness's phone
-frame, which the written rules outrank ([why](#the-design-template-is-the-source-of-truth)).
+frame, which the template's written rules outranked ([why](#the-ui-was-built-from-a-design-template)).
 
 **Cost:** on a narrow screen Pan, Tone, every meter, speed and A–B looping are unreachable — the
 `.ch-m-bar` has no speed or loop chip, and no time readouts. A speed or loop set before the window

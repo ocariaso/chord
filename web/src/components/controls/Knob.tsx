@@ -8,7 +8,7 @@ interface KnobProps {
   valueText: string;
   /** `.ch-knob-sm`, the 34px Tone/Pan size. */
   small?: boolean;
-  /** Overrides `--stem`: INSTRUCTIONS §4.3 gives the small knobs `var(--color-neutral-700)`. */
+  /** Overrides `--stem`: the small knobs take `var(--color-neutral-700)` (design.md#controls). */
   hue?: string;
 }
 

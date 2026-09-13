@@ -4,12 +4,12 @@ React 19 + TypeScript + Vite 8 SPA in [`web/`](../../web/). Styling comes from t
 stylesheets — the Nocturne token sheet and CHORD's `ch-` component layer — with Tailwind CSS 4
 (via `@tailwindcss/vite`, not PostCSS) for layout. Built to static files and served by nginx.
 
-The design template in [`web/template/`](../../web/template/) is the source of truth for the UI's
-design, copy and behavior. [`src/design/`](../../web/src/design/) holds what the template specifies
-in a form the app can import — the screens' copy, the template's player state model, the six stems,
-the stage list and the breakpoint — and [`src/screens/`](../../web/src/screens/) holds one folder per
-template screen: landing, processing, failure and results. The standard, including which part of the
-template wins when it disagrees with itself, is [../conventions/design.md](../conventions/design.md).
+The UI's design, copy and behavior follow [../conventions/design.md](../conventions/design.md), the
+design standard; the UI was built from a design template, since removed, whose rules that page now
+carries. [`src/design/`](../../web/src/design/) holds the design's vocabulary in a form the app can
+import — the screens' copy, the player state model, the six stems, the stage list and the
+breakpoint — and [`src/screens/`](../../web/src/screens/) holds one folder per screen: landing,
+processing, failure and results, the standard's reference implementation.
 
 Runtime dependencies are exactly `react` and `react-dom`. No router, no state library, no
 data-fetching library, no component library, no waveform or audio library, no icon package —
@@ -45,14 +45,15 @@ stream delivers its first update. There is no processing → results transition 
 first render that sees `status === "done"` picks `ResultsScreen`. Nothing is read from or written
 to `localStorage`, so results always open on the Mixer view.
 
-The failure panels' copy is the template's, from `failureCopy` in
-[`design/copy.ts`](../../web/src/design/copy.ts), keyed by the template's scenario ids. A job error
+The failure panels' copy comes from `failureCopy` in
+[`design/copy.ts`](../../web/src/design/copy.ts), keyed by the ids in
+[Screens and their states](../conventions/design.md#screens-and-their-states). A job error
 is always titled *Separation failed*, whichever stage failed: the body is the row's `error_message`,
 the log block its `error_log`, and *Copy log* copies `error_log` — or `error_message` when the server
-kept no log, so the button always has something to copy. The template draws neither a
+kept no log, so the button always has something to copy. The design template drew neither a
 retries-exhausted *Connection lost* nor a missing job, so that body and the whole *Job not found*
 panel are app-authored, and two of the template's own lines are reworded by decision (see
-[decisions.md](decisions.md#the-design-template-is-the-source-of-truth)). How a job fails on the
+[decisions.md](decisions.md#the-ui-was-built-from-a-design-template)). How a job fails on the
 server is in [job-lifecycle.md](job-lifecycle.md#failures).
 
 `handleBack` clears `activeJobId`, which triggers `useJobEvents`' discard cleanup — which fires
@@ -109,11 +110,11 @@ playback.
 
 ### `ResultsScreen` — everything about playback
 
-[`ResultsScreen.tsx`](../../web/src/screens/results/ResultsScreen.tsx) is the hub. The template's
-state model (INSTRUCTIONS §3) is typed as `PlayerState` in
+[`ResultsScreen.tsx`](../../web/src/screens/results/ResultsScreen.tsx) is the hub. The design's
+state model ([State](../conventions/design.md#state)) is typed as `PlayerState` in
 [`design/player.ts`](../../web/src/design/player.ts) and held in a `useReducer` over
-[`playerReducer.ts`](../../web/src/screens/results/playerReducer.ts); what the template leaves to the
-app sits beside it in `useState`:
+[`playerReducer.ts`](../../web/src/screens/results/playerReducer.ts); what the state model leaves to
+the app sits beside it in `useState`:
 
 | State | Purpose |
 | --- | --- |
@@ -134,7 +135,7 @@ app sits beside it in `useState`:
 | `hasVocals` | computed from the decoded vocals buffer; stays true when the vocals stem failed to load |
 | `exportOpen`, `lyricsDialog` | which dialog is open; the lyrics one as `sheet` or `edit` |
 
-The split follows the template: `PlayerState` is exactly the state its screens need, and every
+The split follows the design: `PlayerState` is exactly the state its screens need, and every
 change to it is one of eight actions in one reducer. An action that changes nothing returns the
 state it was given, which is what lets the frame loop dispatch the time every frame without
 rendering while paused.
@@ -146,10 +147,10 @@ handler from `ResultsTopbar`, drops the panel's `tabpanel` role, and is `Transpo
 prop — the only component that renders different markup below 720px.
 
 Every render derives `stems: StemDisplay[]` — the `StemState`, its name and `--stem` hue, `audible`
-(the template's `audible()`), `silent` and envelope — and one `controls: StemControls` object holding
+(the design's `audible()`), `silent` and envelope — and one `controls: StemControls` object holding
 the five per-stem callbacks, and passes both to whichever view is showing. Each callback writes the
 engine first and dispatches second, converting at that boundary: a gain position becomes linear gain
-through the template's `db()` and then `dbToGain` from
+through the design's `db()` and then `dbToGain` from
 [`utils/levels.ts`](../../web/src/utils/levels.ts), pan becomes −1…1 through `panToStereo`, tone
 becomes shelf dB through `toneToShelfDb`. The master fader, which isn't part of `controls`, has a law
 of its own: `masterDb`, then `dbToGain`.
@@ -163,7 +164,7 @@ See [../features/results-views.md](../features/results-views.md).
 
 Some behavior lives here rather than in the engine:
 
-- Only the template's six stems are loaded: `templateStems` in
+- Only the design's six stems are loaded: `templateStems` in
   [`design/stems.ts`](../../web/src/design/stems.ts) keeps the names in `job.stem_names` that are in
   `STEM_KEYS`, in its order, and skips any other.
 - An instrumental's vocals stem is muted on load and marked *Silent* rather than hidden.
@@ -196,7 +197,7 @@ function tick() {
       dispatch({ type: "playingChanged", playing: false });
     }
     const time = engine.getCurrentTime();
-    // INSTRUCTIONS §6: with reduced motion the playhead steps once a second instead of gliding every frame.
+    // With reduced motion the playhead steps once a second instead of gliding every frame (design.md#accessibility).
     dispatch({ type: "timeChanged", time: reducedMotionRef.current ? Math.floor(time) : time });
   }
   rafRef.current = requestAnimationFrame(tick);
@@ -238,7 +239,8 @@ needle's rest angle, the initial readout text — never change after mount. See
 `useSliderControl` backs every fader and knob. A horizontal fader follows the pointer's x, a
 vertical one `(bottom − y) / height`, and a knob a vertical drag of 160 px for its full range —
 rotational drag is unusable with a mouse. Arrow keys step 0.01, Shift+arrow and Page Up/Down step
-0.1, and Home and End jump to 0 and 1: the keys INSTRUCTIONS §4.1 specifies, plus the Page keys.
+0.1, and Home and End jump to 0 and 1: the keys
+[Accessibility](../conventions/design.md#accessibility) specifies.
 There is no double-click reset. A step is a fixed distance in position, not in dB.
 
 The three-state `undefined | null | value` convention in `useLyrics` (and in `chordSegments`)
@@ -305,18 +307,15 @@ ahead of Tailwind:
 
 | Order | File | What it is |
 | --- | --- | --- |
-| 1 | [`styles/nocturne.css`](../../web/src/styles/nocturne.css) | The Nocturne token sheet — `--color-*` ramps, `--space-*`, `--radius-*`, fonts — and its base classes (`.btn`, `.input`, `.field`, `.tag`, `.dialog`, `.lighten`). Copied from `web/template/template/vendor/nocturne-styles.css` with only its Google Fonts `@import` removed; `index.html` loads Inter 400/500/600 instead. |
-| 2 | [`styles/chord-theme.css`](../../web/src/styles/chord-theme.css) | CHORD's `ch-` component layer: the six stem hues, two status hues, panel surfaces, and every control and layout class. Identical to `web/template/template/chord-theme.css`. |
-| 3 | [`index.css`](../../web/src/index.css) | `@import "tailwindcss"`, a full-height root, the page ground and button cursors. The ground is the harness's canvas in tokens: a radial gradient from `--ch-panel-raised` at the top left through `--color-bg` to `--ch-well`, one viewport tall, over an `html` background of `--ch-well` so a longer page carries on in the colour the gradient ends at. It defines no classes. |
+| 1 | [`styles/nocturne.css`](../../web/src/styles/nocturne.css) | The Nocturne token sheet — `--color-*` ramps, `--space-*`, `--radius-*`, fonts — and its base classes (`.btn`, `.input`, `.field`, `.tag`, `.dialog`, `.lighten`). Copied from the design template's Nocturne sheet with only its Google Fonts `@import` removed, and owned here since; `index.html` loads Inter 400/500/600 instead. |
+| 2 | [`styles/chord-theme.css`](../../web/src/styles/chord-theme.css) | CHORD's `ch-` component layer: the six stem hues, two status hues, panel surfaces, and every control and layout class. Copied unmodified from the design template, and owned here since. |
+| 3 | [`index.css`](../../web/src/index.css) | `@import "tailwindcss"`, a full-height root, the page ground and button cursors. The ground is the canvas the template's harness drew, in tokens: a radial gradient from `--ch-panel-raised` at the top left through `--color-bg` to `--ch-well`, one viewport tall, over an `html` background of `--ch-well` so a longer page carries on in the colour the gradient ends at. It defines no classes. |
 
 The conventions that follow are summarized here; the rules themselves are in
 [../conventions/design.md](../conventions/design.md).
 
-- **The template decides, in a fixed order.** Where it disagrees with itself, the written rules
-  (`INSTRUCTIONS.md`, `README.md`) win over the vendored stylesheets, which win over the harness
-  markup (`web/template/CHORD Template.dc.html`), which wins over the Mockups board.
-- **Copy comes from [`design/copy.ts`](../../web/src/design/copy.ts)**, verbatim from the harness
-  unless marked app-authored. The stage labels in it double as the API's `stage_message` values.
+- **Copy comes from [`design/copy.ts`](../../web/src/design/copy.ts)**, verbatim from the design
+  template unless marked app-authored. The stage labels in it double as the API's `stage_message` values.
 - **Classes carry the look, and the palette is fixed.** Components compose `ch-` and Nocturne
   classes and introduce no colors of their own. The palette is the six stem hues (`--ch-vocals`
   … `--ch-other`), two status hues (`--ch-danger` and `--ch-warn`, only ever as dots and
@@ -339,24 +338,24 @@ The conventions that follow are summarized here; the rules themselves are in
   `npm run lint` runs [`scripts/check-design.mjs`](../../web/scripts/check-design.mjs) after oxlint
   to catch the mechanical breaks — an undefined token or class, a new colour or font, a spacing token
   written as px, a custom property other than the four above.
-- **Markup follows the template** element for element — INSTRUCTIONS' snippets and the harness —
-  because the classes assume its nesting: `.ch-vfader` and `.ch-knob` each need exactly one
+- **Markup follows the class contract** in [Classes](../conventions/design.md#classes) element for
+  element, because the classes assume its nesting: `.ch-vfader` and `.ch-knob` each need exactly one
   `<span>` child, which is the cap.
 - **One breakpoint: 720px.** It is `chord-theme.css`'s own `@media (max-width: 720px)`, which
   stacks `.ch-stemrow`; `PHONE_QUERY` in [`design/layout.ts`](../../web/src/design/layout.ts) repeats
   it for `useMediaQuery`, and Tailwind's `max-[720px]:` repeats it by hand in `App` (the side
   gutters), `MixerView` (hiding the column labels) and `AnalysisBar` (hiding the dividers between its
-  groups). Below it the results follow INSTRUCTIONS §5
+  groups). Below it the results follow [Responsive](../conventions/design.md#responsive)
   — the Mixer locked, no tabs, the rows stacked by the stylesheet — and only the transport renders
-  different markup, the template's `.ch-m-bar`. The landing and processing screens switch to the
-  harness's phone arrangements at the same width. See
+  different markup, `.ch-m-bar`. The landing and processing screens switch to their phone
+  arrangements at the same width. See
   [../features/results-views.md](../features/results-views.md#below-720px).
 - **Waveforms are `.ch-wave` bars clipped to the real envelope**: `utils/peaks.ts` turns each
   decoded buffer into a `polygon()`, applied as `clip-path`. See
   [audio-playback.md](audio-playback.md#waveforms).
 
 See [../features/theming.md](../features/theming.md),
-[decisions.md](decisions.md#the-design-template-is-the-source-of-truth) and
+[decisions.md](decisions.md#the-ui-was-built-from-a-design-template) and
 [decisions.md](decisions.md#vendored-stylesheets-driven-by-custom-properties).
 
 `__APP_VERSION__` is injected by [`vite.config.ts`](../../web/vite.config.ts) from

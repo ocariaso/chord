@@ -1,7 +1,7 @@
 import { formatDb, mapThroughAnchors, type Anchors } from "../utils/levels";
 
 /**
- * The template's state model — web/template/template/INSTRUCTIONS.md §3. The screens need exactly this
+ * The design's state model — docs/conventions/design.md#state. The screens need exactly this
  * much player state; everything else (speed, loop, lyrics, dialogs) belongs to the results screen.
  */
 export type StemKey = "vocals" | "drums" | "bass" | "guitar" | "piano" | "other";

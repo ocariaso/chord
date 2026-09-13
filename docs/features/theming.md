@@ -5,12 +5,9 @@ tracks is the cover art, and each stem keeps its own identity hue. Sampling acce
 artwork — `useDominantColor.ts` and the per-track tinted surfaces it fed — is gone, and with it the
 "colour arrived late" update path that imperative widgets needed.
 
-The design source is [`web/template/`](../../web/template/), and it is the source of truth. When its
-parts disagree, the written rules — the class inventory in
-[`README.md`](../../web/template/template/README.md) and the integration rules in
-[`INSTRUCTIONS.md`](../../web/template/template/INSTRUCTIONS.md) — win over the vendored
-stylesheets, which win over the harness `CHORD Template.dc.html`, which wins over the Mockups board.
-The standard is [../conventions/design.md](../conventions/design.md).
+The standard is [../conventions/design.md](../conventions/design.md). The UI was built from a
+design template, since removed; the two vendored stylesheets below came from it and are owned here
+now.
 
 ## Three stylesheets
 
@@ -18,8 +15,8 @@ The standard is [../conventions/design.md](../conventions/design.md).
 
 | Order | File | What it is |
 | --- | --- | --- |
-| 1 | [`styles/nocturne.css`](../../web/src/styles/nocturne.css) | Nocturne's token sheet and base components (`.btn`, `.input`, `.field`, `.dialog`, `.lighten`), vendored from `web/template/template/vendor/nocturne-styles.css` with one change: its Google Fonts `@import` removed |
-| 2 | [`styles/chord-theme.css`](../../web/src/styles/chord-theme.css) | the `ch-` component layer, vendored byte-for-byte from `web/template/template/chord-theme.css` |
+| 1 | [`styles/nocturne.css`](../../web/src/styles/nocturne.css) | Nocturne's token sheet and base components (`.btn`, `.input`, `.field`, `.dialog`, `.lighten`), vendored from the design template's Nocturne sheet with one change: its Google Fonts `@import` removed |
+| 2 | [`styles/chord-theme.css`](../../web/src/styles/chord-theme.css) | the `ch-` component layer, vendored byte-for-byte from the design template |
 | 3 | [`index.css`](../../web/src/index.css) | Tailwind, a full-height root, the page ground and button cursors — and no classes |
 
 The `@import` had to go because a bundled `@import` that no longer opens its stylesheet is invalid;
@@ -34,7 +31,7 @@ element, and Nocturne's element rules (heading margins, `img { display: block }`
 `:focus { outline: none }`) beat Tailwind's resets. That is why components set margins and layout on
 styled elements with inline styles rather than utilities.
 
-Both sheets are treated as vendored: the template's rules are to retune a token in Nocturne rather
+Both sheets are treated as vendored: the [ground rules](../conventions/design.md#ground-rules) are to retune a token in Nocturne rather
 than add a colour to a component, and to compose existing classes rather than invent new ones.
 `npm run lint` checks the part a script can see — a hex colour or colour function, an undefined
 token or class, a class defined in app CSS — through
@@ -68,10 +65,10 @@ accent ramps matches in visual value.
 | `--ch-chrome` | `#1a1c2c` | topbar and transport |
 | `--ch-danger`, `--ch-warn` | `oklch(66% 0.16 25)`, `oklch(76% 0.13 85)` | status, used only as 7 px dots and hairlines — never as fills |
 
-`index.css` paints the page with the harness's canvas, in tokens: a radial gradient from
+`index.css` paints the page with the canvas the template's harness drew, in tokens: a radial gradient from
 `--ch-panel-raised` near the top left, through the cards' `--color-bg`, to `--ch-well`. It is sized
 to one viewport, over an `html` background of `--ch-well`, so a page longer than the window carries
-on in the colour the gradient ends at instead of showing a seam. The harness writes the same
+on in the colour the gradient ends at instead of showing a seam. The harness wrote the same
 gradient in hex; each stop is within a few units of its token.
 
 Status hues are deliberately small. The danger dot marks hard failures (a job error, a job not
@@ -95,7 +92,7 @@ The four OKLCH hues share one lightness and one low chroma, so no instrument rea
 another; vocals borrows the accent and *other* a neutral grey.
 
 `stemHue(key)` in [`design/stems.ts`](../../web/src/design/stems.ts) returns `var(--ch-<key>)` for
-one of the template's six stem keys — a stem outside them isn't loaded, so there is no fallback —
+one of the design's six stem keys — a stem outside them isn't loaded, so there is no fallback —
 and a view sets it once, as `--stem`, on a stem row, strip, module or export row. Everything inside
 inherits it: the dot, the fader fill, the meter bars, the waveform bars and the knob arc. Three
 places override it: the small Tone and Pan knobs take `--color-neutral-700`, so only the Level knob

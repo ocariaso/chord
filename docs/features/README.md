@@ -1,8 +1,8 @@
 # Features
 
 One page per user-visible capability, each tracing the whole path from input to pixels. What the
-screens look like and say follows the design template in [`web/template/`](../../web/template/);
-see [../conventions/design.md](../conventions/design.md).
+screens look like and say follows the design standard,
+[../conventions/design.md](../conventions/design.md).
 
 | Feature | Server entry point | Web entry point |
 | --- | --- | --- |

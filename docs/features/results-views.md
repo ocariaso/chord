@@ -5,13 +5,14 @@ of three views — **Mixer**, **Console** and **Analog** — all drawn from the 
 [`App.tsx`](../../web/src/App.tsx) renders
 [`ResultsScreen`](../../web/src/screens/results/ResultsScreen.tsx) for any job whose status is
 `done`; the loading and failure phases before this screen are covered in
-[stem separation](stem-separation.md#client-side). The screen follows the design template's results
-scenarios; the standard is [../conventions/design.md](../conventions/design.md).
+[stem separation](stem-separation.md#client-side). The screen renders the results states in
+[Screens and their states](../conventions/design.md#screens-and-their-states); the standard is
+[../conventions/design.md](../conventions/design.md).
 
 ## Composition
 
 ```
-ResultsScreen                 the engine, the template's PlayerState, and what the template leaves to the app
+ResultsScreen                 the engine, PlayerState, and what the state model leaves to the app
  ├─ ScreenCard (.ch-app)
  │   ├─ ResultsTopbar         cover, title, meta, Mixer/Console/Analog tabs, Export stems, New track
  │   ├─ AnalysisBar           key + confidence, transpose, tempo, master level
@@ -24,14 +25,14 @@ ResultsScreen                 the engine, the template's PlayerState, and what t
 ```
 
 The analysis bar, chord bar and transport render **once, outside the view switch**, at every
-width. The design source ([`INSTRUCTIONS.md`](../../web/template/template/INSTRUCTIONS.md)) names
+width. The design template named
 the failure this avoids: an analysis bar rendered per view duplicates and drifts. Below 720px the
 same shell reflows; see [below 720px](#below-720px).
 
 ## One state, three renderings
 
 [`ResultsScreen.tsx`](../../web/src/screens/results/ResultsScreen.tsx) holds everything; the views
-are stateless apart from their meter refs. The template's state model — INSTRUCTIONS §3, typed as
+are stateless apart from their meter refs. The design's state model — [State](../conventions/design.md#state), typed as
 `PlayerState` in [`design/player.ts`](../../web/src/design/player.ts) — lives in a `useReducer` over
 [`playerReducer.ts`](../../web/src/screens/results/playerReducer.ts):
 
@@ -40,10 +41,10 @@ are stateless apart from their meter refs. The template's state model — INSTRU
 | `stems` | one `StemState` per loaded stem: `{key, gain, muted, solo, tone, pan}`, with gain, tone and pan as 0…1 control positions |
 | `master` | 0…1, shared by the analysis bar's fader and the Console master strip |
 | `view` | `"mixer"`, `"console"` or `"analog"` |
-| `transpose`, `metronome` | the global controls the template knows about |
+| `transpose`, `metronome` | the global controls the state model knows about |
 | `playing`, `time`, `duration` | transport display, polled from the engine |
 
-What the template leaves to the app sits beside the reducer in `useState`:
+What the state model leaves to the app sits beside the reducer in `useState`:
 
 | State | Holds |
 | --- | --- |
@@ -58,7 +59,7 @@ returns the state it was given, so the frame loop's time update renders nothing 
 paused, and `stemsLoaded` after a retry keeps the settings of the stems already on the mixer.
 
 Each render derives a `StemDisplay[]` — the `StemState`, its name, its `--stem` hue, `audible` (the
-template's `audible()`), `silent` and the waveform envelope — and passes it with a `StemControls`
+design's `audible()`), `silent` and the waveform envelope — and passes it with a `StemControls`
 object of five callbacks. Every callback writes the
 [`PlaybackEngine`](../../web/src/audio/playbackEngine.ts) and dispatches **in the same handler** —
 `onGainChange` calls `setVolume(key, dbToGain(db(gain)))` and then dispatches `stemChanged` — so the
@@ -81,11 +82,11 @@ Every fader and knob is a `role="slider"` element driven by
 | PageUp / PageDown | ±0.1 |
 | Home / End | 0 / 1 |
 
-That is INSTRUCTIONS §4.1's keyboard spec plus the Page keys, and nothing else: there is no
+That is the keyboard spec in [Controls](../conventions/design.md#controls), and nothing else: there is no
 double-click reset. End puts a level or the master back at 0.0 dB, but no key centres Tone or Pan.
 
-The level law lives in [`design/player.ts`](../../web/src/design/player.ts), under the template's
-own name: `db()` maps a stem control's position linearly onto −36…0 dB, and `masterDb()` takes the
+The level law lives in [`design/player.ts`](../../web/src/design/player.ts), under the name the
+template gave it: `db()` maps a stem control's position linearly onto −36…0 dB, and `masterDb()` takes the
 master fader through −36, −18, −6 and 0 dB at each third of its travel, to match the master strip's
 ticks; position 0 is silent on both. Readouts use a real minus sign (U+2212) so they sit on the
 tabular-numeral grid, and a muted stem reads `−∞` whatever its fader says (`fmtDb`).
@@ -166,13 +167,13 @@ per stem, a `.ch-stemrow`:
   `.ch-wave` bar pattern clipped to the stem's real envelope. `waveformPolygon` in
   [`peaks.ts`](../../web/src/utils/peaks.ts) builds a CSS `polygon()` from 160 peak bins (every 8th
   sample, square-root lifted so a quiet stem still has a shape, with a 2% floor so silence stays
-  visible) each time a load finishes. The waveform dims while the stem isn't heard — the template's
+  visible) each time a load finishes. The waveform dims while the stem isn't heard — the design's
   `audible()`, so a stem held by another's solo dims too. It draws **no playhead** and doesn't seek;
   position is shown and set on the chord strip and the transport, and the element is `aria-hidden`.
 
 Rows follow `STEM_KEYS` in [`design/stems.ts`](../../web/src/design/stems.ts) — vocals, drums,
-bass, guitar, piano, other, the template's order and the API's `STEM_NAMES` order. A stem outside
-those six isn't loaded or shown: the template has no name or hue for it. An instrumental's vocals
+bass, guitar, piano, other, the design's order and the API's `STEM_NAMES` order. A stem outside
+those six isn't loaded or shown: the design has no name or hue for it. An instrumental's vocals
 row arrives muted and the view adds *No vocal content detected — the vocals stem is present but
 silent.*
 
@@ -190,7 +191,8 @@ when soloed, otherwise `.is-off` (55% opacity) when muted — holding the label,
 vertical fader, a post-fader stereo meter with 0 / −12 / −24 / −∞ ticks, Level and Pan readouts,
 and MUTE/SOLO. Pan is **displayed, not adjustable**, here; the knob is in Analog.
 
-The state label and the panel class follow the harness's order, solo first:
+The state label and the panel class follow the design's order
+([State](../conventions/design.md#state)), solo first:
 
 | State label | When |
 | --- | --- |
@@ -232,8 +234,8 @@ Each stem gets a `.ch-panel.ch-module` (120 px floor, in the same kind of scroll
 Tone is a low shelf and a high shelf at the same pivot frequency, moved in opposite directions. The
 pivots are per stem in [`design/stems.ts`](../../web/src/design/stems.ts): vocals 1500 Hz, drums
 2000, bass 250, guitar 1200, piano and other 1000. Each small knob shows its value under its label:
-INSTRUCTIONS §0.3 wants a visible value on every control, though the harness draws these two with a
-label only.
+the [ground rules](../conventions/design.md#ground-rules) want a visible value on every control,
+though the template's harness drew these two with a label only.
 
 **Tone and pan can only be changed in this view.**
 
@@ -241,12 +243,12 @@ label only.
 
 `ResultsScreen` matches `PHONE_QUERY` — `(max-width: 720px)`, in
 [`design/layout.ts`](../../web/src/design/layout.ts), the width of the one breakpoint in
-[`chord-theme.css`](../../web/src/styles/chord-theme.css) — and below it follows the template's
-written responsive rules (INSTRUCTIONS §5, README §6): the same screen, locked to the Mixer and
-reflowed by the stylesheet, not a separate phone layout. The harness's phone frame draws one — stem
+[`chord-theme.css`](../../web/src/styles/chord-theme.css) — and below it follows
+[Responsive](../conventions/design.md#responsive): the same screen, locked to the Mixer and
+reflowed by the stylesheet, not a separate phone layout. The template's harness drew one — stem
 cards, a compact header with key and tempo, an *Export* chip — and the app doesn't follow it,
-because the written rules outrank the harness
-([why](../architecture/decisions.md#the-design-template-is-the-source-of-truth)).
+because the template's written rules outranked the harness
+([why](../architecture/decisions.md#the-ui-was-built-from-a-design-template)).
 
 | Part | At 720 px and below |
 | --- | --- |
@@ -255,7 +257,7 @@ because the written rules outrank the harness
 | Analysis bar | rendered, its four groups wrapping with the dividers between them hidden (`max-[720px]:hidden` in `AnalysisBar`) — key, transpose, tempo and master level all stay |
 | Chord bar | rendered in full: the chord now and the next three, the strip, and the lyric row with its label |
 | Stems | each `.ch-stemrow` stacked by the stylesheet: the name, then the fader with its dB readout, then MUTE and SOLO at 44 px, then the waveform. The column headings are hidden (`max-[720px]:hidden` in `MixerView`), since the columns they head are gone |
-| Transport | the template's `.ch-m-bar`: a 46 px play button, the seek slider and a *Click* metronome chip — no time readouts, **no speed chip and no loop chip** |
+| Transport | `.ch-m-bar`: a 46 px play button, the seek slider and a *Click* metronome chip — no time readouts, **no speed chip and no loop chip** |
 
 The cost of the lock: on a phone there are no meters, no tone or pan, and no way to change speed or
 to set or clear a loop. A speed or loop set before the window narrowed carries over — playback stays
@@ -264,7 +266,7 @@ at that speed, and the loop keeps looping until a seek lands outside it.
 ## Reduced motion
 
 With `prefers-reduced-motion: reduce`, `ResultsScreen` stores `Math.floor(time)` instead of the
-exact position (INSTRUCTIONS §6). The playhead, the time readouts, the current chord and the lyric
+exact position ([Accessibility](../conventions/design.md#accessibility)). The playhead, the time readouts, the current chord and the lyric
 line then **step once a second** — which also means the chord and lyric highlights can trail the
 audio by up to a second. The meters and needles are not affected and keep moving every frame.
 

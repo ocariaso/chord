@@ -183,7 +183,7 @@ rather than throwing — "this song has no lyrics" is a normal outcome.
 ### The lyric row
 
 [`ChordBar.tsx`](../../web/src/screens/results/ChordBar.tsx) renders one row under the chord strip,
-the same at every width. Its states and strings are the template's:
+the same at every width. Its states and strings come from the design template:
 
 | Lyrics | Label | Shows |
 | --- | --- | --- |

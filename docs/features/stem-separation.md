@@ -27,7 +27,7 @@ The standard four-source `htdemucs` would produce only `vocals/drums/bass/other`
 
 The web side loads only the stems in `STEM_KEYS` in
 [`design/stems.ts`](../../web/src/design/stems.ts) — the same six, in the same order. A name outside
-them has no label or hue in the design template, so it is neither fetched nor shown.
+them has no label or hue in the design, so it is neither fetched nor shown.
 
 `piano` and `guitar` are the weakest separations in this model — a known property of
 `htdemucs_6s`, not a bug in CHORD. Tracks without those instruments produce near-silent stems

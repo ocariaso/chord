@@ -24,7 +24,7 @@ Scripts, from [`package.json`](../../web/package.json):
 | --- | --- |
 | `npm run dev` | Vite dev server with HMR |
 | `npm run build` | `tsc -b && vite build` — **the type check is part of the build** |
-| `npm run lint` | oxlint — `.oxlintrc.json` ignores `template/**`, the vendored design template — then [`scripts/check-design.mjs`](../../web/scripts/check-design.mjs), which checks `src/` against the template's rules: tokens and classes the vendored stylesheets define, no new colours or fonts, only `--v`, `--l`, `--p` and `--stem` set inline, no classes defined in app CSS ([the rules](../conventions/design.md)) |
+| `npm run lint` | oxlint, then [`scripts/check-design.mjs`](../../web/scripts/check-design.mjs), which checks `src/` against the design's rules: tokens and classes the vendored stylesheets define, no new colours or fonts, only `--v`, `--l`, `--p` and `--stem` set inline, no classes defined in app CSS ([the rules](../conventions/design.md)) |
 | `npm run preview` | serve the production build locally |
 
 ### The dev proxy
@@ -77,19 +77,16 @@ address (`npm run dev -- --host`) and neither does: the speed chip is disabled, 
 falls back to a hidden textarea and `document.execCommand("copy")`. The same applies to the Docker
 deployment reached by LAN address.
 
-### The design template
+### The design
 
-[`web/template/`](../../web/template/) holds the design the UI is built from, and it is the source
-of truth for design, copy and UX. When its parts disagree they rank in a fixed order: the written
-rules in [`template/INSTRUCTIONS.md`](../../web/template/template/INSTRUCTIONS.md) and
-[`template/README.md`](../../web/template/template/README.md) (the class inventory and the
-runtime-variable contract), then the vendored stylesheets, then the harness
-`CHORD Template.dc.html`, then the static board `CHORD Mockups.dc.html`. The harness opens directly
-in a browser and renders every screen and state at web and mobile widths, routed by
-`#/<scenario-id>` — `#/results-console`, `#/connection-error`, `#/processing-loading` — so compare
-against it when changing a layout, remembering that where its phone frame differs from the written
-responsive rules, the app follows the rules. None of it is imported or shipped, and `npm run lint`
-ignores the directory. The standard is [../conventions/design.md](../conventions/design.md).
+The UI was built from a design template that has since been removed. Its rules now live in
+[../conventions/design.md](../conventions/design.md), the design standard, and the screens in
+[`web/src/screens/`](../../web/src/screens/) are its reference implementation. To check a layout
+change, follow [Checking a UI change](../conventions/design.md#checking-a-ui-change);
+[Screens and their states](../conventions/design.md#screens-and-their-states) lists every state a
+screen has to render. The original template can still be read from git history, for example
+`git show "2a9783e:web/template/CHORD Template.dc.html"` or
+`git show 2a9783e:web/template/template/INSTRUCTIONS.md`.
 
 ### Development-only behavior
 

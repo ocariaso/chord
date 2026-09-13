@@ -2,7 +2,7 @@ import type { Job } from "../api/client";
 import { processingCopy } from "./copy";
 
 /**
- * The template's stage list (README §4). A fixed contract, so the layout never jumps: a skipped stage
+ * The design's stage list (design.md#processing-and-failure). A fixed contract, so the layout never jumps: a skipped stage
  * shows as done. The labels are also the API's `stage_message` values.
  */
 export const PROCESSING_STAGES = processingCopy.stages;

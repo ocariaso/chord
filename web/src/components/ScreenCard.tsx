@@ -3,7 +3,7 @@ interface ScreenCardProps {
   children: React.ReactNode;
 }
 
-/** The `.ch-app` card every screen sits on, with the harness's radius, ring and shadow. */
+/** The `.ch-app` card every screen sits on, with the design's radius, ring and shadow. */
 export function ScreenCard({ maxWidth, children }: ScreenCardProps) {
   return (
     <div

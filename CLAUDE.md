@@ -54,20 +54,16 @@ intent — update them when *behavior* changes, not when a file moves.
   drives only by `postMessage`.
 - **Styling is the vendored `ch-`/Nocturne classes in `web/src/styles/`.** Runtime values reach
   them as CSS custom properties (`--v`, `--l`, `--p`, `--stem`), never as inline geometry. Inline
-  styles either repeat the harness's own declarations, with tokens for any value a token carries,
-  or do layout; Tailwind is layout only. No new colors. `npm run lint` checks the mechanical part
+  styles carry the design's own declarations, with tokens for any value a token carries, or do
+  layout; Tailwind is layout only. No new colors. `npm run lint` checks the mechanical part
   (`web/scripts/check-design.mjs`).
 - **Comments explain *why*, never *what*.** Empty `catch` blocks are always annotated with the
   reason nothing is done. Match that.
-- **`web/template/` is the source of truth for design and UX.** When its parts disagree, the
-  written rules (`web/template/template/INSTRUCTIONS.md`, `README.md`) win, then the vendored
-  stylesheets, then the harness `web/template/CHORD Template.dc.html` — which renders every screen
-  and state at web and phone widths — then the Mockups board. Screens under `web/src/screens/`
-  follow the harness markup element for element, and every string they render lives in
-  `web/src/design/copy.ts`, error text from the API and the event stream aside. The rules, the
-  recorded exceptions and what to do where the template is silent are in
-  [`docs/conventions/design.md`](docs/conventions/design.md). The template is reference only —
-  never imported or shipped, and `npm run lint` ignores it.
+- **[`docs/conventions/design.md`](docs/conventions/design.md) is the design standard**, and the
+  screens under `web/src/screens/` are its reference implementation. The UI was built from a design
+  template that has since been removed (`git show 2a9783e:web/template/` lists it); every rule still
+  binding, the states each screen has and the calls taken are on that page. Every string the screens
+  render lives in `web/src/design/copy.ts`, error text from the API and the event stream aside.
 
 ## Commands
 

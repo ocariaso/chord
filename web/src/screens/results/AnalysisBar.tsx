@@ -15,7 +15,7 @@ interface AnalysisBarProps {
   onMasterChange: (value: number) => void;
 }
 
-/** Key, transpose, tempo and master level. INSTRUCTIONS §8: shared by all three views, so rendered once above them. */
+/** Key, transpose, tempo and master level — shared by all three views, so rendered once above them (design.md#chords-and-lyrics). */
 export function AnalysisBar({
   keyEstimate,
   keyConfidence,

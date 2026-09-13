@@ -103,24 +103,11 @@ run had reached (`downloading`, `reading`, `separating`, `tempo`, `analyzing`):
 | anything else | the stage's sentence, e.g. *"Stem separation stopped with an error."* | `"TypeName: message"` |
 
 `progress` is left as it was, and so is `stage_message` — except after a failure while `reading`,
-when the same write sets it to null. The failure panel titles itself from that leftover message
-through `FAILURE_TITLES` in [`App.tsx`](../../web/src/App.tsx):
-
-| `stage_message` on the failed row | Panel title |
-| --- | --- |
-| *Downloading audio* | *Download failed* |
-| *Separating stems* | *Separation failed* |
-| *Detecting tempo* | *Tempo detection failed* |
-| *Detecting chords and key* | *Chord detection failed* |
-| none | *Couldn't start separation* |
-| anything else | *Separation failed* |
-
-Reading the audio falls between the download and separation, so clearing the message there keeps a
-downloaded file that can't be read, or turns out too long, from borrowing *Download failed*. The
-*none* row covers every job that fails before a stage begins: an upload that is unreadable or too
-long, a link whose metadata had no duration and whose download is then refused, and a resumed job —
-whose message the resume cleared — failing while it reads. A link refused by yt-dlp's duration
-filter fails while `downloading`, keeps *Downloading audio*, and is titled *Download failed*.
+when the same write sets it to null. Reading the audio falls between the download and separation,
+so clearing the message keeps a downloaded file that can't be read, or turns out too long, from
+leaving *Downloading audio* on a row whose download succeeded. The client titles no failure from
+it: every job error is titled *Separation failed*, the template's title, and `error_message` carries
+what happened.
 `_Superseded`, raised from the separation callback, is caught on its own and ends the run without
 writing anything.
 

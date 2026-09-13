@@ -143,15 +143,12 @@ everything.
 
 ```bash
 { find server web -path web/node_modules -prune -o -path server/data -prune -o \
-       -path web/dist -prune -o -path web/template -prune -o -type f -print
+       -path web/dist -prune -o -type f -print
   ls docker-compose*.yml scripts/*.sh LICENSE README.md .gitignore .gitattributes
 } | sed 's|.*/||' | sort -u > /tmp/disk.txt
 grep -ho '^### `[^`]*`' docs/map/*.md | sed 's/^### `//; s/`$//; s|.*/||' | sort -u > /tmp/mapped.txt
 comm -23 /tmp/disk.txt /tmp/mapped.txt
 ```
-
-`web/template/` is pruned: it is the design reference, mapped as one group entry, and its files are
-never mapped one by one.
 
 **Expected output** — these are covered collectively by design, not gaps. Anything *else* in the
 list is a real gap:
@@ -180,8 +177,8 @@ print("\n".join(stale) or "every entry resolves to a file")
 PYEOF
 ```
 
-Entries containing a `*` or ending in `/` describe a group (`app/*/__init__.py`,
-`template/`) and are skipped. `path/to/file.ext` from the entry template in
+Entries containing a `*` or ending in `/` describe a group (`app/*/__init__.py`)
+and are skipped. `path/to/file.ext` from the entry template in
 `docs/map/README.md` is not an entry — ignore it if a looser grep picks it up.
 
 **3. Broken links.** Both paths and `#anchors`, across every doc:

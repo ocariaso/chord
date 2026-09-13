@@ -42,7 +42,7 @@ function loopLabel(loop: LoopState | null): string {
 function SeekSlider({ time, duration, onSeek }: Pick<TransportProps, "time" | "duration" | "onSeek">) {
   const seekDrag = useSeekDrag(duration, onSeek);
 
-  // role="slider" without key handling fails audit (INSTRUCTIONS §4.1).
+  // role="slider" without key handling fails an accessibility audit (design.md#accessibility).
   function handleKeyDown(event: React.KeyboardEvent<HTMLSpanElement>) {
     const step = event.shiftKey ? SEEK_LARGE_STEP_SECONDS : SEEK_STEP_SECONDS;
     let target: number;

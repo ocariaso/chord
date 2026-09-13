@@ -5,7 +5,7 @@ import { fmtDb } from "../../design/player";
 import { formatPan, formatTone } from "../../utils/levels";
 import type { StemControls, StemDisplay } from "./types";
 
-// INSTRUCTIONS §4.3: only the Level knob carries the stem's hue.
+// Only the Level knob carries the stem's hue (design.md#controls).
 const SMALL_KNOB_HUE = "var(--color-neutral-700)";
 
 interface AnalogModuleProps {
@@ -17,7 +17,7 @@ interface AnalogModuleProps {
 export function AnalogModule({ stem, controls }: AnalogModuleProps) {
   const { state } = stem;
   const value = fmtDb(state.gain, state.muted);
-  // The harness's order: a soloed module lifts even when it is also muted.
+  // Solo before mute (design.md#state): a soloed module lifts even when it is also muted.
   const panelClass = state.solo ? "ch-panel ch-module is-active" : state.muted ? "ch-panel ch-module is-off" : "ch-panel ch-module";
   return (
     <div
@@ -60,7 +60,7 @@ export function AnalogModule({ stem, controls }: AnalogModuleProps) {
           <span className="ch-label" style={{ fontSize: 9 }}>
             {resultsCopy.tone}
           </span>
-          {/* INSTRUCTIONS §0.3: every control shows its value; the harness draws these two with a label only. */}
+          {/* Every control shows its value (design.md#ground-rules), the small knobs included. */}
           <span className="ch-value-sm">{formatTone(state.tone)}</span>
         </span>
         <span className="ch-knob-group">

@@ -1,5 +1,5 @@
 /* Nocturne — design-system tokens and component classes. This file is the source of truth for the system's look; retune it here and see readme.md. */
-/* Vendored from web/template/template/vendor/nocturne-styles.css. Its @import of Inter is dropped:
+/* Vendored from the design template's Nocturne sheet (docs/conventions/design.md). Its @import of Inter is dropped:
    bundled after other CSS it would be invalid, so index.html loads the font instead. */
 
 :root {

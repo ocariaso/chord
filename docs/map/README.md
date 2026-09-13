@@ -46,17 +46,15 @@ If you're building a mental model from scratch, this order minimizes backtrackin
 5. [`web/src/App.tsx`](../../web/src/App.tsx) — which screen shows, derived from the job's status.
 6. [`web/src/audio/playbackEngine.ts`](../../web/src/audio/playbackEngine.ts) — the only audio
    truth: the stem graph, the transport clock, loops and speed.
-7. [`web/src/design/player.ts`](../../web/src/design/player.ts) — the design template's player
+7. [`web/src/design/player.ts`](../../web/src/design/player.ts) — the design's player
    state, held as UI positions, and the tapers that turn them into dB. Its neighbours in
    [`design/`](../../web/src/design/) hold every rendered string, the stem identities and the
    stage list.
 8. [`web/src/screens/results/ResultsScreen.tsx`](../../web/src/screens/results/ResultsScreen.tsx)
    — the state hub the three result views hang off.
 
-Skip [`web/template/`](../../web/template/) unless you are changing how a screen looks — it is the
-design reference the UI was built from, not code that runs; read it with
-[../conventions/design.md](../conventions/design.md). On a first pass, also skip the signal
-processing in [`stretchProcessor.js`](../../web/src/audio/stretchProcessor.js) and
+Before changing how a screen looks, read [../conventions/design.md](../conventions/design.md), the
+design standard. On a first pass, skip the signal processing in [`stretchProcessor.js`](../../web/src/audio/stretchProcessor.js) and
 [`meters.ts`](../../web/src/audio/meters.ts); the engine's interface to both is small.
 
 ## What lives where, at a glance
@@ -71,15 +69,14 @@ processing in [`stretchProcessor.js`](../../web/src/audio/stretchProcessor.js) a
 | API client and types | [`web/src/api/`](../../web/src/api/) |
 | Web Audio playback, time-stretch and metering | [`web/src/audio/`](../../web/src/audio/) |
 | design tokens and the `ch-` component styles | [`web/src/styles/`](../../web/src/styles/) |
-| the template's vocabulary — copy, player state, stems, stages, breakpoint | [`web/src/design/`](../../web/src/design/) |
-| the screens, one folder per template screen | [`web/src/screens/`](../../web/src/screens/) |
+| the design's vocabulary — copy, player state, stems, stages, breakpoint | [`web/src/design/`](../../web/src/design/) |
+| the screens, one folder per screen | [`web/src/screens/`](../../web/src/screens/) |
 | the results screen — state hub, views, chords, transport, dialogs | [`web/src/screens/results/`](../../web/src/screens/results/) |
 | the pieces the screens share — card, cover art, dialog, footer, icons | [`web/src/components/`](../../web/src/components/) |
 | faders, knobs, mute/solo, waveforms | [`web/src/components/controls/`](../../web/src/components/controls/) |
 | reusable stateful logic | [`web/src/hooks/`](../../web/src/hooks/) |
 | pure functions | [`web/src/utils/`](../../web/src/utils/) |
-| the design template's rules as a lint step | [`web/scripts/`](../../web/scripts/) |
-| the design reference — harness, mockups, stylesheet sources | [`web/template/`](../../web/template/) |
+| the design's rules as a lint step | [`web/scripts/`](../../web/scripts/) |
 
 ## Maintenance
 

@@ -23,7 +23,7 @@ interface ConsoleViewProps {
   readMeters: (target: MeterReadings, now: number) => void;
 }
 
-/** The Console view: a scrolling row of strips and the master strip. INSTRUCTIONS §4.4: the meters bypass React, written each frame. */
+/** The Console view: a scrolling row of strips and the master strip. The meters bypass React, written each frame (design.md#metering). */
 export function ConsoleView({ stems, controls, master, onMasterChange, metronome, onExport, readMeters }: ConsoleViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const peakRef = useRef<HTMLSpanElement>(null);

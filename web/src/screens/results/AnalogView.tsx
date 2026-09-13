@@ -32,7 +32,7 @@ function needleDegrees(value: number, scale: DialScale): number {
   ]);
 }
 
-/** The Analog view: five output dials above a row of knob modules. INSTRUCTIONS §4.4: the dials bypass React. */
+/** The Analog view: five output dials above a row of knob modules. The dials bypass React (design.md#metering). */
 export function AnalogView({ stems, controls, readMeters }: AnalogViewProps) {
   const needles = useRef<Partial<Record<DialKey, SVGLineElement | null>>>({});
   const readouts = useRef<Partial<Record<DialKey, HTMLSpanElement | null>>>({});

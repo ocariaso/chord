@@ -122,20 +122,22 @@ App.tsx               no screen state: activeJobId, then the job's status, decid
    ├─ LandingScreen       file drop, URL form, "Submitting…" while the POST is out
    ├─ ProcessingScreen    five-stage list, progress, time estimate, cancel
    ├─ FailurePanel        job error, cancelled (resume), connection lost, job not found
-   └─ ResultsScreen       loads the stems; the engine and the template's PlayerState for all three views
+   └─ ResultsScreen       loads the stems; the engine and the design's PlayerState for all three views
          ├─ ResultsTopbar, AnalysisBar, ChordBar    always mounted; no view tabs below 720px
          ├─ MixerView | ConsoleView | AnalogView    one at a time; Mixer only below 720px
          ├─ Transport                               play, seek, speed, loop, metronome; play, seek, Click below 720px
          └─ ExportDialog, LyricsDialog              on demand
 
-design/               what the design template specifies, without React: copy, the state model,
+design/               the design's vocabulary, without React: copy, the state model,
                       the six stems, the stage list, the breakpoint
 ```
 
 There is no router library, no global store, and no data-fetching library. `ResultsScreen` holds
-every piece of playback state — the template's `PlayerState` in a reducer, the rest beside it — and
+every piece of playback state — the design's `PlayerState` in a reducer, the rest beside it — and
 threads it down as props; the three views render the same state through different layouts. The
-design template in `web/template/` is the source of truth for the screens' layout and copy. See
+screens' layout and copy follow the design standard in
+[../conventions/design.md](../conventions/design.md), and the screens are its reference
+implementation. See
 [web.md](web.md), [../features/results-views.md](../features/results-views.md) and
 [../conventions/design.md](../conventions/design.md).
 

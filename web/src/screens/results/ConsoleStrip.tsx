@@ -14,7 +14,7 @@ interface ConsoleStripProps {
   controls: StemControls;
 }
 
-/** The harness's order: a soloed strip reads Soloed even when it is also muted. */
+/** Solo before mute (design.md#state): a soloed strip reads Soloed even when it is also muted. */
 function stateLabel(stem: StemDisplay, anySolo: boolean): string {
   const { solo, muted } = stem.state;
   if (solo) return resultsCopy.stripState.soloed;
@@ -23,7 +23,7 @@ function stateLabel(stem: StemDisplay, anySolo: boolean): string {
 }
 
 /**
- * `.ch-panel.ch-strip` (INSTRUCTIONS §4.2): lifted when soloed, dimmed when muted. Its meter carries
+ * `.ch-panel.ch-strip` (design.md#controls): lifted when soloed, dimmed when muted. Its meter carries
  * `data-meter`, where the Console's frame loop writes `--l`.
  */
 export function ConsoleStrip({ stem, anySolo, controls }: ConsoleStripProps) {

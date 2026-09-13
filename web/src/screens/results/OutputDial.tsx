@@ -5,13 +5,13 @@ export interface DialScale {
   /** Scale values at the dial's left end, at its mid label and at its right end. */
   anchors: readonly [number, number, number];
   tickLabels: readonly [string, string, string];
-  /** The accent arc marking the top of the scale, as the harness draws it for this dial. */
+  /** The accent arc marking the top of the scale, as the design draws it for this dial. */
   accentArc: string;
 }
 
 const LEVEL_ACCENT_ARC = "M173.0 58.8 A88 88 0 0 1 182.7 77.9";
 
-/** The harness's five dials: labels, scale labels and accent arcs, with the values the labels stand for. */
+/** The design's five dials: labels, scale labels and accent arcs, with the values the labels stand for. */
 export const OUTPUT_DIALS = {
   left: { label: resultsCopy.dials.left, anchors: [-40, -12, 0], tickLabels: ["−40", "−12", "0"], accentArc: LEVEL_ACCENT_ARC },
   right: { label: resultsCopy.dials.right, anchors: [-40, -12, 0], tickLabels: ["−40", "−12", "0"], accentArc: LEVEL_ACCENT_ARC },
@@ -30,7 +30,7 @@ export const OUTPUT_DIALS = {
   },
 } as const satisfies Record<string, DialScale>;
 
-/** INSTRUCTIONS §4.4: the needle sweeps ±70°; the mid label sits 10° left of centre. */
+/** The needle sweeps ±70°; the mid label sits 10° left of centre (design.md#metering). */
 export const NEEDLE_SWEEP_DEGREES = 70;
 export const NEEDLE_MID_DEGREES = -10;
 

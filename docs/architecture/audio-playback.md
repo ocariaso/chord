@@ -190,8 +190,8 @@ Semantics that fall out of this:
 - **Solo is additive** — a `Set`, so multiple stems can be soloed at once.
 - **Any solo silences all non-soloed stems.**
 - **Mute beats solo** — a stem that is both soloed and muted is silent. The Console and Analog
-  views don't show it that way: they follow the template's harness, which draws a soloed stem as
-  *Soloed* and lifted even when it is also muted. That one combination is where a strip and the
+  views don't show it that way: they follow the solo-first order the template's harness drew, which
+  shows a soloed stem as *Soloed* and lifted even when it is also muted. That one combination is where a strip and the
   audio disagree.
 - **Changes are smoothed, not stepped.** `setParam` calls `setTargetAtTime` with a 15 ms time
   constant: long enough that toggling a gain doesn't click, short enough to follow a fader drag.

@@ -28,7 +28,7 @@ import type { LoopState, StemControls, StemDisplay } from "./types";
 interface ResultsScreenProps {
   job: Job;
   onBack: () => void;
-  /** From useJobEvents, so the loading screen can time the stages it lists as done, as the harness does. */
+  /** From useJobEvents, so the loading screen can time the stages it lists as done, as the design does. */
   stageSnapshots?: Record<number, Job>;
 }
 
@@ -144,7 +144,7 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
           dispatch({ type: "playingChanged", playing: false });
         }
         const time = engine.getCurrentTime();
-        // INSTRUCTIONS §6: with reduced motion the playhead steps once a second instead of gliding every frame.
+        // With reduced motion the playhead steps once a second instead of gliding every frame (design.md#accessibility).
         dispatch({ type: "timeChanged", time: reducedMotionRef.current ? Math.floor(time) : time });
       }
       rafRef.current = requestAnimationFrame(tick);
@@ -300,7 +300,7 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
     silent: state.key === "vocals" && !hasVocals,
     envelope: envelopes[state.key] ?? null,
   }));
-  // INSTRUCTIONS §5: below 720px the results lock to the Mixer and the view tabs aren't rendered.
+  // Below 720px the results lock to the Mixer and the view tabs aren't rendered (design.md#responsive).
   const view: ResultView = isPhone ? "mixer" : player.view;
 
   return (

@@ -9,7 +9,7 @@ interface SliderControlOptions {
   axis: SliderAxis;
 }
 
-// INSTRUCTIONS §4.3: a knob's full range is 160 px of vertical drag. Rotational drag is unusable with a mouse.
+// A knob's full range is 160 px of vertical drag (design.md#controls). Rotational drag is unusable with a mouse.
 const KNOB_DRAG_PIXELS = 160;
 const FINE_STEP = 0.01;
 const COARSE_STEP = 0.1;
@@ -20,7 +20,7 @@ function clamp(value: number): number {
 }
 
 /**
- * Pointer and keyboard handling for a 0…1 control drawn by a `ch-` class through `--v` (INSTRUCTIONS §4.1:
+ * Pointer and keyboard handling for a 0…1 control drawn by a `ch-` class through `--v` (design.md#controls:
  * ±0.01 on an arrow, ±0.1 with Shift, 0 and 1 on Home and End; Page Up and Down step like Shift).
  */
 export function useSliderControl({ value, onChange, axis }: SliderControlOptions) {

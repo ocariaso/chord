@@ -48,7 +48,7 @@ function secondsBetween(from: string, to: string): number {
 /** The template's processing screen — the `processing-*` scenarios — at web and phone width. */
 export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSnapshots = {}, loading = false }: ProcessingScreenProps) {
   const isPhone = useMediaQuery(PHONE_QUERY);
-  // While stems load the harness holds the last stage current, at 100%.
+  // While stems load the design holds the last stage current, at 100%.
   const current = loading ? DETECTING_CHORDS_STAGE : processingStage(job);
   const progress = loading ? 1 : job.progress;
   const stageMessage = loading ? processingCopy.loadingStems : (job.stage_message ?? PROCESSING_STAGES[current] ?? "");
