@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="_ds/nocturne-62bba19a-fdff-4f3e-beb2-f077d71f8ed9/styles.css">
+<link rel="stylesheet" href="template/chord-theme.css">
+<script src="_ds/nocturne-62bba19a-fdff-4f3e-beb2-f077d71f8ed9/_ds_bundle.js"></script>
+<style>
+html,body{margin:0;height:100%;background:#101120}
+a{color:#d2cefd}a:hover{color:#e7e5fe}
+</style>
+</helmet>
+
+<div style="display:flex;min-height:100vh;font-family:'Inter',system-ui,sans-serif">
+
+  <nav class="ch-nav" aria-label="Demo scenarios">
+    <div style="padding:0 16.8px;display:flex;align-items:baseline;gap:8px">
+      <span style="font:600 14px/1 'Inter',sans-serif;letter-spacing:.14em;color:#e9e9ed">CHORD</span>
+      <span style="font:400 10px/1 'Inter',sans-serif;letter-spacing:.08em;color:#75798c">TEMPLATE</span>
+    </div>
+    <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+      <div class="ch-nav-group">
+        <div class="ch-nav-head">{{ g.name }}</div>
+        <sc-for list="{{ g.items }}" as="s" hint-placeholder-count="4">
+          <button type="button" class="ch-nav-item {{ s.cls }}" onClick="{{ s.select }}">{{ s.label }}</button>
+        </sc-for>
+      </div>
+    </sc-for>
+    <div style="margin-top:auto;padding:16.8px 16.8px 0;display:flex;flex-direction:column;gap:8.4px">
+      <span class="ch-label">Canvas</span>
+      <div class="ch-tabs" role="tablist" aria-label="Canvas">
+        <button type="button" class="ch-tab" role="tab" aria-selected="{{ webSel }}" onClick="{{ setWeb }}">Web</button>
+        <button type="button" class="ch-tab" role="tab" aria-selected="{{ mobileSel }}" onClick="{{ setMobile }}">Mobile</button>
+      </div>
+      <span class="ch-hint">Every screen below is the same component set at two widths.</span>
+    </div>
+  </nav>
+
+  <main style="flex:1;min-width:0;display:flex;flex-direction:column;background:radial-gradient(120% 90% at 18% 0%,#1d1f33 0%,#161826 55%,#121320 100%)">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:16.8px;padding:11.2px 22.4px;box-shadow:inset 0 -1px 0 rgba(233,233,237,.08)">
+      <span style="font:400 11.5px/1 'Inter',sans-serif;color:#9397ab">{{ crumb }}</span>
+      <div style="display:flex;align-items:center;gap:8.4px">
+        <span class="tag tag-outline" style="font-size:10px">{{ deviceLabel }}</span>
+        <span class="tag tag-neutral" style="font-size:10px">{{ scenarioId }}</span>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:0;display:flex;justify-content:center;padding:28px 22.4px 40px">
+      <div style="width:100%;max-width:{{ canvasMax }};display:flex;flex-direction:column;gap:22.4px">
+
+        <!-- ============================ UPLOAD ============================ -->
+        <sc-if value="{{ isUpload }}" hint-placeholder-val="{{ true }}">
+          <div class="ch-app" style="border-radius:10px;box-shadow:0 0 0 1px #3f424d,0 18px 44px rgba(0,0,0,.5);overflow:hidden">
+            <div style="padding:40px 44px;display:flex;flex-direction:column;gap:26px">
+              <div style="display:flex;flex-direction:column;gap:11.2px;max-width:520px">
+                <span style="display:flex;flex-wrap:wrap;align-items:baseline;gap:8px">
+                  <span style="font:600 13px/1 'Inter',sans-serif;letter-spacing:.18em;color:#e9e9ed">CHORD</span>
+                  <span style="font:400 11px/1.4 'Inter',sans-serif;letter-spacing:.04em;color:#9397ab">Component Harmony &amp; Orchestral Retrieval Decoder</span>
+                </span>
+                <h1 style="margin:0;font:500 30px/1.15 'Inter',sans-serif;letter-spacing:-.01em;color:#e9e9ed">Split any track into stems, chords and key.</h1>
+                <p style="margin:0;font:400 13.5px/1.6 'Inter',sans-serif;color:#b2b6ca;text-wrap:pretty">Drop a lossless file or paste a link. CHORD returns six isolated stems, a chord chart aligned to the beat, detected key and tempo, and synced lyrics where it can find them.</p>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:14px;max-width:620px">
+                <div class="ch-dropzone {{ dropCls }}">
+                  <span class="ch-dropicon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4" stroke-linecap="round"></path><path d="M8 8l4-4 4 4" stroke-linecap="round" stroke-linejoin="round"></path><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round"></path></svg></span>
+                  <span style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                    <span style="font:500 14px/1.3 'Inter',sans-serif;color:#e9e9ed">{{ dropTitle }}</span>
+                    <span style="font:400 11.5px/1.4 'Inter',sans-serif;color:#9397ab">{{ dropHint }}</span>
+                  </span>
+                  <button class="btn btn-primary" style="margin-left:auto;flex:none;font-size:12.5px">Choose file</button>
+                </div>
+                <div style="display:flex;align-items:center;gap:14px">
+                  <span class="ch-divider-y" style="flex:1"></span>
+                  <span class="ch-label">or paste a link</span>
+                  <span class="ch-divider-y" style="flex:1"></span>
+                </div>
+                <div style="display:flex;gap:11.2px;align-items:flex-end">
+                  <div class="field" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5.6px">
+                    <label class="ch-label" for="ch-url">Track URL</label>
+                    <input class="input" id="ch-url" placeholder="https://" style="width:100%;font-size:12.5px">
+                  </div>
+                  <button class="btn btn-secondary" style="flex:none;font-size:12.5px">{{ submitLabel }}</button>
+                </div>
+                <sc-if value="{{ upRejected }}" hint-placeholder-val="{{ false }}">
+                  <div class="ch-alert">
+                    <span class="ch-alert-head"><span class="ch-dot ch-dot-status" style="--stem:var(--ch-danger)"></span>Rejected file</span>
+                    <span class="ch-alert-body">live-set.m4a isn't supported. CHORD reads MP3 and FLAC; convert to FLAC to keep the full dynamic range.</span>
+                  </div>
+                </sc-if>
+              </div>
+              <span class="ch-hint">Six stems: vocals · drums · bass · guitar · piano · other</span>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ========================== PROCESSING ========================== -->
+        <sc-if value="{{ isProcessing }}" hint-placeholder-val="{{ false }}">
+          <div class="ch-app" style="max-width:520px;border-radius:10px;box-shadow:0 0 0 1px #3f424d,0 18px 44px rgba(0,0,0,.5);overflow:hidden">
+            <div style="padding:22.4px;display:flex;flex-direction:column;gap:22.4px">
+              <div style="display:flex;gap:14px;align-items:center">
+                <span style="width:56px;height:56px;flex:none;border-radius:8px;background:linear-gradient(150deg,#423a6a,#2b2741);box-shadow:inset 0 0 0 1px #3f424d"></span>
+                <span style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1;overflow:hidden">
+                  <span class="ch-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ title }}</span>
+                  <span class="ch-subtitle">{{ subtitle }}</span>
+                </span>
+                <button class="btn btn-ghost" style="flex:none;font-size:11.5px">Cancel</button>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:7px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline">
+                  <span style="font:500 12.5px/1 'Inter',sans-serif;color:#e9e9ed">{{ stageMessage }}</span>
+                  <span style="font:500 12px/1 'Inter',sans-serif;color:#b5abfc;font-variant-numeric:tabular-nums">{{ progressPct }}</span>
+                </div>
+                <div class="ch-progress" style="--v:{{ progressV }}" role="progressbar"><span></span></div>
+                <span class="ch-hint">{{ etaLabel }}</span>
+              </div>
+              <div style="display:flex;flex-direction:column">
+                <sc-for list="{{ stages }}" as="st" hint-placeholder-count="5">
+                  <div class="ch-stage {{ st.cls }}">
+                    <span class="ch-stage-mark"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="{{ st.tick }}" stroke-width="3"><path d="M5 13l4 4 10-11" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+                    <span style="flex:1">{{ st.label }}</span>
+                    <span class="ch-value-sm">{{ st.at }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ============================ FAILURE =========================== -->
+        <sc-if value="{{ isError }}" hint-placeholder-val="{{ false }}">
+          <div class="ch-app" style="max-width:520px;border-radius:10px;box-shadow:0 0 0 1px #3f424d,0 18px 44px rgba(0,0,0,.5);overflow:hidden">
+            <div style="padding:22.4px;display:flex;flex-direction:column;gap:16.8px">
+              <div class="ch-alert">
+                <span class="ch-alert-head"><span class="ch-dot ch-dot-status" style="--stem:{{ errDot }}"></span>{{ errTitle }}</span>
+                <span class="ch-alert-body">{{ errBody }}</span>
+              </div>
+              <sc-if value="{{ errHasLog }}" hint-placeholder-val="{{ true }}">
+                <div class="ch-log">{{ errLog }}</div>
+              </sc-if>
+              <div style="display:flex;gap:8.4px">
+                <button class="btn btn-primary" style="font-size:12px">{{ errPrimary }}</button>
+                <button class="btn btn-ghost" style="font-size:12px">{{ errSecondary }}</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ============================ RESULTS =========================== -->
+        <sc-if value="{{ isResults }}" hint-placeholder-val="{{ false }}">
+          <div class="ch-app" style="border-radius:10px;box-shadow:0 0 0 1px #3f424d,0 18px 44px rgba(0,0,0,.5);overflow:hidden">
+
+            <div class="ch-topbar">
+              <span style="width:44px;height:44px;flex:none;border-radius:6px;background:linear-gradient(150deg,#423a6a,#2b2741);box-shadow:inset 0 0 0 1px #3f424d"></span>
+              <span class="ch-topbar-title">
+                <span class="ch-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ title }}</span>
+                <span class="ch-subtitle">{{ resultsMeta }}</span>
+              </span>
+              <div class="ch-tabs" role="tablist" aria-label="Result view">
+                <button type="button" class="ch-tab" role="tab" aria-selected="{{ mixerSel }}" onClick="{{ setMixer }}">Mixer</button>
+                <button type="button" class="ch-tab" role="tab" aria-selected="{{ consoleSel }}" onClick="{{ setConsole }}">Console</button>
+                <button type="button" class="ch-tab" role="tab" aria-selected="{{ analogSel }}" onClick="{{ setAnalog }}">Analog</button>
+              </div>
+              <button class="btn btn-secondary" style="flex:none;font-size:11.5px">Export stems</button>
+              <span class="ch-divider-x" style="height:22px;align-self:center"></span>
+              <button class="btn btn-ghost" style="flex:none;font-size:11.5px;display:flex;align-items:center;gap:6px"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14" stroke-linecap="round"></path></svg>New track</button>
+            </div>
+
+            <!-- Analysis bar: mixer + console -->
+            <sc-if value="{{ showAnalysisBar }}" hint-placeholder-val="{{ true }}">
+              <div class="ch-section" style="display:flex;align-items:stretch;flex-wrap:wrap;gap:22.4px">
+                <div style="display:flex;flex-direction:column;gap:4px">
+                  <span class="ch-label">Key</span>
+                  <div style="display:flex;align-items:baseline;gap:8px">
+                    <span style="font:500 26px/1 'Inter',sans-serif;color:#e9e9ed">{{ keyLabel }}</span>
+                    <span class="ch-hint">82% confident</span>
+                  </div>
+                </div>
+                <span class="ch-divider-x"></span>
+                <div style="display:flex;flex-direction:column;gap:5.6px">
+                  <span class="ch-label">Transpose</span>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <button class="btn btn-ghost" style="width:26px;height:26px;padding:0;font-size:14px" onClick="{{ transposeDown }}" aria-label="Transpose down one semitone">−</button>
+                    <span style="min-width:34px;text-align:center;font:500 14px/1 'Inter',sans-serif;font-variant-numeric:tabular-nums;color:#e9e9ed">{{ transposeLabel }}</span>
+                    <button class="btn btn-ghost" style="width:26px;height:26px;padding:0;font-size:14px" onClick="{{ transposeUp }}" aria-label="Transpose up one semitone">+</button>
+                    <span class="ch-hint" style="white-space:nowrap">semitones · chords follow</span>
+                  </div>
+                </div>
+                <span class="ch-divider-x"></span>
+                <div style="display:flex;flex-direction:column;gap:5.6px">
+                  <span class="ch-label">Tempo</span>
+                  <div style="display:flex;align-items:baseline;gap:8px">
+                    <span style="font:500 22px/1 'Inter',sans-serif;font-variant-numeric:tabular-nums;color:#e9e9ed">120</span>
+                    <span class="ch-subtitle">BPM</span>
+                  </div>
+                </div>
+                <span class="ch-divider-x"></span>
+                <div style="display:flex;flex-direction:column;gap:5.6px;flex:1;min-width:200px">
+                  <span class="ch-label">Master level</span>
+                  <div style="display:flex;align-items:center;gap:11.2px">
+                    <div class="ch-fader ch-fader-thin" style="--v:{{ masterV }}" tabindex="0" role="slider" aria-label="Master level"></div>
+                    <span class="ch-value">{{ masterDb }}</span>
+                  </div>
+                </div>
+              </div>
+            </sc-if>
+
+            <!-- Chords + lyric -->
+            <sc-if value="{{ showChordBar }}" hint-placeholder-val="{{ true }}">
+              <div class="ch-section" style="display:flex;flex-direction:column;gap:14px">
+                <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+                  <span class="ch-label">Chords</span>
+                  <span class="ch-chord-now" style="color:#e9e9ed">{{ chordNow }}</span>
+                  <span class="ch-chord-next">{{ chordNext1 }}</span>
+                  <span class="ch-chord-next" style="color:#75798c">{{ chordNext2 }}</span>
+                  <span class="ch-chord-next" style="color:#595d6c">{{ chordNext3 }}</span>
+                  <span style="margin-left:auto" class="ch-value-sm">{{ timeLabel }}</span>
+                </div>
+                <div class="ch-chordstrip" onClick="{{ seek }}">
+                  <sc-for list="{{ chordSegs }}" as="c" hint-placeholder-count="12">
+                    <span class="ch-chord {{ c.cls }}" style="flex:{{ c.flex }}">{{ c.label }}</span>
+                  </sc-for>
+                  <span class="ch-playhead" style="--p:{{ seekP }}"></span>
+                </div>
+                <sc-if value="{{ lyricsSynced }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex;gap:11.2px;align-items:center">
+                    <span class="ch-label">Lyric</span>
+                    <span class="ch-lyric">{{ lyricLine }}</span>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ lyricsPlain }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;gap:11.2px;align-items:center">
+                    <span class="ch-label">Lyrics</span>
+                    <span class="ch-hint">Found, not synced — no timing available.</span>
+                    <button class="btn btn-ghost" style="font-size:11.5px">Open lyric sheet</button>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ lyricsNone }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;gap:11.2px;align-items:center">
+                    <span class="ch-label">Lyrics</span>
+                    <span class="ch-hint">None found for this track.</span>
+                    <button class="btn btn-ghost" style="font-size:11.5px">Add lyrics manually</button>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+
+            <!-- MIXER -->
+            <sc-if value="{{ isMixer }}" hint-placeholder-val="{{ true }}">
+              <div style="padding:16.8px 22.4px 22.4px;display:flex;flex-direction:column;gap:2px">
+                <div style="display:flex;align-items:center;gap:16.8px;padding-bottom:8.4px">
+                  <span class="ch-label" style="width:96px;flex:none">Stem</span>
+                  <span class="ch-label" style="width:150px;flex:none">Level</span>
+                  <span class="ch-label" style="width:92px;flex:none">Routing</span>
+                  <span class="ch-label" style="flex:1">Waveform</span>
+                </div>
+                <sc-for list="{{ stems }}" as="s" hint-placeholder-count="6">
+                  <div class="ch-stemrow" style="--stem:{{ s.hue }}">
+                    <span class="ch-stemrow-name"><span class="ch-dot"></span><span style="color:#e9e9ed">{{ s.name }}</span></span>
+                    <span class="ch-stemrow-level">
+                      <span class="ch-fader ch-fader-thin" style="--v:{{ s.v }}" tabindex="0" role="slider" aria-label="{{ s.levelAria }}" onPointerDown="{{ s.drag }}"></span>
+                      <span class="ch-value-sm" style="width:38px;text-align:right">{{ s.db }}</span>
+                    </span>
+                    <span class="ch-stemrow-routing">
+                      <button type="button" class="ch-toggle {{ s.muteCls }}" aria-pressed="{{ s.muted }}" onClick="{{ s.toggleMute }}">MUTE</button>
+                      <button type="button" class="ch-toggle {{ s.soloCls }}" aria-pressed="{{ s.solo }}" onClick="{{ s.toggleSolo }}">SOLO</button>
+                    </span>
+                    <span class="ch-wave {{ s.waveCls }}"></span>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ instrumental }}" hint-placeholder-val="{{ false }}">
+                  <span class="ch-hint" style="padding-top:8.4px">No vocal content detected — the vocals stem is present but silent.</span>
+                </sc-if>
+              </div>
+            </sc-if>
+
+            <!-- CONSOLE -->
+            <sc-if value="{{ isConsole }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;gap:22.4px;padding:22.4px;align-items:stretch;min-height:330px;box-shadow:inset 0 -1px 0 rgba(233,233,237,.08)">
+                <div class="ch-striprow">
+                  <sc-for list="{{ stems }}" as="s" hint-placeholder-count="6">
+                    <div class="ch-panel ch-strip {{ s.panelCls }}" style="--stem:{{ s.hue }};display:flex;flex-direction:column;gap:11.2px;padding:16.8px 14px">
+                      <span style="display:flex;flex-direction:column;gap:3px">
+                        <span style="font:500 12.5px/1 'Inter',sans-serif;color:#e9e9ed">{{ s.name }}</span>
+                        <span class="ch-label" style="color:{{ s.stateColor }}">{{ s.stateLabel }}</span>
+                      </span>
+                      <span style="display:flex;gap:11.2px;flex:1;min-height:170px">
+                        <span class="ch-vfader" style="--v:{{ s.v }}" tabindex="0" role="slider" aria-label="{{ s.levelAria }}"><span></span></span>
+                        <span class="ch-meter"><i style="--l:{{ s.m1 }}"></i><i style="--l:{{ s.m2 }}"></i></span>
+                        <span class="ch-ticks"><span>0</span><span>-12</span><span>-24</span><span>-∞</span></span>
+                      </span>
+                      <span style="display:flex;flex-direction:column;gap:5.6px">
+                        <span style="display:flex;justify-content:space-between;font:400 11px/1 'Inter',sans-serif;color:#b2b6ca"><span>Level</span><span style="font-variant-numeric:tabular-nums">{{ s.db }}</span></span>
+                        <span style="display:flex;justify-content:space-between;font:400 11px/1 'Inter',sans-serif;color:#75798c"><span>Pan</span><span>{{ s.pan }}</span></span>
+                        <span style="display:flex;gap:5.6px">
+                          <button type="button" class="ch-toggle {{ s.muteCls }}" aria-pressed="{{ s.muted }}" onClick="{{ s.toggleMute }}">MUTE</button>
+                          <button type="button" class="ch-toggle {{ s.soloCls }}" aria-pressed="{{ s.solo }}" onClick="{{ s.toggleSolo }}">SOLO</button>
+                        </span>
+                      </span>
+                    </div>
+                  </sc-for>
+                </div>
+                <span class="ch-divider-x"></span>
+                <div class="ch-panel" style="width:190px;flex:none;display:flex;flex-direction:column;gap:14px;padding:16.8px 14px;background:#1d1f30;box-shadow:inset 0 0 0 1px #3f424d">
+                  <span class="ch-label" style="color:#e9e9ed">Master</span>
+                  <span style="display:flex;gap:11.2px;flex:1">
+                    <span class="ch-vfader" style="--v:{{ masterV }}" tabindex="0" role="slider" aria-label="Master level"><span></span></span>
+                    <span class="ch-meter" style="--stem:var(--color-accent)"><i style="--l:.74"></i><i style="--l:.68"></i></span>
+                    <span class="ch-ticks"><span>0</span><span>-6</span><span>-18</span><span>-∞</span></span>
+                  </span>
+                  <span style="display:flex;flex-direction:column;gap:5.6px">
+                    <span style="display:flex;justify-content:space-between;font:400 10.5px/1 'Inter',sans-serif;color:#b2b6ca"><span>Output</span><span style="font-variant-numeric:tabular-nums">{{ masterDb }}</span></span>
+                    <span style="display:flex;justify-content:space-between;font:400 10.5px/1 'Inter',sans-serif;color:#b2b6ca"><span>Peak</span><span style="font-variant-numeric:tabular-nums">−0.8</span></span>
+                    <span style="display:flex;justify-content:space-between;font:400 10.5px/1 'Inter',sans-serif;color:#b2b6ca"><span>Metronome</span><span style="color:#b5abfc">{{ metroLabel }}</span></span>
+                  </span>
+                  <button class="btn btn-secondary" style="width:100%;font-size:11px">Export stems</button>
+                </div>
+              </div>
+            </sc-if>
+
+            <!-- ANALOG -->
+            <sc-if value="{{ isAnalog }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column">
+                <div class="ch-section" style="display:flex;gap:22.4px;box-shadow:none;padding-bottom:0">
+                  <div class="ch-panel" style="flex:1;min-width:0;display:flex;gap:22.4px;padding:16.8px 22.4px">
+                    <div style="display:flex;flex-direction:column;gap:11.2px;flex:1;min-width:0">
+                      <span class="ch-label">Output level</span>
+                      <div style="display:grid;grid-template-columns:repeat(5,minmax(180px,1fr));gap:16.8px;align-items:start;overflow-x:auto;padding-bottom:2px">
+                        <span style="min-width:0;display:flex;flex-direction:column;gap:6px;align-items:center">
+                          <svg viewBox="0 0 200 140" style="width:100%;height:auto">
+                            <path d="M17.3 77.9 A88 88 0 0 1 182.7 77.9" fill="none" stroke="#3f424d" stroke-width="1.4"></path>
+                            <path d="M173.0 58.8 A88 88 0 0 1 182.7 77.9" fill="none" stroke="#9184d9" stroke-width="2.4"></path>
+                            <g stroke="#b2b6ca" stroke-width="2.2" stroke-linecap="round"><path d="M17.3 77.9 L29.5 82.3"></path><path d="M32.6 51.4 L42.5 59.8"></path><path d="M56.0 31.8 L62.5 43.0"></path><path d="M84.7 21.3 L87.0 34.1"></path><path d="M115.3 21.3 L113.0 34.1"></path><path d="M144.0 31.8 L137.5 43.0"></path><path d="M167.4 51.4 L157.5 59.8"></path><path d="M182.7 77.9 L170.5 82.3"></path></g>
+                            <g stroke="#595d6c" stroke-width="1.5"><path d="M23.8 64.0 L30.7 68.0"></path><path d="M43.4 40.6 L48.6 46.7"></path><path d="M69.9 25.3 L72.6 32.8"></path><path d="M100.0 20.0 L100.0 28.0"></path><path d="M130.1 25.3 L127.4 32.8"></path><path d="M156.6 40.6 L151.4 46.7"></path><path d="M176.2 64.0 L169.3 68.0"></path></g>
+                            <text x="39.9" y="91.1" text-anchor="start" fill="#9397ab" font-family="Inter" font-size="13">−40</text><text x="88.9" y="49.0" text-anchor="middle" fill="#9397ab" font-family="Inter" font-size="13">−12</text><text x="160.1" y="91.1" text-anchor="end" fill="#9397ab" font-family="Inter" font-size="13">0</text>
+                            <line x1="100" y1="108" x2="100" y2="34" stroke="#e4e7f5" stroke-width="3.2" stroke-linecap="round" transform="{{ needleL }}"></line>
+                            <circle cx="100" cy="108" r="7" fill="#b2b6ca"></circle>
+                            <circle cx="100" cy="108" r="2.5" fill="#161826"></circle>
+                          </svg>
+                          <span style="display:flex;flex-direction:column;align-items:center;gap:3px">
+                            <span class="ch-label">Output · left</span>
+                            <span class="ch-value">{{ outLeftDb }}</span>
+                          </span>
+                        </span>
+                        <span style="min-width:0;display:flex;flex-direction:column;gap:6px;align-items:center">
+                          <svg viewBox="0 0 200 140" style="width:100%;height:auto">
+                            <path d="M17.3 77.9 A88 88 0 0 1 182.7 77.9" fill="none" stroke="#3f424d" stroke-width="1.4"></path>
+                            <path d="M173.0 58.8 A88 88 0 0 1 182.7 77.9" fill="none" stroke="#9184d9" stroke-width="2.4"></path>
+                            <g stroke="#b2b6ca" stroke-width="2.2" stroke-linecap="round"><path d="M17.3 77.9 L29.5 82.3"></path><path d="M32.6 51.4 L42.5 59.8"></path><path d="M56.0 31.8 L62.5 43.0"></path><path d="M84.7 21.3 L87.0 34.1"></path><path d="M115.3 21.3 L113.0 34.1"></path><path d="M144.0 31.8 L137.5 43.0"></path><path d="M167.4 51.4 L157.5 59.8"></path><path d="M182.7 77.9 L170.5 82.3"></path></g>
+                            <g stroke="#595d6c" stroke-width="1.5"><path d="M23.8 64.0 L30.7 68.0"></path><path d="M43.4 40.6 L48.6 46.7"></path><path d="M69.9 25.3 L72.6 32.8"></path><path d="M100.0 20.0 L100.0 28.0"></path><path d="M130.1 25.3 L127.4 32.8"></path><path d="M156.6 40.6 L151.4 46.7"></path><path d="M176.2 64.0 L169.3 68.0"></path></g>
+                            <text x="39.9" y="91.1" text-anchor="start" fill="#9397ab" font-family="Inter" font-size="13">−40</text><text x="88.9" y="49.0" text-anchor="middle" fill="#9397ab" font-family="Inter" font-size="13">−12</text><text x="160.1" y="91.1" text-anchor="end" fill="#9397ab" font-family="Inter" font-size="13">0</text>
+                            <line x1="100" y1="108" x2="100" y2="34" stroke="#e4e7f5" stroke-width="3.2" stroke-linecap="round" transform="{{ needleR }}"></line>
+                            <circle cx="100" cy="108" r="7" fill="#b2b6ca"></circle>
+                            <circle cx="100" cy="108" r="2.5" fill="#161826"></circle>
+                          </svg>
+                          <span style="display:flex;flex-direction:column;align-items:center;gap:3px">
+                            <span class="ch-label">Output · right</span>
+                            <span class="ch-value">{{ outRightDb }}</span>
+                          </span>
+                        </span>
+                        <span style="min-width:0;display:flex;flex-direction:column;gap:6px;align-items:center">
+                          <svg viewBox="0 0 200 140" style="width:100%;height:auto">
+                            <path d="M17.3 77.9 A88 88 0 0 1 182.7 77.9" fill="none" stroke="#3f424d" stroke-width="1.4"></path>
+                            <path d="M173.0 58.8 A88 88 0 0 1 182.7 77.9" fill="none" stroke="#9184d9" stroke-width="2.4"></path>
+                            <g stroke="#b2b6ca" stroke-width="2.2" stroke-linecap="round"><path d="M17.3 77.9 L29.5 82.3"></path><path d="M32.6 51.4 L42.5 59.8"></path><path d="M56.0 31.8 L62.5 43.0"></path><path d="M84.7 21.3 L87.0 34.1"></path><path d="M115.3 21.3 L113.0 34.1"></path><path d="M144.0 31.8 L137.5 43.0"></path><path d="M167.4 51.4 L157.5 59.8"></path><path d="M182.7 77.9 L170.5 82.3"></path></g>
+                            <g stroke="#595d6c" stroke-width="1.5"><path d="M23.8 64.0 L30.7 68.0"></path><path d="M43.4 40.6 L48.6 46.7"></path><path d="M69.9 25.3 L72.6 32.8"></path><path d="M100.0 20.0 L100.0 28.0"></path><path d="M130.1 25.3 L127.4 32.8"></path><path d="M156.6 40.6 L151.4 46.7"></path><path d="M176.2 64.0 L169.3 68.0"></path></g>
+                            <text x="39.9" y="91.1" text-anchor="start" fill="#9397ab" font-family="Inter" font-size="13">−24</text><text x="88.9" y="49.0" text-anchor="middle" fill="#9397ab" font-family="Inter" font-size="13">−9</text><text x="160.1" y="91.1" text-anchor="end" fill="#9397ab" font-family="Inter" font-size="13">0</text>
+                            <line x1="100" y1="108" x2="100" y2="34" stroke="#e4e7f5" stroke-width="3.2" stroke-linecap="round" transform="{{ needlePeak }}"></line>
+                            <circle cx="100" cy="108" r="7" fill="#b2b6ca"></circle>
+                            <circle cx="100" cy="108" r="2.5" fill="#161826"></circle>
+                          </svg>
+                          <span style="display:flex;flex-direction:column;align-items:center;gap:3px">
+                            <span class="ch-label">True peak · dBTP</span>
+                            <span class="ch-value">{{ peakDb }}</span>
+                          </span>
+                        </span>
+                        <span style="min-width:0;display:flex;flex-direction:column;gap:6px;align-items:center">
+                          <svg viewBox="0 0 200 140" style="width:100%;height:auto">
+                            <path d="M17.3 77.9 A88 88 0 0 1 182.7 77.9" fill="none" stroke="#3f424d" stroke-width="1.4"></path>
+                            <path d="M156.6 40.6 A88 88 0 0 1 182.7 77.9" fill="none" stroke="#9184d9" stroke-width="2.4"></path>
+                            <g stroke="#b2b6ca" stroke-width="2.2" stroke-linecap="round"><path d="M17.3 77.9 L29.5 82.3"></path><path d="M32.6 51.4 L42.5 59.8"></path><path d="M56.0 31.8 L62.5 43.0"></path><path d="M84.7 21.3 L87.0 34.1"></path><path d="M115.3 21.3 L113.0 34.1"></path><path d="M144.0 31.8 L137.5 43.0"></path><path d="M167.4 51.4 L157.5 59.8"></path><path d="M182.7 77.9 L170.5 82.3"></path></g>
+                            <g stroke="#595d6c" stroke-width="1.5"><path d="M23.8 64.0 L30.7 68.0"></path><path d="M43.4 40.6 L48.6 46.7"></path><path d="M69.9 25.3 L72.6 32.8"></path><path d="M100.0 20.0 L100.0 28.0"></path><path d="M130.1 25.3 L127.4 32.8"></path><path d="M156.6 40.6 L151.4 46.7"></path><path d="M176.2 64.0 L169.3 68.0"></path></g>
+                            <text x="39.9" y="91.1" text-anchor="start" fill="#9397ab" font-family="Inter" font-size="13">−36</text><text x="88.9" y="49.0" text-anchor="middle" fill="#9397ab" font-family="Inter" font-size="13">−23</text><text x="160.1" y="91.1" text-anchor="end" fill="#9397ab" font-family="Inter" font-size="13">−9</text>
+                            <line x1="100" y1="108" x2="100" y2="34" stroke="#e4e7f5" stroke-width="3.2" stroke-linecap="round" transform="{{ needleLufs }}"></line>
+                            <circle cx="100" cy="108" r="7" fill="#b2b6ca"></circle>
+                            <circle cx="100" cy="108" r="2.5" fill="#161826"></circle>
+                          </svg>
+                          <span style="display:flex;flex-direction:column;align-items:center;gap:3px">
+                            <span class="ch-label">Loudness · LUFS</span>
+                            <span class="ch-value">{{ lufsLabel }}</span>
+                          </span>
+                        </span>
+                        <span style="min-width:0;display:flex;flex-direction:column;gap:6px;align-items:center">
+                          <svg viewBox="0 0 200 140" style="width:100%;height:auto">
+                            <path d="M17.3 77.9 A88 88 0 0 1 182.7 77.9" fill="none" stroke="#3f424d" stroke-width="1.4"></path>
+                            <path d="M144.0 31.8 A88 88 0 0 1 182.7 77.9" fill="none" stroke="#9184d9" stroke-width="2.4"></path>
+                            <g stroke="#b2b6ca" stroke-width="2.2" stroke-linecap="round"><path d="M17.3 77.9 L29.5 82.3"></path><path d="M32.6 51.4 L42.5 59.8"></path><path d="M56.0 31.8 L62.5 43.0"></path><path d="M84.7 21.3 L87.0 34.1"></path><path d="M115.3 21.3 L113.0 34.1"></path><path d="M144.0 31.8 L137.5 43.0"></path><path d="M167.4 51.4 L157.5 59.8"></path><path d="M182.7 77.9 L170.5 82.3"></path></g>
+                            <g stroke="#595d6c" stroke-width="1.5"><path d="M23.8 64.0 L30.7 68.0"></path><path d="M43.4 40.6 L48.6 46.7"></path><path d="M69.9 25.3 L72.6 32.8"></path><path d="M100.0 20.0 L100.0 28.0"></path><path d="M130.1 25.3 L127.4 32.8"></path><path d="M156.6 40.6 L151.4 46.7"></path><path d="M176.2 64.0 L169.3 68.0"></path></g>
+                            <text x="39.9" y="91.1" text-anchor="start" fill="#9397ab" font-family="Inter" font-size="13">−1</text><text x="88.9" y="49.0" text-anchor="middle" fill="#9397ab" font-family="Inter" font-size="13">0</text><text x="160.1" y="91.1" text-anchor="end" fill="#9397ab" font-family="Inter" font-size="13">+1</text>
+                            <line x1="100" y1="108" x2="100" y2="34" stroke="#e4e7f5" stroke-width="3.2" stroke-linecap="round" transform="{{ needleCorr }}"></line>
+                            <circle cx="100" cy="108" r="7" fill="#b2b6ca"></circle>
+                            <circle cx="100" cy="108" r="2.5" fill="#161826"></circle>
+                          </svg>
+                          <span style="display:flex;flex-direction:column;align-items:center;gap:3px">
+                            <span class="ch-label">Correlation</span>
+                            <span class="ch-value">{{ phaseLabel }}</span>
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="ch-section"><div class="ch-striprow" style="align-items:stretch">
+                  <sc-for list="{{ stems }}" as="s" hint-placeholder-count="6">
+                    <div class="ch-panel ch-module {{ s.panelCls }}" style="--stem:{{ s.hue }};display:flex;flex-direction:column;align-items:center;gap:11.2px;padding:16.8px 11.2px">
+                      <span style="display:flex;align-items:center;gap:7px"><span class="ch-dot"></span><span style="font:500 12.5px/1 'Inter',sans-serif;color:#e9e9ed">{{ s.name }}</span></span>
+                      <span class="ch-knob" style="--v:{{ s.v }}" tabindex="0" role="slider" aria-label="{{ s.levelAria }}" onPointerDown="{{ s.knobDrag }}"><span></span></span>
+                      <span class="ch-knob-group"><span class="ch-label">Level</span><span class="ch-value">{{ s.dbUnit }}</span></span>
+                      <span style="display:flex;align-items:center;gap:11.2px">
+                        <span class="ch-knob-group"><span class="ch-knob ch-knob-sm" style="--stem:var(--color-neutral-700);--v:{{ s.tone }}" tabindex="0" role="slider" aria-label="{{ s.toneAria }}"><span></span></span><span class="ch-label" style="font-size:9px">Tone</span></span>
+                        <span class="ch-knob-group"><span class="ch-knob ch-knob-sm" style="--stem:var(--color-neutral-700);--v:{{ s.panV }}" tabindex="0" role="slider" aria-label="{{ s.panAria }}"><span></span></span><span class="ch-label" style="font-size:9px">Pan</span></span>
+                      </span>
+                      <span style="display:flex;gap:5.6px;width:100%">
+                        <button type="button" class="ch-toggle {{ s.muteCls }}" aria-pressed="{{ s.muted }}" onClick="{{ s.toggleMute }}">MUTE</button>
+                        <button type="button" class="ch-toggle {{ s.soloCls }}" aria-pressed="{{ s.solo }}" onClick="{{ s.toggleSolo }}">SOLO</button>
+                      </span>
+                    </div>
+                  </sc-for>
+                </div></div>
+              </div>
+            </sc-if>
+
+            <!-- Transport -->
+            <div class="ch-transport">
+              <button type="button" class="ch-play" onClick="{{ togglePlay }}" aria-label="{{ playAria }}">
+                <sc-if value="{{ playing }}" hint-placeholder-val="{{ true }}">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5h3v14H8zM13 5h3v14h-3z"></path></svg>
+                </sc-if>
+                <sc-if value="{{ paused }}" hint-placeholder-val="{{ false }}">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7 4.5v15l14-7.5z"></path></svg>
+                </sc-if>
+              </button>
+              <span class="ch-time">{{ timeNow }}</span>
+              <span class="ch-seek" style="--p:{{ seekP }}" onClick="{{ seek }}" tabindex="0" role="slider" aria-label="Seek"></span>
+              <span class="ch-time" style="color:#75798c">{{ timeTotal }}</span>
+              <button type="button" class="ch-chip">1.0×</button>
+              <button type="button" class="ch-chip">Loop off</button>
+              <button type="button" class="ch-chip {{ metroCls }}" aria-pressed="{{ metro }}" onClick="{{ toggleMetro }}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 17H5z" stroke-linejoin="round"></path><path d="M12 7l3 10" stroke-linecap="round"></path></svg>
+                {{ metroChip }}
+              </button>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ============================ MOBILE ============================ -->
+        <sc-if value="{{ isMobile }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-wrap:wrap;gap:22.4px">
+            <div class="ch-app" style="width:340px;height:660px;border-radius:10px;box-shadow:0 0 0 1px #3f424d,0 18px 44px rgba(0,0,0,.5);overflow:hidden">
+              <div style="padding:16.8px;display:flex;justify-content:space-between;font:500 10.5px/1 'Inter',sans-serif;color:#9397ab"><span>9:41</span><span>Upload</span></div>
+              <div style="flex:1;padding:8.4px 16.8px 22.4px;display:flex;flex-direction:column;gap:16.8px">
+                <span style="display:flex;flex-direction:column;gap:4px">
+                  <span style="font:600 12px/1 'Inter',sans-serif;letter-spacing:.18em;color:#e9e9ed">CHORD</span>
+                  <span style="font:400 10.5px/1.4 'Inter',sans-serif;letter-spacing:.04em;color:#9397ab">Component Harmony &amp; Orchestral Retrieval Decoder</span>
+                </span>
+                <h1 style="margin:0;font:500 24px/1.2 'Inter',sans-serif;color:#e9e9ed">Split any track into stems, chords and key.</h1>
+                <div class="ch-dropzone" style="flex-direction:column;text-align:center;padding:22.4px 16.8px">
+                  <span class="ch-dropicon" style="width:42px;height:42px"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4" stroke-linecap="round"></path><path d="M8 8l4-4 4 4" stroke-linecap="round" stroke-linejoin="round"></path><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke-linecap="round"></path></svg></span>
+                  <span style="font:500 13.5px/1.3 'Inter',sans-serif;color:#e9e9ed">Choose an audio file</span>
+                  <span class="ch-hint">MP3 or FLAC · up to 12 minutes</span>
+                </div>
+                <div class="field" style="display:flex;flex-direction:column;gap:5.6px">
+                  <label class="ch-label" for="ch-url-m">Track URL</label>
+                  <input class="input" id="ch-url-m" placeholder="https://" style="width:100%;font-size:13px">
+                </div>
+                <button class="btn btn-primary" style="width:100%;min-height:46px;font-size:13.5px">Fetch track</button>
+                <span class="ch-hint">Six stems: vocals · drums · bass · guitar · piano · other</span>
+              </div>
+            </div>
+
+            <div class="ch-app" style="width:340px;height:660px;border-radius:10px;box-shadow:0 0 0 1px #3f424d,0 18px 44px rgba(0,0,0,.5);overflow:hidden">
+              <div style="padding:16.8px;display:flex;justify-content:space-between;font:500 10.5px/1 'Inter',sans-serif;color:#9397ab"><span>9:41</span><span>Processing</span></div>
+              <div style="flex:1;padding:8.4px 16.8px 22.4px;display:flex;flex-direction:column;gap:22.4px">
+                <div style="display:flex;gap:11.2px;align-items:center">
+                  <span style="width:52px;height:52px;flex:none;border-radius:8px;background:linear-gradient(150deg,#423a6a,#2b2741)"></span>
+                  <span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font:500 13.5px/1.3 'Inter',sans-serif;color:#e9e9ed">Midnight Harbor</span><span class="ch-subtitle">Paper Lanterns · 4:12</span></span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8.4px">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font:500 13px/1 'Inter',sans-serif;color:#e9e9ed">{{ stageMessage }}</span><span style="font:500 12px/1 'Inter',sans-serif;color:#b5abfc;font-variant-numeric:tabular-nums">{{ progressPct }}</span></div>
+                  <div class="ch-progress" style="--v:{{ progressV }}"><span></span></div>
+                  <span class="ch-hint">{{ etaLabel }}</span>
+                </div>
+                <div style="display:flex;flex-direction:column">
+                  <sc-for list="{{ stages }}" as="st" hint-placeholder-count="5">
+                    <div class="ch-stage {{ st.cls }}" style="padding:11.2px 0">
+                      <span class="ch-stage-mark" style="width:14px;height:14px"></span>
+                      <span style="flex:1">{{ st.label }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <button class="btn btn-ghost" style="width:100%;min-height:46px;font-size:13px;margin-top:auto">Cancel</button>
+              </div>
+            </div>
+
+            <div class="ch-app" style="width:340px;height:660px;border-radius:10px;box-shadow:0 0 0 1px #3f424d,0 18px 44px rgba(0,0,0,.5);overflow:hidden">
+              <div style="padding:14px 16.8px;display:flex;align-items:center;gap:11.2px;box-shadow:inset 0 -1px 0 rgba(233,233,237,.08)">
+                <span style="width:34px;height:34px;flex:none;border-radius:5px;background:linear-gradient(150deg,#423a6a,#2b2741)"></span>
+                <span style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;overflow:hidden"><span style="font:500 12.5px/1.2 'Inter',sans-serif;color:#e9e9ed;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ title }}</span><span class="ch-subtitle" style="font-size:10.5px">{{ keyLabel }} · 120 BPM</span></span>
+                <button type="button" class="ch-chip">Export</button>
+              </div>
+              <div style="padding:14px 16.8px;display:flex;flex-direction:column;gap:11.2px;box-shadow:inset 0 -1px 0 rgba(233,233,237,.08)">
+                <div style="display:flex;align-items:baseline;gap:11.2px">
+                  <span style="font:500 30px/1 'Inter',sans-serif;color:#e9e9ed">{{ chordNow }}</span>
+                  <span class="ch-chord-next" style="font-size:15px">{{ chordNext1 }}</span>
+                  <span class="ch-chord-next" style="font-size:15px;color:#75798c">{{ chordNext2 }}</span>
+                  <span style="margin-left:auto" class="ch-value-sm">{{ timeLabel }}</span>
+                </div>
+                <div class="ch-chordstrip" style="height:26px" onClick="{{ seek }}">
+                  <sc-for list="{{ chordSegs }}" as="c" hint-placeholder-count="12">
+                    <span class="ch-chord {{ c.cls }}" style="flex:{{ c.flex }};font-size:11px">{{ c.label }}</span>
+                  </sc-for>
+                  <span class="ch-playhead" style="--p:{{ seekP }}"></span>
+                </div>
+                <span class="ch-lyric" style="font-size:12.5px">{{ lyricLine }}</span>
+              </div>
+              <div style="flex:1;padding:11.2px 16.8px;display:flex;flex-direction:column;gap:8.4px;overflow:hidden">
+                <sc-for list="{{ stemsMobile }}" as="s" hint-placeholder-count="3">
+                  <div class="ch-m-stem" style="--stem:{{ s.hue }}">
+                    <span style="display:flex;align-items:center;gap:8px"><span class="ch-dot"></span><span style="font:500 12px/1 'Inter',sans-serif;flex:1;color:#e9e9ed">{{ s.name }}</span><span class="ch-value-sm">{{ s.dbUnit }}</span></span>
+                    <span class="ch-fader" style="--v:{{ s.v }}" tabindex="0" role="slider" aria-label="{{ s.levelAria }}" onPointerDown="{{ s.drag }}"></span>
+                    <span style="display:flex;gap:5.6px">
+                      <button type="button" class="ch-toggle {{ s.muteCls }}" aria-pressed="{{ s.muted }}" onClick="{{ s.toggleMute }}">MUTE</button>
+                      <button type="button" class="ch-toggle {{ s.soloCls }}" aria-pressed="{{ s.solo }}" onClick="{{ s.toggleSolo }}">SOLO</button>
+                    </span>
+                  </div>
+                </sc-for>
+                <span class="ch-hint">{{ moreStemsLabel }}</span>
+              </div>
+              <div class="ch-m-bar">
+                <button type="button" class="ch-play" onClick="{{ togglePlay }}" aria-label="{{ playAria }}"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5h3v14H8zM13 5h3v14h-3z"></path></svg></button>
+                <span class="ch-seek" style="--p:{{ seekP }}" onClick="{{ seek }}"></span>
+                <button type="button" class="ch-chip {{ metroCls }}" onClick="{{ toggleMetro }}">Click</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+const SCENARIOS = [
+  { id: "upload", group: "Landing", label: "Upload", screen: "upload" },
+  { id: "upload-submitting", group: "Landing", label: "Submitting", screen: "upload", sub: "submitting" },
+  { id: "upload-error", group: "Landing", label: "Rejected file", screen: "upload", sub: "rejected" },
+
+  { id: "processing-queued", group: "Processing", label: "Queued", screen: "processing", stage: 0, progress: 0 },
+  { id: "processing-fetching", group: "Processing", label: "Downloading audio", screen: "processing", stage: 1, progress: 0.05 },
+  { id: "processing-separating", group: "Processing", label: "Separating stems", screen: "processing", stage: 2, progress: 0.48 },
+  { id: "processing-tempo", group: "Processing", label: "Detecting tempo", screen: "processing", stage: 3, progress: 0.5 },
+  { id: "processing-analyzing", group: "Processing", label: "Detecting chords and key", screen: "processing", stage: 4, progress: 0.6 },
+  { id: "processing-loading", group: "Processing", label: "Loading stems", screen: "processing", stage: 4, progress: 1, stageMessage: "Loading stems…" },
+  { id: "processing-long-title", group: "Processing", label: "Long title (truncation)", screen: "processing", stage: 2, progress: 0.1, longTitle: true },
+
+  { id: "results-mixer", group: "Results", label: "Mixer view", screen: "results", view: "mixer" },
+  { id: "results-console", group: "Results", label: "Console view", screen: "results", view: "console" },
+  { id: "results-analog", group: "Results", label: "Analog view", screen: "results", view: "analog" },
+  { id: "results-instrumental", group: "Results", label: "Instrumental (silent vocals)", screen: "results", view: "mixer", instrumental: true },
+  { id: "results-plain-lyrics", group: "Results", label: "Lyrics not synced", screen: "results", view: "mixer", lyrics: "plain" },
+  { id: "results-no-lyrics", group: "Results", label: "No lyrics found", screen: "results", view: "mixer", lyrics: "none" },
+  { id: "results-long-title", group: "Results", label: "Long title (truncation)", screen: "results", view: "mixer", longTitle: true },
+
+  { id: "job-error", group: "Failure states", label: "Pipeline failed", screen: "error", kind: "pipeline" },
+  { id: "job-cancelled", group: "Failure states", label: "Cancelled", screen: "error", kind: "cancelled" },
+  { id: "connection-error", group: "Failure states", label: "Connection lost", screen: "error", kind: "connection" },
+  { id: "results-load-error", group: "Failure states", label: "Stems failed to load", screen: "error", kind: "stems" }
+];
+
+const STEM_DEFS = [
+  { key: "vocals", name: "Vocals", hue: "var(--ch-vocals)", v: 0.82, wave: "ch-wave-a", tone: 0.46, pan: 0.5, panLabel: "C", m1: 0.62, m2: 0.48 },
+  { key: "drums", name: "Drums", hue: "var(--ch-drums)", v: 0.7, wave: "ch-wave-b", tone: 0.52, pan: 0.5, panLabel: "C", m1: 0.76, m2: 0.7 },
+  { key: "bass", name: "Bass", hue: "var(--ch-bass)", v: 0.88, wave: "ch-wave-c", tone: 0.58, pan: 0.5, panLabel: "C", m1: 0.82, m2: 0.78 },
+  { key: "guitar", name: "Guitar", hue: "var(--ch-guitar)", v: 0.64, wave: "ch-wave-b", tone: 0.42, pan: 0.36, panLabel: "L14", m1: 0.38, m2: 0.42 },
+  { key: "piano", name: "Piano", hue: "var(--ch-piano)", v: 0.74, wave: "ch-wave-a", tone: 0.48, pan: 0.58, panLabel: "R8", m1: 0.56, m2: 0.52 },
+  { key: "other", name: "Other", hue: "var(--ch-other)", v: 0.4, wave: "ch-wave-c", tone: 0.4, pan: 0.5, panLabel: "C", m1: 0.2, m2: 0.18 }
+];
+
+const PROGRESSION = ["A", "E", "A", "E", "C#m", "B", "A", "E"];
+const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const LYRICS = [
+  "we said we'd wait for the tide to turn",
+  "the harbour lights go under one by one",
+  "and nobody's counting the hours now",
+  "so let the water keep what it took"
+];
+const DURATION = 252;
+const LONG_TITLE = "Midnight Harbor (Extended Late Night Version, Remastered 2024) — Paper Lanterns";
+
+class Component extends DCLogic {
+  state = {
+    id: "results-mixer",
+    view: "mixer",
+    device: "web",
+    playing: false,
+    time: 84,
+    transpose: 2,
+    metro: true,
+    master: 0.78,
+    stems: STEM_DEFS.map(s => ({ key: s.key, v: s.v, muted: s.key === "other", solo: s.key === "bass" }))
+  };
+
+  componentDidMount() {
+    this._onHash = () => {
+      const id = window.location.hash.replace(/^#\/?/, "");
+      const sc = SCENARIOS.find(s => s.id === id);
+      if (sc) this.setState({ id: sc.id, view: sc.view || this.state.view });
+    };
+    window.addEventListener("hashchange", this._onHash);
+    this._onHash();
+    this._tick = window.setInterval(() => {
+      if (this.state.playing) this.setState(s => ({ time: (s.time + 0.25) % DURATION }));
+    }, 250);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener("hashchange", this._onHash);
+    window.clearInterval(this._tick);
+  }
+
+  scenario() {
+    return SCENARIOS.find(s => s.id === this.state.id) || SCENARIOS[0];
+  }
+
+  select(id) {
+    const sc = SCENARIOS.find(s => s.id === id);
+    window.location.hash = "#/" + id;
+    this.setState({ id, view: sc && sc.view ? sc.view : this.state.view });
+  }
+
+  fmt(t) {
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    return m + ":" + String(s).padStart(2, "0");
+  }
+
+  db(v, muted) {
+    if (muted) return "−∞";
+    const d = -((1 - v) * 12);
+    return (d < 0 ? "−" : "") + Math.abs(d).toFixed(1);
+  }
+
+  transposeChord(label, semis) {
+    const m = label.match(/^([A-G]#?)(.*)$/);
+    if (!m || !semis) return label;
+    const i = NOTES.indexOf(m[1]);
+    if (i < 0) return label;
+    return NOTES[(((i + semis) % 12) + 12) % 12] + m[2];
+  }
+
+  segments() {
+    const per = DURATION / 16;
+    return Array.from({ length: 16 }, (_, i) => ({
+      label: PROGRESSION[i % PROGRESSION.length],
+      start: i * per,
+      end: (i + 1) * per
+    }));
+  }
+
+  dragFader(stemKey) {
+    return e => {
+      const el = e.currentTarget;
+      el.setPointerCapture(e.pointerId);
+      const apply = ev => {
+        const r = el.getBoundingClientRect();
+        const v = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+        this.setState(s => ({ stems: s.stems.map(x => (x.key === stemKey ? { ...x, v } : x)) }));
+      };
+      apply(e);
+      const move = ev => apply(ev);
+      const up = () => {
+        el.removeEventListener("pointermove", move);
+        el.removeEventListener("pointerup", up);
+      };
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+    };
+  }
+
+  dragKnob(stemKey) {
+    return e => {
+      const el = e.currentTarget;
+      const startY = e.clientY;
+      const start = this.state.stems.find(x => x.key === stemKey).v;
+      el.setPointerCapture(e.pointerId);
+      const move = ev => {
+        const v = Math.max(0, Math.min(1, start + (startY - ev.clientY) / 160));
+        this.setState(s => ({ stems: s.stems.map(x => (x.key === stemKey ? { ...x, v } : x)) }));
+      };
+      const up = () => {
+        el.removeEventListener("pointermove", move);
+        el.removeEventListener("pointerup", up);
+      };
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+    };
+  }
+
+  renderVals() {
+    const sc = this.scenario();
+    const st = this.state;
+    const segs = this.segments();
+    const cur = Math.max(0, segs.findIndex(s => st.time >= s.start && st.time < s.end));
+    const lyricsMode = sc.lyrics || "synced";
+    const anySolo = st.stems.some(s => s.solo);
+
+    const groups = [];
+    SCENARIOS.forEach(s => {
+      let g = groups.find(x => x.name === s.group);
+      if (!g) groups.push((g = { name: s.group, items: [] }));
+      g.items.push({
+        id: s.id,
+        label: s.label,
+        cls: s.id === st.id ? "is-active" : "",
+        select: () => this.select(s.id)
+      });
+    });
+
+    const stems = STEM_DEFS.map(def => {
+      const s = st.stems.find(x => x.key === def.key);
+      const silent = sc.instrumental && def.key === "vocals";
+      const muted = s.muted || silent;
+      return {
+        key: def.key,
+        name: def.name,
+        hue: def.hue,
+        v: s.v,
+        db: this.db(s.v, muted),
+        dbUnit: muted ? "−∞ dB" : this.db(s.v, false) + " dB",
+        tone: def.tone,
+        panV: def.pan,
+        pan: def.panLabel,
+        m1: muted ? 0 : def.m1,
+        m2: muted ? 0 : def.m2,
+        muted: muted,
+        solo: s.solo,
+        muteCls: muted ? "is-on-muted" : "",
+        soloCls: s.solo ? "is-on" : "",
+        panelCls: s.solo ? "is-active" : muted ? "is-off" : "",
+        stateLabel: s.solo ? "Soloed" : muted ? (silent ? "Silent" : "Muted") : anySolo ? "Held" : "Playing",
+        stateColor: s.solo ? "#b5abfc" : "#75798c",
+        waveCls: def.wave + (muted ? " is-off" : ""),
+        levelAria: def.name + " level, " + this.db(s.v, muted) + " decibels",
+        toneAria: def.name + " tone",
+        panAria: def.name + " pan, " + def.panLabel,
+        toggleMute: () => this.setState(p => ({ stems: p.stems.map(x => (x.key === def.key ? { ...x, muted: !x.muted } : x)) })),
+        toggleSolo: () => this.setState(p => ({ stems: p.stems.map(x => (x.key === def.key ? { ...x, solo: !x.solo } : x)) })),
+        drag: this.dragFader(def.key),
+        knobDrag: this.dragKnob(def.key)
+      };
+    });
+
+    const stageLabels = ["Queued", "Downloading audio", "Separating stems", "Detecting tempo", "Detecting chords and key"];
+    const stageAt = ["0:02", "0:09", "0:31", "", ""];
+    const stageIdx = sc.stage == null ? 0 : sc.stage;
+    const stages = stageLabels.map((label, i) => ({
+      label,
+      at: i < stageIdx ? stageAt[i] : "",
+      cls: i < stageIdx ? "is-done" : i === stageIdx ? "is-current" : "",
+      tick: i < stageIdx ? "#b5abfc" : "transparent"
+    }));
+
+    const errors = {
+      pipeline: {
+        title: "Separation failed",
+        body: "The source couldn't be downloaded — the host returned HTTP 403 Forbidden. Nothing was charged and no partial stems were kept.",
+        log: "ERROR [generic] Unable to download webpage: HTTP Error 403: Forbidden",
+        primary: "Try another source",
+        secondary: "Copy log",
+        dot: "var(--ch-danger)"
+      },
+      cancelled: {
+        title: "Cancelled",
+        body: "You stopped this job before separation finished. The upload is still in your queue for 24 hours if you want to resume it.",
+        log: "",
+        primary: "Resume job",
+        secondary: "Discard",
+        dot: "var(--color-neutral-600)"
+      },
+      connection: {
+        title: "Connection lost",
+        body: "Separation is still running on our side. Reconnecting automatically — retry 3 of 10.",
+        log: "Failed to fetch job (502)",
+        primary: "Reconnect now",
+        secondary: "Work offline",
+        dot: "var(--ch-warn)"
+      },
+      stems: {
+        title: "Stems failed to load",
+        body: "Separation finished but three stem files could not be fetched. Chords, key and tempo are still available.",
+        log: "GET /jobs/demo-1/stems/vocals.wav — net::ERR_CONNECTION_RESET",
+        primary: "Retry download",
+        secondary: "Open anyway",
+        dot: "var(--ch-danger)"
+      }
+    };
+    const err = errors[sc.kind] || errors.pipeline;
+
+    // Mobile is locked to the Mixer view — Console and Analog need the width.
+    const view = st.device === "mobile" ? "mixer" : st.view;
+    const isMixer = sc.screen === "results" && view === "mixer";
+    const isConsole = sc.screen === "results" && view === "console";
+    const isAnalog = sc.screen === "results" && view === "analog";
+
+    return {
+      groups,
+      scenarioId: sc.id,
+      crumb: sc.group + " · " + sc.label,
+      deviceLabel: st.device === "mobile" ? "Mobile · 340px" : "Web · fluid",
+      canvasMax: st.device === "mobile" ? "1120px" : "1120px",
+      isMobile: st.device === "mobile",
+      webSel: st.device === "web",
+      mobileSel: st.device === "mobile",
+      setWeb: () => this.setState({ device: "web" }),
+      setMobile: () => this.setState({ device: "mobile", view: "mixer" }),
+
+      isUpload: sc.screen === "upload" && st.device === "web",
+      isProcessing: sc.screen === "processing" && st.device === "web",
+      isResults: sc.screen === "results" && st.device === "web",
+      isError: sc.screen === "error" && st.device === "web",
+      upRejected: sc.sub === "rejected",
+      dropCls: sc.sub === "rejected" ? "is-rejected" : "",
+      dropTitle: sc.sub === "rejected" ? "live-set.m4a was rejected" : "Drop an audio file, or choose one",
+      dropHint: sc.sub === "rejected" ? "CHORD reads MP3 and FLAC only" : "MP3 or FLAC · up to 12 minutes · 44.1 / 48 kHz preserved through separation",
+      submitLabel: sc.sub === "submitting" ? "Submitting…" : "Fetch track",
+
+      title: sc.longTitle ? LONG_TITLE : "Midnight Harbor",
+      subtitle: "Paper Lanterns · 4:12 · FLAC 24/48",
+      resultsMeta: "Paper Lanterns · 4:12 · 6 stems",
+      keyLabel: this.transposeChord("F#", st.transpose) + " minor",
+
+      stageMessage: sc.stageMessage || stageLabels[stageIdx],
+      progressV: sc.progress == null ? 0 : sc.progress,
+      progressPct: Math.round((sc.progress || 0) * 100) + "%",
+      etaLabel: sc.progress >= 1 ? "Decoding six stems in your browser" : "Six-source model · about 40 seconds left",
+      stages,
+
+      errTitle: err.title,
+      errBody: err.body,
+      errLog: err.log,
+      errHasLog: !!err.log,
+      errPrimary: err.primary,
+      errSecondary: err.secondary,
+      errDot: err.dot,
+
+      isMixer,
+      isConsole,
+      isAnalog,
+      mixerSel: isMixer,
+      consoleSel: isConsole,
+      analogSel: isAnalog,
+      setMixer: () => this.setState({ view: "mixer" }),
+      setConsole: () => this.setState({ view: "console" }),
+      setAnalog: () => this.setState({ view: "analog" }),
+      showAnalysisBar: true,
+      showChordBar: true,
+
+      stems,
+      stemsMobile: stems.slice(0, 3),
+      moreStemsLabel: stems.length - 3 + " more stems below",
+      instrumental: !!sc.instrumental,
+
+      chordSegs: segs.map((s, i) => ({
+        label: this.transposeChord(s.label, st.transpose),
+        flex: 1,
+        cls: i === cur ? "is-current" : i < cur ? "is-past" : ""
+      })),
+      chordNow: this.transposeChord(segs[cur].label, st.transpose),
+      chordNext1: this.transposeChord(segs[(cur + 1) % 16].label, st.transpose),
+      chordNext2: this.transposeChord(segs[(cur + 2) % 16].label, st.transpose),
+      chordNext3: this.transposeChord(segs[(cur + 3) % 16].label, st.transpose),
+      lyricLine: LYRICS[cur % LYRICS.length],
+      lyricsSynced: lyricsMode === "synced",
+      lyricsPlain: lyricsMode === "plain",
+      lyricsNone: lyricsMode === "none",
+
+      transposeLabel: (st.transpose > 0 ? "+" : "") + st.transpose,
+      transposeUp: () => this.setState(s => ({ transpose: Math.min(11, s.transpose + 1) })),
+      transposeDown: () => this.setState(s => ({ transpose: Math.max(-11, s.transpose - 1) })),
+
+      masterV: st.master,
+      masterDb: this.db(st.master, false) + " dB",
+      needleL: "rotate(" + Math.round(st.master * 140 - 70) + " 100 108)",
+      needleR: "rotate(" + Math.round(st.master * 140 - 76) + " 100 108)",
+      needlePeak: "rotate(" + Math.round(st.master * 140 - 56) + " 100 108)",
+      needleLufs: "rotate(" + Math.round(st.master * 140 - 84) + " 100 108)",
+      needleCorr: "rotate(" + Math.round(st.master * 30 + 18) + " 100 108)",
+      outLeftDb: this.db(st.master, false) + " dB",
+      outRightDb: this.db(st.master * 0.96, false) + " dB",
+      peakDb: "−0.8 dB",
+      lufsLabel: "−14.2",
+      phaseLabel: "+0.82",
+
+      playing: st.playing,
+      paused: !st.playing,
+      playAria: st.playing ? "Pause" : "Play",
+      togglePlay: () => this.setState(s => ({ playing: !s.playing })),
+      timeNow: this.fmt(st.time),
+      timeTotal: this.fmt(DURATION),
+      timeLabel: this.fmt(st.time) + " / " + this.fmt(DURATION),
+      seekP: st.time / DURATION,
+      seek: e => {
+        const r = e.currentTarget.getBoundingClientRect();
+        this.setState({ time: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * DURATION });
+      },
+
+      metro: st.metro,
+      metroCls: st.metro ? "is-on" : "",
+      metroLabel: st.metro ? "On" : "Off",
+      metroChip: st.metro ? "Metronome on" : "Metronome off",
+      toggleMetro: () => this.setState(s => ({ metro: !s.metro }))
+    };
+  }
+}
+
+</script>
+</body>
+</html>
