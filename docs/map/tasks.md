@@ -36,7 +36,7 @@ picks the weights baked into the image (a runtime-only override downloads on the
 `STEM_NAMES` in [`schemas.py`](../../server/app/models/schemas.py), and on the web the design's
 stems: `STEM_KEYS`, the Tone pivots and `STEM_HUES` in [`design/stems.ts`](../../web/src/design/stems.ts), the
 `StemKey` union in [`design/player.ts`](../../web/src/design/player.ts), `stemNames` and every
-string that says *six* (`intro`, `stemsHint`, `processingCopy.model`, `estimate`, `decoding`) in
+string that says *six* (`intro`, `processingCopy.model`, `estimate`, `decoding`) or lists the stems (`stemsHint`) in
 [`design/copy.ts`](../../web/src/design/copy.ts), and a `--ch-<stem>` hue in
 [`chord-theme.css`](../../web/src/styles/chord-theme.css) for any new stem name. **Only stems in
 `STEM_KEYS` are loaded**, so a new stem left out of it is never played, shown or offered for single

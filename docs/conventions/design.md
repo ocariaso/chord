@@ -28,7 +28,7 @@ recorded here.
 | The breakpoint | [`design/layout.ts`](../../web/src/design/layout.ts) |
 | A screen and its states | a folder under [`screens/`](../../web/src/screens/) |
 | The fader, knob, MUTE/SOLO pair and waveform | [`components/controls/`](../../web/src/components/controls/) |
-| The card every screen sits on | [`ScreenCard`](../../web/src/components/ScreenCard.tsx) |
+| The card the failure and results screens sit on (landing and processing sit on the page ground) | [`ScreenCard`](../../web/src/components/ScreenCard.tsx) |
 
 `design/` holds no components and never imports from `screens/` or `components/`.
 

@@ -10,6 +10,7 @@
 | [`web/Dockerfile`](../../web/Dockerfile) | multi-stage build → nginx image |
 | [`scripts/start.sh`](../../scripts/start.sh) | picks the overlay and brings the stack up |
 | [`scripts/stop.sh`](../../scripts/stop.sh) | brings it down |
+| [`scripts/start.cmd`](../../scripts/start.cmd), [`scripts/stop.cmd`](../../scripts/stop.cmd) | the same two, for Windows |
 
 ## The base stack
 
@@ -111,6 +112,15 @@ To force the CPU path on a GPU machine, invoke Compose directly:
 ```bash
 docker compose -f docker-compose.yml up -d --build
 ```
+
+### On Windows
+
+`scripts\start.cmd` and `scripts\stop.cmd` do the same, without needing Git Bash or WSL. They are
+batch files rather than PowerShell scripts because Windows' default execution policy refuses to
+run an unsigned `.ps1`; a `.cmd` runs from cmd, PowerShell or a double-click. Docker Desktop's
+WSL 2 backend passes an NVIDIA GPU through, and the Windows driver puts `nvidia-smi` on `PATH`, so
+the probe works the same way. The two pairs are separate implementations — a change to one
+belongs in the other.
 
 ## Images
 
@@ -230,6 +240,10 @@ state, see [../data/retention.md](../data/retention.md#cleaning-up).
 
 ```bash
 PORT=9000 ./scripts/start.sh
+```
+
+```powershell
+$env:PORT = 9000; scripts\start.cmd
 ```
 
 Or put it in a `.env` beside `docker-compose.yml`. Nothing inside either container knows about

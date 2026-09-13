@@ -16,6 +16,8 @@ Running, building and debugging CHORD.
 ./scripts/stop.sh      # docker compose down --remove-orphans
 ```
 
+On Windows, `scripts\start.cmd` and `scripts\stop.cmd` do the same.
+
 Then open **http://localhost:8080**.
 
 ## What runs

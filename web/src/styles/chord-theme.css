@@ -471,6 +471,24 @@
 .ch-stage.is-current .ch-stage-mark {
   background: var(--color-accent);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  animation: ch-stage-pulse 1.6s ease-out infinite;
+}
+/* A ring ripples out and fades over the steady halo, which stays put so the mark never looks dimmer than at rest. */
+@keyframes ch-stage-pulse {
+  0% {
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--color-accent) 60%, transparent),
+      0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+  75%, 100% {
+    box-shadow:
+      0 0 0 9px color-mix(in srgb, var(--color-accent) 0%, transparent),
+      0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+}
+/* The static halo already marks the step; motion is only a liveness cue, so it is safe to drop. */
+@media (prefers-reduced-motion: reduce) {
+  .ch-stage.is-current .ch-stage-mark { animation: none; }
 }
 
 /* --- Dropzone / alerts -------------------------------------------------- */

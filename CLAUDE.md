@@ -70,6 +70,7 @@ intent — update them when *behavior* changes, not when a file moves.
 ```bash
 ./scripts/start.sh          # build + up (auto-detects an NVIDIA GPU); http://localhost:8080
 ./scripts/stop.sh
+scripts\start.cmd           # Windows (cmd or PowerShell); scripts\stop.cmd to stop
 cd web && npm run dev       # Vite dev server — note the proxy port mismatch in docs/operations
 cd web && npm run build     # tsc -b && vite build
 cd web && npm run lint      # oxlint, then the design-rule check

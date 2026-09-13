@@ -505,7 +505,7 @@ minutes above, because the estimate is rough — and `failureCopy` is keyed by t
 `stage_message` strings; *up to 12 minutes* (`dropHint`, `phoneDropHint`) is
 `max_duration_seconds`' default; *44.1 / 48 kHz preserved* is `_PRESERVED_SAMPLE_RATES`; *MP3 or
 FLAC* and the rejection copy are `ALLOWED_UPLOAD_EXTENSIONS`; and *six* stems (`intro`,
-`stemsHint`, `processingCopy.model`, `estimate`, `decoding`) is the Demucs model. `stemNames` is
+`processingCopy.model`, `estimate`, `decoding`) and the stem list (`stemsHint`) are the Demucs model. `stemNames` is
 read by key, through `stemName` in `design/stems`. `countWord` spells counts up to six only (the
 stem-failure body); `footerCopy.copyright` hardcodes the author's name.
 **See:** [../conventions/design.md](../conventions/design.md)
@@ -574,8 +574,8 @@ must agree: `@media (max-width: 720px)` in `chord-theme.css`, and the `max-[720p
 
 ### `src/components/ScreenCard.tsx` — the screen surface (21 lines)
 **Exports:** `ScreenCard`
-**Used by:** `landing/LandingScreen`, `processing/ProcessingScreen`, `failure/FailurePanel`,
-`results/ResultsScreen`
+**Used by:** `failure/FailurePanel`, `results/ResultsScreen` — not `landing/LandingScreen` or
+`processing/ProcessingScreen`, which sit on the page ground
 **Notes:** `.ch-app` with the template harness's 10px radius, ring and shadow, and an optional `maxWidth`
 (520 for the processing and failure cards). `overflow: hidden` clips everything to the radius — and
 makes the card a scroll container, so a `position: sticky` child would stick to the card, not the
@@ -661,13 +661,13 @@ Each screen renders its states from
 [Screens and their states](../conventions/design.md#screens-and-their-states) and takes every string
 from `design/copy`; together they are the design's reference implementation.
 
-### `src/screens/landing/LandingScreen.tsx` — the landing screen (250 lines)
+### `src/screens/landing/LandingScreen.tsx` — the landing screen (247 lines)
 **Exports:** `LandingScreen`, `Submission`, `SubmitError`
-**Imports from:** `components/icons`, `components/ScreenCard`, `design/copy`, `design/layout`,
-`hooks/useMediaQuery`
+**Imports from:** `components/icons`, `design/copy`, `design/layout`, `hooks/useMediaQuery`
 **Used by:** `App`
-**Notes:** the `upload`, `upload-submitting` and `upload-error` states, in two
-arrangements: web, and the phone frame below 720px — no *Choose file* button (the column dropzone is
+**Notes:** the only screen **not** on a `ScreenCard`: one centered column on the page ground, grown
+(`flex-1`) to fill `main` and vertically centered above the footer. The `upload`, `upload-submitting`
+and `upload-error` states, in two arrangements: web, and the phone layout below 720px — no *Choose file* button (the column dropzone is
 itself the control: `role="button"`, Enter or Space), a full-width *Fetch track*, no intro paragraph
 or divider. Client-side rejection of anything but `.mp3`/`.flac` (`ACCEPTED_EXTENSIONS`, plus the
 input's `accept`), and of empty files, **before any request**: the dropzone turns `.is-rejected`
@@ -679,13 +679,14 @@ the button stays enabled, as the template harness's did. `Track URL` renders at 
 Nocturne's `.field > label` outranks `.ch-label` — as it did in the harness.
 **See:** [../features/ingest.md](../features/ingest.md)
 
-### `src/screens/processing/ProcessingScreen.tsx` — live progress (186 lines)
+### `src/screens/processing/ProcessingScreen.tsx` — live progress (176 lines)
 **Exports:** `ProcessingScreen`
-**Imports from:** `api/client` (type), `components/CoverArt`, `components/icons`,
-`components/ScreenCard`, `design/copy`, `design/layout`, `design/stages`, `hooks/useMediaQuery`,
-`utils/time`
+**Imports from:** `api/client` (type), `components/CoverArt`, `components/icons`, `design/copy`,
+`design/layout`, `design/stages`, `hooks/useMediaQuery`, `utils/time`
 **Used by:** `App`, **and `results/ResultsScreen`** (as its stem-loading screen, via `loading`)
-**Notes:** the `processing-*` states. The fixed five-stage list: stages before the
+**Notes:** like `LandingScreen`, not on a `ScreenCard`: one centered 460px column on the page ground,
+grown (`flex-1`) and vertically centered — cover art, title and meta, then a large percentage over
+the stage message and bar, the stage list, and *Cancel* at the foot. The `processing-*` states. The fixed five-stage list: stages before the
 current one are `.is-done`, and a skipped stage shows done rather than disappearing. A done stage's
 time is the gap between the server `updated_at` of the first update seen in it and in the next
 stage seen (`stageSnapshots`) — *Queued* starts at `job.created_at` — so **no client clock is

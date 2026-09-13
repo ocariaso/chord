@@ -1,7 +1,6 @@
 import type { Job } from "../../api/client";
 import { CoverArt } from "../../components/CoverArt";
 import { CheckIcon } from "../../components/icons";
-import { ScreenCard } from "../../components/ScreenCard";
 import { processingCopy } from "../../design/copy";
 import { PHONE_QUERY } from "../../design/layout";
 import {
@@ -45,7 +44,10 @@ function secondsBetween(from: string, to: string): number {
   return (Date.parse(to) - Date.parse(from)) / 1000;
 }
 
-/** The template's processing screen — the `processing-*` scenarios — at web and phone width. */
+/**
+ * The template's processing screen — the `processing-*` scenarios — at web and phone width. Like the landing screen it
+ * sits on the page ground rather than a `ScreenCard`: one centered column, vertically centered above the footer.
+ */
 export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSnapshots = {}, loading = false }: ProcessingScreenProps) {
   const isPhone = useMediaQuery(PHONE_QUERY);
   // While stems load the design holds the last stage current, at 100%.
@@ -83,104 +85,92 @@ export function ProcessingScreen({ job, onCancel, isCancelling = false, stageSna
     };
   });
 
-  const progressBar = (
-    <div
-      className="ch-progress"
-      style={{ "--v": progress } as React.CSSProperties}
-      role="progressbar"
-      aria-label={stageMessage}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(progress * 100)}
-    >
-      <span />
-    </div>
-  );
-  const percent = `${Math.round(progress * 100)}%`;
   const cancelLabel = isCancelling ? processingCopy.cancelling : processingCopy.cancel;
 
-  if (isPhone) {
-    return (
-      <ScreenCard>
-        <div className="flex flex-col" style={{ padding: "var(--space-3) var(--space-6) var(--space-8)", gap: "var(--space-8)" }}>
-          <div className="flex items-center" style={{ gap: "var(--space-4)" }}>
-            <CoverArt jobId={job.id} hasThumbnail={job.has_thumbnail} size={52} radius={8} outlined={false} />
-            <span className="flex min-w-0 flex-col" style={{ gap: 3 }}>
-              <span style={{ font: "500 13.5px/1.3 var(--font-body)", color: "var(--color-text)" }}>{job.original_filename}</span>
-              <span className="ch-subtitle">{metaFor(job, false)}</span>
+  return (
+    <section
+      className="flex flex-1 flex-col items-center justify-center"
+      style={{ paddingBlock: isPhone ? "var(--space-6)" : "56px" }}
+    >
+      <div className="flex w-full flex-col items-center" style={{ maxWidth: 460, gap: isPhone ? 28 : 36 }}>
+        <header className="flex w-full min-w-0 flex-col items-center text-center" style={{ gap: "var(--space-6)" }}>
+          <CoverArt
+            jobId={job.id}
+            hasThumbnail={job.has_thumbnail}
+            size={isPhone ? 88 : 112}
+            radius={10}
+            outlined={!isPhone}
+          />
+          <span className="flex w-full min-w-0 flex-col items-center" style={{ gap: 6 }}>
+            <span
+              className="w-full truncate"
+              style={{ font: isPhone ? "500 17px/1.3 var(--font-body)" : "500 20px/1.3 var(--font-body)", color: "var(--color-text)" }}
+            >
+              {job.original_filename}
             </span>
+            <span className="ch-subtitle" style={{ fontSize: 12.5 }}>
+              {metaFor(job, !isPhone)}
+            </span>
+          </span>
+        </header>
+
+        <div className="flex w-full flex-col items-center text-center" style={{ gap: 10 }}>
+          <span
+            style={{
+              font: isPhone ? "500 32px/1 var(--font-body)" : "500 40px/1 var(--font-body)",
+              letterSpacing: "-0.02em",
+              color: "var(--color-text)",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {`${Math.round(progress * 100)}%`}
+          </span>
+          <span style={{ font: "500 13px/1.3 var(--font-body)", color: "var(--color-accent-400)" }} aria-live="polite">
+            {stageMessage}
+          </span>
+          <div
+            className="ch-progress w-full"
+            style={{ "--v": progress, marginTop: 6 } as React.CSSProperties}
+            role="progressbar"
+            aria-label={stageMessage}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(progress * 100)}
+          >
+            <span />
           </div>
-          <div className="flex flex-col" style={{ gap: "var(--space-3)" }}>
-            <div className="flex items-baseline justify-between">
-              <span style={{ font: "500 13px/1 var(--font-body)", color: "var(--color-text)" }} aria-live="polite">
-                {stageMessage}
-              </span>
-              <span style={{ font: "500 12px/1 var(--font-body)", color: "var(--color-accent-400)", fontVariantNumeric: "tabular-nums" }}>
-                {percent}
-              </span>
-            </div>
-            {progressBar}
-            <span className="ch-hint">{hint}</span>
-          </div>
-          <div className="flex flex-col">
-            {stageRows.map((stage) => (
+          <span className="ch-hint">{hint}</span>
+        </div>
+
+        <div className="flex w-full flex-col">
+          {stageRows.map((stage) =>
+            isPhone ? (
               <div key={stage.label} className={stage.className} style={{ padding: "var(--space-4) 0" }}>
                 <span className="ch-stage-mark" style={{ width: 14, height: 14 }} />
                 <span style={{ flex: 1 }}>{stage.label}</span>
               </div>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ width: "100%", minHeight: 46, fontSize: 13, marginTop: "auto" }}
-            onClick={onCancel}
-            disabled={isCancelling}
-          >
-            {cancelLabel}
-          </button>
+            ) : (
+              <div key={stage.label} className={stage.className}>
+                <span className="ch-stage-mark">
+                  <CheckIcon color={stage.tick} />
+                </span>
+                <span style={{ flex: 1 }}>{stage.label}</span>
+                <span className="ch-value-sm">{stage.at}</span>
+              </div>
+            ),
+          )}
         </div>
-      </ScreenCard>
-    );
-  }
 
-  return (
-    <ScreenCard maxWidth={520}>
-      <div className="flex flex-col" style={{ padding: "var(--space-8)", gap: "var(--space-8)" }}>
-        <div className="flex items-center" style={{ gap: 14 }}>
-          <CoverArt jobId={job.id} hasThumbnail={job.has_thumbnail} size={56} radius={8} />
-          <span className="flex min-w-0 flex-1 flex-col overflow-hidden" style={{ gap: 3 }}>
-            <span className="ch-title truncate">{job.original_filename}</span>
-            <span className="ch-subtitle">{metaFor(job, true)}</span>
-          </span>
-          <button type="button" className="btn btn-ghost" style={{ flex: "none", fontSize: 11.5 }} onClick={onCancel} disabled={isCancelling}>
-            {cancelLabel}
-          </button>
-        </div>
-        <div className="flex flex-col" style={{ gap: 7 }}>
-          <div className="flex items-baseline justify-between">
-            <span style={{ font: "500 12.5px/1 var(--font-body)", color: "var(--color-text)" }} aria-live="polite">
-              {stageMessage}
-            </span>
-            <span style={{ font: "500 12px/1 var(--font-body)", color: "var(--color-accent-400)", fontVariantNumeric: "tabular-nums" }}>
-              {percent}
-            </span>
-          </div>
-          {progressBar}
-          <span className="ch-hint">{hint}</span>
-        </div>
-        <div className="flex flex-col">
-          {stageRows.map((stage) => (
-            <div key={stage.label} className={stage.className}>
-              <span className="ch-stage-mark">
-                <CheckIcon color={stage.tick} />
-              </span>
-              <span style={{ flex: 1 }}>{stage.label}</span>
-              <span className="ch-value-sm">{stage.at}</span>
-            </div>
-          ))}
-        </div>
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={isPhone ? { width: "100%", minHeight: 46, fontSize: 13 } : { minWidth: 140, minHeight: 38, fontSize: 13 }}
+          onClick={onCancel}
+          disabled={isCancelling}
+        >
+          {cancelLabel}
+        </button>
       </div>
-    </ScreenCard>
+    </section>
   );
 }

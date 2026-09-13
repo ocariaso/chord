@@ -1,6 +1,5 @@
 import { useId, useRef, useState } from "react";
 import { UploadIcon } from "../../components/icons";
-import { ScreenCard } from "../../components/ScreenCard";
 import { brand, landingCopy } from "../../design/copy";
 import { PHONE_QUERY } from "../../design/layout";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
@@ -45,7 +44,7 @@ function rejectionFor(file: File): Rejection | null {
 
 function Alert({ title, body }: SubmitError) {
   return (
-    <div className="ch-alert" role="alert">
+    <div className="ch-alert w-full text-left" role="alert">
       <span className="ch-alert-head">
         <span className="ch-dot ch-dot-status" style={{ "--stem": "var(--ch-danger)" } as React.CSSProperties} />
         {title}
@@ -55,7 +54,11 @@ function Alert({ title, body }: SubmitError) {
   );
 }
 
-/** The template's landing screen — scenarios `upload`, `upload-submitting` and `upload-error` — at web and phone width. */
+/**
+ * The template's landing screen — scenarios `upload`, `upload-submitting` and `upload-error` — at web and phone width.
+ * Unlike the other screens it sits on the page ground rather than a `ScreenCard`: one centered column, vertically
+ * centered in the space above the footer.
+ */
 export function LandingScreen({ submitting, error, onFileSelected, onUrlSubmitted }: LandingScreenProps) {
   const [url, setUrl] = useState("");
   const [isOver, setIsOver] = useState(false);
@@ -85,166 +88,160 @@ export function LandingScreen({ submitting, error, onFileSelected, onUrlSubmitte
     if (!busy) inputRef.current?.click();
   }
 
-  const dropClass = `ch-dropzone${isOver ? " is-over" : ""}${rejection ? " is-rejected" : ""}`;
-  const dragHandlers = {
-    onDragOver: (event: React.DragEvent) => {
-      event.preventDefault();
-      setIsOver(true);
-    },
-    onDragLeave: () => setIsOver(false),
-    onDrop: (event: React.DragEvent) => {
-      event.preventDefault();
-      setIsOver(false);
-      handleFiles(event.dataTransfer.files);
-    },
-  };
-  const fileInput = (
-    <input
-      ref={inputRef}
-      type="file"
-      accept=".mp3,.flac,audio/mpeg,audio/flac"
-      className="hidden"
-      onChange={(event) => {
-        handleFiles(event.target.files);
-        event.target.value = "";
-      }}
-    />
-  );
-  const urlInput = (fontSize: number) => (
-    <input
-      className="input"
-      id={urlId}
-      type="url"
-      required
-      placeholder={landingCopy.urlPlaceholder}
-      value={url}
-      onChange={(event) => setUrl(event.target.value)}
-      disabled={busy}
-      style={{ width: "100%", fontSize }}
-    />
-  );
   // A rejection is always newer than a server error: any submission that reaches the server clears it first.
   const alert = rejection ? { title: landingCopy.rejectedTitle, body: rejection.body } : error;
-
-  if (isPhone) {
-    return (
-      <ScreenCard>
-        <div className="flex flex-col" style={{ padding: "var(--space-3) var(--space-6) var(--space-8)", gap: "var(--space-6)" }}>
-          <span className="flex flex-col" style={{ gap: 4 }}>
-            <span style={{ font: "600 12px/1 var(--font-body)", letterSpacing: "0.18em", color: "var(--color-text)" }}>{brand.name}</span>
-            <span style={{ font: "400 10.5px/1.4 var(--font-body)", letterSpacing: "0.04em", color: "var(--color-neutral-500)" }}>
-              {brand.expansion}
-            </span>
-          </span>
-          <h1 style={{ margin: 0, font: "500 24px/1.2 var(--font-body)", color: "var(--color-text)" }}>{landingCopy.headline}</h1>
-          {/* The phone arrangement has no Choose file button, so the dropzone itself is the control. */}
-          <div
-            className={dropClass}
-            style={{ flexDirection: "column", textAlign: "center", padding: "var(--space-8) var(--space-6)" }}
-            role="button"
-            tabIndex={0}
-            aria-disabled={busy}
-            onClick={openPicker}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                openPicker();
-              }
-            }}
-            {...dragHandlers}
-          >
-            <span className="ch-dropicon" style={{ width: 42, height: 42 }}>
-              <UploadIcon size={18} />
-            </span>
-            <span style={{ font: "500 13.5px/1.3 var(--font-body)", color: "var(--color-text)" }}>
-              {rejection ? landingCopy.rejectedDropTitle(rejection.fileName) : landingCopy.phoneDropTitle}
-            </span>
-            <span className="ch-hint">{rejection ? rejection.hint : landingCopy.phoneDropHint}</span>
-            {fileInput}
-          </div>
-          <form className="flex flex-col" style={{ gap: "var(--space-6)" }} onSubmit={handleUrlSubmit}>
-            <div className="field flex flex-col" style={{ gap: "var(--space-2)" }}>
-              <label className="ch-label" htmlFor={urlId}>
-                {landingCopy.urlLabel}
-              </label>
-              {urlInput(13)}
-            </div>
-            <button type="submit" className="btn btn-primary" style={{ width: "100%", minHeight: 46, fontSize: 13.5 }} disabled={busy}>
-              {busy ? landingCopy.submitting : landingCopy.fetchTrack}
-            </button>
-          </form>
-          {alert && <Alert title={alert.title} body={alert.body} />}
-          <span className="ch-hint">{landingCopy.stemsHint}</span>
-        </div>
-      </ScreenCard>
-    );
-  }
+  const fontSize = isPhone ? 13.5 : 13;
 
   return (
-    <ScreenCard>
-      <div className="flex flex-col" style={{ padding: "40px 44px", gap: 26 }}>
-        <div className="flex flex-col" style={{ gap: "var(--space-4)", maxWidth: 520 }}>
-          <span className="flex flex-wrap items-baseline" style={{ gap: 8 }}>
-            <span style={{ font: "600 13px/1 var(--font-body)", letterSpacing: "0.18em", color: "var(--color-text)" }}>{brand.name}</span>
+    <section
+      className="flex flex-1 flex-col items-center justify-center"
+      style={{ paddingBlock: isPhone ? "var(--space-6)" : "56px" }}
+    >
+      <div className="flex w-full flex-col items-center text-center" style={{ maxWidth: 580, gap: isPhone ? 28 : 40 }}>
+        <header className="flex flex-col items-center" style={{ gap: isPhone ? "var(--space-4)" : "var(--space-6)" }}>
+          <span className="flex flex-col items-center" style={{ gap: 6 }}>
+            <span style={{ font: "600 13px/1 var(--font-body)", letterSpacing: "0.32em", paddingLeft: "0.32em", color: "var(--color-text)" }}>
+              {brand.name}
+            </span>
             <span style={{ font: "400 11px/1.4 var(--font-body)", letterSpacing: "0.04em", color: "var(--color-neutral-500)" }}>
               {brand.expansion}
             </span>
           </span>
-          <h1 style={{ margin: 0, font: "500 30px/1.15 var(--font-body)", letterSpacing: "-0.01em", color: "var(--color-text)" }}>
+          <h1
+            style={{
+              margin: 0,
+              font: isPhone ? "500 28px/1.18 var(--font-body)" : "500 44px/1.1 var(--font-body)",
+              letterSpacing: "-0.02em",
+              color: "var(--color-text)",
+              textWrap: "balance",
+            }}
+          >
             {landingCopy.headline}
           </h1>
-          <p style={{ margin: 0, font: "400 13.5px/1.6 var(--font-body)", color: "var(--color-neutral-400)", textWrap: "pretty" }}>
-            {landingCopy.intro}
-          </p>
-        </div>
-        <div className="flex flex-col" style={{ gap: 14, maxWidth: 620 }}>
-          <div className={dropClass} onClick={openPicker} {...dragHandlers}>
+          {!isPhone && (
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 500,
+                font: "400 14.5px/1.65 var(--font-body)",
+                color: "var(--color-neutral-400)",
+                textWrap: "pretty",
+              }}
+            >
+              {landingCopy.intro}
+            </p>
+          )}
+        </header>
+
+        <div className="flex w-full flex-col" style={{ gap: isPhone ? "var(--space-6)" : 20 }}>
+          <div
+            className={`ch-dropzone${isOver ? " is-over" : ""}${rejection ? " is-rejected" : ""}`}
+            style={{ flexDirection: "column", textAlign: "center", padding: isPhone ? "28px var(--space-6)" : "36px var(--space-8)", gap: 14 }}
+            // On phones there is no Choose file button, so the dropzone itself is the control.
+            role={isPhone ? "button" : undefined}
+            tabIndex={isPhone ? 0 : undefined}
+            aria-disabled={isPhone ? busy : undefined}
+            onClick={openPicker}
+            onKeyDown={(event) => {
+              if (isPhone && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault();
+                openPicker();
+              }
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsOver(true);
+            }}
+            onDragLeave={() => setIsOver(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setIsOver(false);
+              handleFiles(event.dataTransfer.files);
+            }}
+          >
             <span className="ch-dropicon">
               <UploadIcon />
             </span>
-            <span className="flex min-w-0 flex-col" style={{ gap: 4 }}>
-              <span style={{ font: "500 14px/1.3 var(--font-body)", color: "var(--color-text)" }}>
-                {rejection ? landingCopy.rejectedDropTitle(rejection.fileName) : landingCopy.dropTitle}
+            <span className="flex min-w-0 flex-col items-center" style={{ gap: 6 }}>
+              <span style={{ font: "500 15px/1.3 var(--font-body)", color: "var(--color-text)" }}>
+                {rejection
+                  ? landingCopy.rejectedDropTitle(rejection.fileName)
+                  : isPhone
+                    ? landingCopy.phoneDropTitle
+                    : landingCopy.dropTitle}
               </span>
-              <span style={{ font: "400 11.5px/1.4 var(--font-body)", color: "var(--color-neutral-500)" }}>
-                {rejection ? rejection.hint : landingCopy.dropHint}
+              <span style={{ font: "400 12px/1.45 var(--font-body)", color: "var(--color-neutral-500)", textWrap: "balance" }}>
+                {rejection ? rejection.hint : isPhone ? landingCopy.phoneDropHint : landingCopy.dropHint}
               </span>
             </span>
-            <button
-              type="button"
-              className="btn btn-primary"
-              style={{ marginLeft: "auto", flex: "none", fontSize: 12.5 }}
-              disabled={busy}
-              onClick={(event) => {
-                // The dropzone opens the picker too; one click shouldn't open it twice.
-                event.stopPropagation();
-                openPicker();
+            {!isPhone && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ marginTop: 6, fontSize: 13 }}
+                disabled={busy}
+                onClick={(event) => {
+                  // The dropzone opens the picker too; one click shouldn't open it twice.
+                  event.stopPropagation();
+                  openPicker();
+                }}
+              >
+                {submitting === "file" ? landingCopy.submitting : landingCopy.chooseFile}
+              </button>
+            )}
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".mp3,.flac,audio/mpeg,audio/flac"
+              className="hidden"
+              onChange={(event) => {
+                handleFiles(event.target.files);
+                event.target.value = "";
               }}
-            >
-              {submitting === "file" ? landingCopy.submitting : landingCopy.chooseFile}
-            </button>
-            {fileInput}
+            />
           </div>
-          <div className="flex items-center" style={{ gap: 14 }}>
-            <span className="ch-divider-y" style={{ flex: 1 }} />
-            <span className="ch-label">{landingCopy.orPasteLink}</span>
-            <span className="ch-divider-y" style={{ flex: 1 }} />
-          </div>
-          <form className="flex items-end" style={{ gap: "var(--space-4)" }} onSubmit={handleUrlSubmit}>
-            <div className="field flex min-w-0 flex-1 flex-col" style={{ gap: "var(--space-2)" }}>
-              <label className="ch-label" htmlFor={urlId}>
-                {landingCopy.urlLabel}
-              </label>
-              {urlInput(12.5)}
+
+          {!isPhone && (
+            <div className="flex items-center" style={{ gap: 14 }}>
+              <span className="ch-divider-y" style={{ flex: 1 }} />
+              <span className="ch-label">{landingCopy.orPasteLink}</span>
+              <span className="ch-divider-y" style={{ flex: 1 }} />
             </div>
-            <button type="submit" className="btn btn-secondary" style={{ flex: "none", fontSize: 12.5 }} disabled={busy}>
-              {submitting === "url" ? landingCopy.submitting : landingCopy.fetchTrack}
-            </button>
+          )}
+
+          <form className="field flex flex-col text-left" style={{ gap: "var(--space-2)" }} onSubmit={handleUrlSubmit}>
+            <label className="ch-label" htmlFor={urlId}>
+              {landingCopy.urlLabel}
+            </label>
+            {/* The label sits above the row rather than beside the button, so input and button share one height. */}
+            <div className={isPhone ? "flex flex-col" : "flex items-stretch"} style={{ gap: isPhone ? "var(--space-6)" : "var(--space-4)" }}>
+              <input
+                className="input min-w-0 flex-1"
+                id={urlId}
+                type="url"
+                required
+                placeholder={landingCopy.urlPlaceholder}
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                disabled={busy}
+                style={{ width: "100%", minHeight: isPhone ? 46 : 42, fontSize }}
+              />
+              <button
+                type="submit"
+                className="btn btn-primary"
+                style={isPhone ? { width: "100%", minHeight: 46, fontSize } : { flex: "none", paddingInline: 18, fontSize }}
+                disabled={busy}
+              >
+                {(isPhone ? busy : submitting === "url") ? landingCopy.submitting : landingCopy.fetchTrack}
+              </button>
+            </div>
           </form>
+
           {alert && <Alert title={alert.title} body={alert.body} />}
         </div>
+
         <span className="ch-hint">{landingCopy.stemsHint}</span>
       </div>
-    </ScreenCard>
+    </section>
   );
 }

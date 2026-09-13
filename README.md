@@ -16,6 +16,13 @@ Requires [Docker](https://www.docker.com/).
 ./scripts/stop.sh
 ```
 
+On Windows, from cmd or PowerShell:
+
+```powershell
+scripts\start.cmd
+scripts\stop.cmd
+```
+
 ## Folder structure
 
 ```
@@ -46,6 +53,7 @@ chord/
     nginx.conf              serves the build and proxies /api to the server
   scripts/
     start.sh / stop.sh
+    start.cmd / stop.cmd    the same, for Windows
   docs/                     full documentation — see docs/README.md
   docker-compose.yml
   docker-compose.gpu.yml    override start.sh applies when an NVIDIA GPU is detected

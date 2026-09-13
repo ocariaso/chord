@@ -51,7 +51,7 @@ export const landingCopy = {
   urlPlaceholder: "https://",
   fetchTrack: "Fetch track",
   submitting: "Submitting…",
-  stemsHint: "Six stems: vocals · drums · bass · guitar · piano · other",
+  stemsHint: "vocals · drums · bass · guitar · piano · other",
   rejectedDropTitle: (fileName: string) => `${fileName} was rejected`,
   rejectedDropHint: "CHORD reads MP3 and FLAC only",
   rejectedTitle: "Rejected file",
