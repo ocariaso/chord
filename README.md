@@ -1,6 +1,8 @@
 ## CHORD
 Component Harmony & Orchestral Retrieval Decoder
 
+CHORD returns six isolated stems, a chord chart aligned to the beat, detected key and tempo, and synced lyrics.
+
 <img width="4456" height="888" alt="image" src="https://github.com/user-attachments/assets/475c8a8a-fc8a-493b-912b-2df4e72bdc5b" />
 
 ## How to run

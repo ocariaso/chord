@@ -22,7 +22,8 @@ chord/
 ---
 
 ### `README.md` — project front page
-**Notes:** name and expansion (Component Harmony & Orchestral Retrieval Decoder), a screenshot,
+**Notes:** name and expansion (Component Harmony & Orchestral Retrieval Decoder), a one-line summary
+of what it returns, a screenshot,
 the two-command quick start, a folder-structure tree, a docs index, and Contributing and License sections. The
 tree names `server/` and `web/` and must be updated if either is renamed again.
 

@@ -31,8 +31,7 @@ export const stemNames = {
 
 export const landingCopy = {
   headline: "Split any track into stems, chords and key.",
-  intro:
-    "Drop a lossless file or paste a link. CHORD returns six isolated stems, a chord chart aligned to the beat, detected key and tempo, and synced lyrics where it can find them.",
+  intro: "One song. Every layer.",
   dropTitle: "Drop an audio file, or choose one",
   // "up to 12 minutes" is the server's MAX_DURATION_SECONDS default.
   dropHint: "MP3 or FLAC · up to 12 minutes · 44.1 / 48 kHz preserved through separation",
