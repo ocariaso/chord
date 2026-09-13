@@ -567,8 +567,8 @@ built from the harness's phone frame, which the template's written rules outrank
 last resort for a window too small for a view, and never below 720px.
 
 **Cost:** in a window too small for a view, that view — its text, knobs and hit targets included —
-is drawn smaller than the design's sizes: the Console and Analog views below 1020px wide, and any
-view in a short window. On a narrow screen Pan, Tone, every meter, speed and A–B looping are unreachable — the
+is drawn smaller than the design's sizes: the Console view below 1140px wide, Analog below 1020px,
+and any view in a short window. On a narrow screen Pan, Tone, every meter, speed and A–B looping are unreachable — the
 `.ch-m-bar` has no speed or loop chip, and no time readouts. A speed or loop set before the window
 narrowed stays in force with no control to change it. The stacked rows make a long page: six stems,
 four lines each, under the analysis and chord bars. Resizing across the breakpoint switches the

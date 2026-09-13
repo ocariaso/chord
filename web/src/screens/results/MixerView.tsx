@@ -7,10 +7,12 @@ interface MixerViewProps {
   controls: StemControls;
   /** The 0…1 playback position, read every frame and drawn across every waveform. */
   progress: () => number;
+  duration: number;
+  onSeek: (seconds: number) => void;
 }
 
 /** The default view: column labels and a stem row per stem. */
-export function MixerView({ stems, controls, progress }: MixerViewProps) {
+export function MixerView({ stems, controls, progress, duration, onSeek }: MixerViewProps) {
   return (
     <div className="flex flex-1 flex-col" style={{ padding: "var(--space-3) var(--space-8) var(--space-4)", gap: 2 }}>
       {/* The labels head fixed-width columns that the stylesheet dissolves below 720px, so they go with them. */}
@@ -29,7 +31,7 @@ export function MixerView({ stems, controls, progress }: MixerViewProps) {
         </span>
       </div>
       {stems.map((stem) => (
-        <StemRow key={stem.state.key} stem={stem} controls={controls} progress={progress} />
+        <StemRow key={stem.state.key} stem={stem} controls={controls} progress={progress} duration={duration} onSeek={onSeek} />
       ))}
     </div>
   );

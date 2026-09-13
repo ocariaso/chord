@@ -29,9 +29,10 @@ export function AnalysisBar({
 
   return (
     <div className="ch-section flex flex-wrap items-stretch" style={{ gap: "var(--space-8)" }}>
-      <div className="flex flex-col" style={{ gap: 4 }}>
+      {/* Fixed width, generous enough for the widest label, so transposing never reflows the groups after it. */}
+      <div className="flex flex-col" style={{ gap: 4, width: 240 }}>
         <span className="ch-label">{resultsCopy.key}</span>
-        <div className="flex items-baseline" style={{ gap: 8 }}>
+        <div className="flex flex-wrap items-baseline" style={{ gap: 8 }}>
           <span style={{ font: "500 26px/1 var(--font-body)", color: "var(--color-text)" }}>
             {keyEstimate ? transposeKeyLabel(keyEstimate, transpose) : resultsCopy.noValue}
           </span>

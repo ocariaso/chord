@@ -10,10 +10,12 @@ interface StemRowProps {
   controls: StemControls;
   /** The 0…1 playback position, read every frame. */
   progress: () => number;
+  duration: number;
+  onSeek: (seconds: number) => void;
 }
 
 /** `.ch-stemrow` (design.md#controls): name, level fader and value, MUTE/SOLO, waveform. Below 720px the stylesheet stacks it. */
-export function StemRow({ stem, controls, progress }: StemRowProps) {
+export function StemRow({ stem, controls, progress, duration, onSeek }: StemRowProps) {
   const { state } = stem;
   const value = fmtDb(state.gain, state.muted);
   return (
@@ -45,7 +47,7 @@ export function StemRow({ stem, controls, progress }: StemRowProps) {
           onToggleSolo={() => controls.onToggleSolo(state.key)}
         />
       </span>
-      <StemWaveform envelope={stem.envelope} off={!stem.audible} progress={progress} />
+      <StemWaveform envelope={stem.envelope} off={!stem.audible} progress={progress} duration={duration} onSeek={onSeek} />
     </div>
   );
 }

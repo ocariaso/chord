@@ -39,7 +39,8 @@ const VIEW_PANEL_ID = "results-view";
 // The narrowest each view lays out at before its controls collapse: the stylesheet's floors (112px strips beside the
 // 190px master, 180px dials, the Mixer's fixed columns and a usable waveform) with their gaps and padding. In a
 // narrower window FitToPanel scales the view down rather than cropping it.
-const VIEW_MIN_WIDTH: Record<ResultView, number> = { mixer: 560, console: 1020, analog: 1020 };
+// console's measured floor is 1115px, not the stylesheet's assumed 1020 — the gap let .ch-striprow scroll instead of FitToPanel scaling first.
+const VIEW_MIN_WIDTH: Record<ResultView, number> = { mixer: 560, console: 1140, analog: 1020 };
 // A second loop press closer than this to the first is a double press, not the end of a loop.
 const MIN_LOOP_SECONDS = 0.5;
 
@@ -359,7 +360,9 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
           aria-labelledby={isPhone ? undefined : `${VIEW_PANEL_ID}-${view}-tab`}
         >
           <FitToPanel enabled={!isPhone} minWidth={VIEW_MIN_WIDTH[view]}>
-            {view === "mixer" && <MixerView stems={stems} controls={controls} progress={getProgress} />}
+            {view === "mixer" && (
+              <MixerView stems={stems} controls={controls} progress={getProgress} duration={player.duration} onSeek={handleSeek} />
+            )}
             {view === "console" && (
               <ConsoleView
                 stems={stems}

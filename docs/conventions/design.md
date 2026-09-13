@@ -247,9 +247,10 @@ is `flex-1 min-h-0` and shares out the height it gets instead of overflowing:
   - components use `PHONE_QUERY` from `design/layout.ts` through `useMediaQuery`;
   - `App`, `MixerView` and `AnalysisBar` use Tailwind's `max-[720px]:`;
   - `chord-theme.css` has its own `@media (max-width: 720px)`.
-- **From 1024px** all three views are available, their rows filling the width.
-- **Between 720 and 1024px** the same, with the Console and Analog views scaled down to keep their
-  floors (1020px each, Mixer 560px) rather than scrolling or cropping.
+- **From each view's own floor** (Mixer 560px, Analog 1020px, Console 1140px) all three are
+  available, their rows filling the width.
+- **Between 720px and a view's floor** it scales down to keep that floor rather than scrolling or
+  cropping — in practice this is Console and Analog, since Mixer's floor already holds at 720px.
 - **Below 720px, results** lock to the Mixer, with no view tabs. The stylesheet stacks the
   `.ch-stemrow` rows with 44px MUTE/SOLO targets, the Mixer's column labels and the analysis bar's
   dividers are hidden, and the transport becomes `.ch-m-bar`: play, seek and the Click chip.
@@ -268,8 +269,8 @@ is `flex-1 min-h-0` and shares out the height it gets instead of overflowing:
 - **Size floors:** no text under 9px, no meter scale under 10px, 44px hit targets on phones.
 - **Motion:** the playhead is the only animation, and under `prefers-reduced-motion` it steps once a
   second.
-- **Pointer-only shortcuts**, like dragging the chord strip to seek, are `aria-hidden`; the
-  transport's seek slider does the same job accessibly.
+- **Pointer-only shortcuts**, like dragging the chord strip or a Mixer waveform to seek, are
+  `aria-hidden`; the transport's seek slider does the same job accessibly.
 
 ## Where the design is silent
 
@@ -339,6 +340,7 @@ taken. *Template* is what the retired files said or drew.
 | Page ground | a radial gradient `#1d1f33` → `#161826` → `#121320` | the same gradient at `--ch-panel-raised`/`--color-bg`/`--ch-well`'s own lightness and chroma, but at `--accent-hue` instead of their fixed indigo | the nearest tokens, then hue-shifted to tint per track along with the accent — two of the stops weren't tokens to begin with |
 | Per-track accent | not drawn; a fixed palette | the accent family and the page ground both read their hue from cover art, `--accent-hue` added as a fifth runtime property | reinstates the app's earlier per-song accent inside the design's own lightness/chroma floors — see [decisions.md](../architecture/decisions.md#a-per-track-accent-hue-driven-by-one-custom-property) |
 | Cover art blend | `CoverArt`'s image drawn with `.lighten` over the accent gradient | drawn plainly, no blend | the accent already derives from the art; blending it too was double theming, and it dimmed the art itself |
+| Mixer waveform seeking | display only, named as such in the code | a pointer shortcut to seek, `useSeekDrag` as the chord strip uses it | the app had this before; users expect the thing they're looking at to be draggable |
 
 A new decision is recorded here and in [../architecture/decisions.md](../architecture/decisions.md) in
 the same change.

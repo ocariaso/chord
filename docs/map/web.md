@@ -694,16 +694,18 @@ value or reset.
 parent supplies the element they sit in. `stem` is the display name, used only for the accessible
 names (*Mute Vocals*), which contain the visible text.
 
-### `controls/StemWaveform.tsx` — `.ch-wave` (24 lines)
+### `controls/StemWaveform.tsx` — `.ch-wave` (30 lines)
 **Exports:** `StemWaveform`
-**Imports from:** `hooks/usePlayhead`
+**Imports from:** `hooks/usePlayhead`, `hooks/useSeekDrag`
 **Used by:** `results/StemRow`
 **Notes:** the bar pattern clipped (`clip-path`) to the stem's real envelope from `utils/peaks`,
 `.is-off` while the stem isn't heard, with a `.ch-playhead` beside it in an `aria-hidden`
 wrapper (the clip would cut a child away). It takes `progress: () => number`, not a position, and
 `usePlayhead` writes the playhead's `--p` every frame, so playback never renders the row. The wrapper carries `order-5` and a full basis, standing
-in for the stylesheet's phone rule on `.ch-wave`. **Display only** — it doesn't seek; the chord
-strip and the transport do.
+in for the stylesheet's phone rule on `.ch-wave`. It's also a pointer shortcut to seek — the same
+`useSeekDrag` the chord strip uses, `duration` and `onSeek` threaded down from `ResultsScreen`
+through `MixerView` and `StemRow` — with `cursor: pointer` and `touchAction: none` set inline on the
+wrapper, since `.ch-wave` itself carries neither.
 
 ---
 
@@ -793,7 +795,8 @@ same `StemDisplay[]` and `StemControls`, so switching views mid-song is seamless
 bars and view sit in a `.ch-app` column with its background dropped, on the page ground, divided only
 by the bars' hairlines. The view panel between the bars is `flex-1 min-h-0` and wraps the view in
 `FitToPanel`, which scales it down when the window is too short, or narrower than
-`VIEW_MIN_WIDTH[view]` (the view's stylesheet floors summed: Mixer 560, Console and Analog 1020), so
+`VIEW_MIN_WIDTH[view]` (measured per view: Mixer 560, Analog 1020, Console 1140 — its stylesheet
+floors summed underestimated the real one), so
 nothing is cropped; below 720px scaling is off and the panel scrolls instead, where stacked stem rows
 can't fit — the one scrolling region in the app. Loads only
 `templateStems(job.stem_names)`. Three phases: `loading` (`ProcessingScreen` with `loading` and the
@@ -909,26 +912,26 @@ every second; `SeekSlider` writes `--p` through `usePlayhead`, takes `aria-value
 `aria-valuetext` from `useClockValue` (whole seconds), and reads `getTime()` on each keydown.
 **See:** [../features/speed-and-loop.md](../features/speed-and-loop.md)
 
-### `results/MixerView.tsx` — the default view (36 lines)
+### `results/MixerView.tsx` — the default view (38 lines)
 **Exports:** `MixerView`
 **Imports from:** `design/copy`, `results/StemRow`, `results/types`
 **Used by:** `results/ResultsScreen`
 **Notes:** column labels over fixed 96 / 150 / 92px columns and the waveform, one `StemRow` per
 stem (the instrumental hint lives in `ChordBar`). `flex-1`: the rows fill any spare height in the
-view panel. `progress` (a `() => number`) is passed through to every row's waveform; nothing here
-reads it. Phones get the same rows,
-stacked by `chord-theme.css`; the labels hide below 720px through `max-[720px]:hidden`, one of the
-places `PHONE_QUERY`'s comment lists.
+view panel. `progress` (a `() => number`), `duration` and `onSeek` are passed through to every
+row's waveform, from `ResultsScreen`'s own `player.duration`/`handleSeek`; nothing here reads them.
+Phones get the same rows, stacked by `chord-theme.css`; the labels hide below 720px through
+`max-[720px]:hidden`, one of the places `PHONE_QUERY`'s comment lists.
 **See:** [../features/results-views.md](../features/results-views.md)
 
-### `results/StemRow.tsx` — one Mixer row (51 lines)
+### `results/StemRow.tsx` — one Mixer row (53 lines)
 **Exports:** `StemRow`
 **Imports from:** `controls/Fader`, `controls/RoutingToggles`, `controls/StemWaveform`,
 `design/copy`, `design/player`, `results/types`
 **Used by:** `results/MixerView`
 **Notes:** `.ch-stemrow` ([Controls](../conventions/design.md#controls)) in the stem's `--stem` hue: dot and name, a thin
 level fader with its `fmtDb` value, MUTE/SOLO, and the waveform, dimmed while the stem isn't
-`audible`, and passes `progress` on to it. On the web it is `flex-1`, so the rows share any spare height evenly but never shrink
+`audible`, and passes `progress`, `duration` and `onSeek` on to it. On the web it is `flex-1`, so the rows share any spare height evenly but never shrink
 below their content (`FitToPanel` scales the view instead). Below
 720px the stylesheet stacks it and holds MUTE/SOLO at a 44px hit height, and `max-[720px]:flex-none`
 keeps each stacked row its natural height (the view panel scrolls there).
