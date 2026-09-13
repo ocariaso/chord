@@ -23,13 +23,14 @@ CREATE TABLE IF NOT EXISTS jobs (
     error_log         TEXT,                        -- the technical detail behind error_message
     audio_format      TEXT,                        -- "FLAC 24/48", "MP3 44.1 kHz"
     attempt           INTEGER NOT NULL DEFAULT 0,  -- bumped by resume; not exposed by the API
+    last_seen_at      TEXT,                        -- last heartbeat from an open page; not exposed by the API
     created_at        TEXT NOT NULL,               -- ISO-8601 UTC
     updated_at        TEXT NOT NULL
 );
 ```
 
 `SCHEMA` is the complete table. Every column in `MIGRATED_COLUMNS` — `source_url`, `tempo_bpm`,
-`author`, `error_log`, `audio_format` and `attempt` — is also in the `CREATE TABLE`, which is how a
+`author`, `error_log`, `audio_format`, `attempt` and `last_seen_at` — is also in the `CREATE TABLE`, which is how a
 new column should arrive: a fresh database gets it from `SCHEMA`, and one that predates the column
 from the migration. The two paths order columns differently — `ADD COLUMN` appends after
 `updated_at` — and nothing notices, because rows are read by name.
@@ -65,7 +66,12 @@ from the migration. The two paths order columns differently — `ADD COLUMN` app
   once unless the row is `queued`, reads `attempt` then, and makes every write but one
   `WHERE id = ? AND attempt = ? AND status != 'cancelled'`, so a superseded or cancelled run can't
   overwrite the row — the title and author a download finds are the exception (see
-  `original_filename` above). `attempt` is the one column `JobResponse` leaves out.
+  `original_filename` above). `attempt` and `last_seen_at` are the two columns `JobResponse` leaves
+  out.
+- **`last_seen_at`** is written only by `POST /jobs/{id}/heartbeat`, which a page sends every 5
+  minutes while it has the job open, and is read only by the reaper. It is `NULL` until the first
+  heartbeat. It is kept apart from `updated_at` so that a heartbeat never becomes an SSE event or
+  moves the processing screen's stage timings.
 - **`stems_model` is dead.** Nothing writes it; it surfaces as `null` in every API response and
   in the TypeScript `Job` type.
 - **`key_estimate`** is the flattened `f"{key} {mode}"` string. The structured form survives only
@@ -111,8 +117,8 @@ def db_cursor():
 - `row_factory = sqlite3.Row` means every read is by column name (`row["status"]`), so column
   order never matters — which is why a migrated column's position doesn't.
 - No WAL mode and no explicit isolation level; a locked database is waited on for
-  `sqlite3.connect`'s default 5 s. Writes come from the worker thread and from request handlers
-  (create, cancel, resume, discard), each a single short statement, so contention hasn't been a
+  `sqlite3.connect`'s default 5 s. Writes come from the worker thread, the reaper's thread and
+  request handlers (create, cancel, resume, heartbeat, discard), each a single short statement, so contention hasn't been a
   practical concern.
 
 ## Migrations
@@ -127,6 +133,7 @@ MIGRATED_COLUMNS = [
     ("error_log", "TEXT"),
     ("audio_format", "TEXT"),
     ("attempt", "INTEGER NOT NULL DEFAULT 0"),
+    ("last_seen_at", "TEXT"),
 ]
 
 def init_db() -> None:
@@ -147,7 +154,7 @@ Edit **both** lists:
 1. Append it to the `SCHEMA` string — for fresh databases.
 2. Append `(name, type)` to `MIGRATED_COLUMNS` — for existing ones.
 
-A column only the server uses, like `attempt`, stops there. One the client should see also needs
+A column only the server uses, like `attempt` or `last_seen_at`, stops there. One the client should see also needs
 mapping in `_row_to_response()` and adding to `JobResponse` and the TypeScript `Job`. Full
 checklist: [../api/contract-sync.md](../api/contract-sync.md#checklist-for-a-contract-change).
 

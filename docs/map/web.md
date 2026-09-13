@@ -205,9 +205,9 @@ or 20px elsewhere, around a full-height 1120px column, with 12px side gutters an
 
 ## `src/api/`
 
-### `src/api/client.ts` — the only module that knows the API exists (166 lines)
+### `src/api/client.ts` — the only module that knows the API exists (172 lines)
 **Exports:** types `JobStatus`, `Job`, `ChordSegment`, `LyricsLine`, `Lyrics`; class `ApiError`;
-functions `createJob`, `createJobFromUrl`, `getJob`, `cancelJob`, `resumeJob`, `getChords`,
+functions `createJob`, `createJobFromUrl`, `getJob`, `cancelJob`, `resumeJob`, `sendHeartbeat`, `getChords`,
 `getLyrics`, `saveLyrics`; URL builders `jobEventsUrl`, `cancelJobUrl`, `discardJobUrl`, `stemUrl`,
 `stemDownloadUrl`, `thumbnailUrl`, `downloadAllUrl`
 **Imports from:** —
@@ -222,7 +222,8 @@ into an `ApiError` with status 0 and a sentence; a 413 comes from nginx as HTML,
 it to a sentence too. `ApiError` carries the HTTP status (`useJobEvents` needs to
 tell a 404 from a 502). `detailOf` accepts only a string `detail` — FastAPI's 422 carries a list.
 **`getLyrics` maps 404 → `null`** rather than throwing, because "no lyrics" is a normal outcome.
-`cancelJobUrl` has no caller outside `cancelJob`. **Two URLs per stem:** `stemUrl` is the stored
+`cancelJobUrl` has no caller outside `cancelJob`. `sendHeartbeat` throws on a non-2xx like the
+reads do; its only caller, `useJobEvents`, ignores the failure. **Two URLs per stem:** `stemUrl` is the stored
 `.flac`, which only `ResultsScreen` fetches, for playback; `stemDownloadUrl` is the `.wav` the server
 converts as it streams, which only `ExportDialog` fetches. Every interface here is hand-mirrored from
 `server/app/models/schemas.py`.
@@ -335,7 +336,7 @@ own — which is the phone Mixer; **`PHONE_QUERY` uses the same width**. Unused 
 
 ## `src/hooks/`
 
-### `src/hooks/useJobEvents.ts` — one job's live status (162 lines)
+### `src/hooks/useJobEvents.ts` — one job's live status (181 lines)
 **Exports:** `useJobEvents`, `ConnectionState`, `MAX_RECONNECT_ATTEMPTS`
 **Imports from:** `api/client`, `design/stages`
 **Used by:** `App`
@@ -343,7 +344,11 @@ own — which is the phone Mixer; **`PHONE_QUERY` uses the same width**. Unused 
 **its own effect keyed on `jobId` alone**, so reconnecting can never fire it; it runs on `pagehide`
 and on cleanup, once an update for the job has been delivered. The server cancels a still-running
 job and deletes a finished one — which is why leaving a job cleans it up, and why Fast Refresh
-re-running effects in development can discard the job on screen. The subscription effect
+re-running effects in development can discard the job on screen. A heartbeat effect, also keyed on
+`jobId` alone, calls `sendHeartbeat` immediately and then every `HEARTBEAT_INTERVAL_MS` (5 minutes)
+while a job is open, whatever its status, and swallows failures. Once the stems have loaded,
+playback makes no requests, so without the heartbeat the server's reaper would delete a finished job
+still on screen after `JOB_TTL_HOURS`. The subscription effect
 (`[jobId, generation, deliver]`; `deliver` is stable) calls `getJob` then opens an `EventSource`; a
 stream error on a non-terminal job schedules a retry with backoff (1 s doubling to 10 s,
 `MAX_RECONNECT_ATTEMPTS = 10`), a 404 fails at once with `notFound`, and any message resets the

@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import routes_analysis, routes_jobs, routes_stems
 from app.core.config import settings
 from app.db.database import init_db
+from app.pipeline.reaper import start_reaper
 from app.pipeline.worker import start_worker
 
 os.environ.setdefault("TORCH_HOME", str(settings.models_cache_dir))
@@ -22,6 +23,7 @@ logging.getLogger("app").setLevel(logging.INFO)
 async def lifespan(app: FastAPI):
     init_db()
     start_worker()
+    start_reaper()
     yield
 
 

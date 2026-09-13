@@ -4,7 +4,7 @@ FastAPI service, documented endpoint by endpoint.
 
 | Page | Covers |
 | --- | --- |
-| [jobs.md](jobs.md) | create, list, read, cancel, resume, discard, and the SSE progress stream |
+| [jobs.md](jobs.md) | create, list, read, cancel, resume, heartbeat, discard, and the SSE progress stream |
 | [artifacts.md](artifacts.md) | thumbnail, individual stems, the all-stems zip |
 | [analysis.md](analysis.md) | chords, the lyrics lookup, and pasted lyrics |
 | [contract-sync.md](contract-sync.md) | keeping the Pydantic models and the TypeScript types in agreement |
@@ -71,6 +71,7 @@ deployment the server isn't published to the host, so reach them through the pro
 | `GET` | `/jobs/{job_id}/events` | [SSE progress stream](jobs.md#get-jobsjob_idevents) |
 | `POST` | `/jobs/{job_id}/cancel` | [cancel a running job](jobs.md#post-jobsjob_idcancel) |
 | `POST` | `/jobs/{job_id}/resume` | [re-queue a cancelled job](jobs.md#post-jobsjob_idresume) |
+| `POST` | `/jobs/{job_id}/heartbeat` | [keep an open job from the reaper](jobs.md#post-jobsjob_idheartbeat) |
 | `POST` | `/jobs/{job_id}/discard` | [cancel or delete](jobs.md#post-jobsjob_iddiscard) |
 | `GET` | `/jobs/{job_id}/thumbnail.jpg` | [cover art](artifacts.md#get-jobsjob_idthumbnailjpg) |
 | `GET` | `/jobs/{job_id}/stems/{stem}.flac` | [one stem as stored, for playback](artifacts.md#get-jobsjob_idstemsstem_nameflac) |

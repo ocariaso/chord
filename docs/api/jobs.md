@@ -294,6 +294,27 @@ Two details keep a resume from losing or repeating work:
   either. `run_job` starts only on a `queued` row: the first entry to reach the worker runs the job,
   and the second finds it finished and returns without writing.
 
+## `POST /jobs/{job_id}/heartbeat`
+
+Keeps a job that a page still has open from being deleted by the
+[reaper](../data/retention.md#the-reaper).
+
+**Response** — `204 No Content`. `404` *"Job not found"*.
+
+Writes `last_seen_at` and nothing else. `updated_at` is deliberately left alone. The event stream
+emits whenever the payload changes, and the processing screen times its stages from `updated_at`, so
+a heartbeat that moved it would look like progress. `last_seen_at` isn't part of `JobResponse`.
+
+`useJobEvents` sends one as soon as a job opens, then every 5 minutes (`HEARTBEAT_INTERVAL_MS`)
+until the page leaves it, whatever the job's status. It ignores failures. The reaper deletes a
+terminal job only when `updated_at` and `last_seen_at` are both older than `JOB_TTL_HOURS`. That
+keeps the job for as long as a page has it open, even though playback makes no requests once the
+stems have loaded.
+
+```bash
+curl -X POST http://localhost:8080/api/jobs/<job_id>/heartbeat
+```
+
 ## `POST /jobs/{job_id}/discard`
 
 Fire-and-forget cleanup, called by the browser when it stops watching a job.

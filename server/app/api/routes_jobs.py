@@ -9,7 +9,7 @@ from starlette import status
 from starlette.concurrency import run_in_threadpool
 
 from app.db.database import db_cursor, now_iso
-from app.models.schemas import STEM_NAMES, CreateJobFromUrlRequest, JobResponse, JobStatus
+from app.models.schemas import STEM_NAMES, TERMINAL_STATUSES, CreateJobFromUrlRequest, JobResponse, JobStatus
 from app.pipeline.pipeline import job_dir
 from app.pipeline.thumbnail import THUMBNAIL_FILENAME
 from app.pipeline.worker import enqueue
@@ -131,9 +131,6 @@ async def get_job(job_id: str) -> JobResponse:
     return _row_to_response(_get_job_row(job_id))
 
 
-TERMINAL_STATUSES = {JobStatus.DONE.value, JobStatus.ERROR.value, JobStatus.CANCELLED.value}
-
-
 @router.post("/{job_id}/cancel", response_model=JobResponse)
 async def cancel_job(job_id: str) -> JobResponse:
     row = _get_job_row(job_id)
@@ -167,6 +164,17 @@ async def resume_job(job_id: str) -> JobResponse:
         )
     enqueue(job_id)
     return _row_to_response(_get_job_row(job_id))
+
+
+@router.post("/{job_id}/heartbeat", status_code=status.HTTP_204_NO_CONTENT)
+async def heartbeat_job(job_id: str) -> None:
+    """Records that a page still has the job open, so the reaper keeps it. Only `last_seen_at` changes: the event
+    stream and the processing screen's stage timings read `updated_at`, and must not see a heartbeat as progress."""
+    with db_cursor() as cur:
+        cur.execute("UPDATE jobs SET last_seen_at = ? WHERE id = ?", (now_iso(), job_id))
+        found = cur.rowcount == 1
+    if not found:
+        raise HTTPException(status_code=404, detail="Job not found")
 
 
 @router.post("/{job_id}/discard", status_code=status.HTTP_204_NO_CONTENT)

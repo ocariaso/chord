@@ -15,7 +15,7 @@ server/
     ├── core/       config.py
     ├── db/         database.py
     ├── models/     schemas.py
-    └── pipeline/   pipeline.py  worker.py  errors.py  source.py  separation.py
+    └── pipeline/   pipeline.py  worker.py  reaper.py  errors.py  source.py  separation.py
                     decode.py  chords.py  tempo.py  lyrics.py  metadata.py  thumbnail.py
 ```
 
@@ -64,10 +64,10 @@ Effectively idempotent. Extend it if a third incompatibility appears.
 
 ## Application
 
-### `app/main.py` — app assembly (44 lines)
+### `app/main.py` — app assembly (46 lines)
 **Exports:** `app` (FastAPI), `lifespan`, `health`
 **Imports from:** `api.routes_analysis`, `api.routes_jobs`, `api.routes_stems`, `core.config`,
-`db.database`, `pipeline.worker`
+`db.database`, `pipeline.reaper`, `pipeline.worker`
 **Used by:** the `CMD`/uvicorn entry point
 **Notes:** sets `TORCH_HOME` from `settings.models_cache_dir` via `os.environ.setdefault`
 **before any torch import**. demucs reaches `TORCH_HOME` only on its legacy fallback — a model
@@ -75,18 +75,19 @@ the image doesn't carry — since the weights it normally loads are baked into t
 `HF_HOME` (see the `Dockerfile` entry). Configures logging at import: `logging.basicConfig` with a
 timestamped format, and the `app` logger at `INFO` — uvicorn configures only its own loggers, so
 without it the root logger's `WARNING` default would drop the pipeline's step timings. `lifespan`
-runs `init_db()` then `start_worker()`. Adds CORS from `settings.cors_origins`
+runs `init_db()`, then `start_worker()`, then `start_reaper()`. Adds CORS from `settings.cors_origins`
 (irrelevant behind nginx). Mounts the three routers plus `GET /health`.
 
-### `app/core/config.py` — settings and paths (31 lines)
+### `app/core/config.py` — settings and paths (35 lines)
 **Exports:** `SERVER_DIR`, `Settings`, `settings`
 **Imports from:** —
-**Used by:** `db.database`, `pipeline.pipeline`, `pipeline.separation`, `main`
+**Used by:** `db.database`, `pipeline.pipeline`, `pipeline.reaper`, `pipeline.separation`, `main`
 **Notes:** `pydantic_settings.BaseSettings`, so **every field is an environment variable of the
 same name**. Fields: `data_dir`, `db_path`, `jobs_dir`, `models_cache_dir`, `demucs_model`
 (`htdemucs_6s`), `device` (`cuda`), `demucs_overlap` (`0.25`, Demucs' own default; lower is an
 opt-in trade of chunk seams for speed), `enable_chord_detection` (`True`), `max_duration_seconds`
-(`720`; `0` disables the limit), `cors_origins`. The four path fields are **independent defaults,
+(`720`; `0` disables the limit), `job_ttl_hours` (`24`, a float; `0` or less turns the reaper
+off), `cors_origins`. The four path fields are **independent defaults,
 not layered** — overriding `DATA_DIR` alone moves nothing. `enable_chord_detection` and
 `max_duration_seconds` are read only by `run_job`: `chords` never sees the flag, and `source`
 receives the limit as an argument. The landing page's *"up to 12 minutes"* copy in
@@ -95,13 +96,16 @@ import-time side effect: `mkdir(parents=True, exist_ok=True)` on `jobs_dir` and
 `models_cache_dir`.
 **See:** [../operations/configuration.md](../operations/configuration.md)
 
-### `app/models/schemas.py` — the vocabulary (68 lines)
-**Exports:** `JobStatus`, `ChordSegment`, `KeyEstimate`, `LyricsLine`, `LyricsResponse`,
-`SaveLyricsRequest`, `CreateJobFromUrlRequest`, `JobResponse`, `STEM_NAMES`
+### `app/models/schemas.py` — the vocabulary (71 lines)
+**Exports:** `JobStatus`, `TERMINAL_STATUSES`, `ChordSegment`, `KeyEstimate`, `LyricsLine`,
+`LyricsResponse`, `SaveLyricsRequest`, `CreateJobFromUrlRequest`, `JobResponse`, `STEM_NAMES`
 **Imports from:** —
-**Used by:** all three route modules, `pipeline.pipeline`, `pipeline.chords`
+**Used by:** all three route modules, `pipeline.pipeline`, `pipeline.reaper`, `pipeline.chords`
 **Notes:** the single source of truth for the API contract's server side, hand-mirrored in
 `web/src/api/client.ts`. `JobStatus` is a `str, Enum` so `.value` is a plain string for SQLite.
+`TERMINAL_STATUSES` (`done`, `error`, `cancelled`, as plain strings) lives here, not in the routes,
+because the reaper needs it too and `pipeline` can't import from `api`; `web/src/hooks/useJobEvents.ts`
+holds the web's copy.
 `STEM_NAMES` is a hardcoded six-element list matching `htdemucs_6s` — changing `DEMUCS_MODEL`
 without changing this produces 404s, and `run_job`'s `_stems_complete()` looks for exactly these
 files, so every resume would re-separate. `JobResponse.stems_model` exists but is **never
@@ -114,33 +118,35 @@ is FastAPI's 422, not the route's 400.
 
 ## `app/db/`
 
-### `app/db/database.py` — SQLite access and migrations (71 lines)
+### `app/db/database.py` — SQLite access and migrations (73 lines)
 **Exports:** `SCHEMA`, `MIGRATED_COLUMNS`, `get_connection`, `init_db`, `now_iso`, `db_cursor`
 **Imports from:** `core.config`
-**Used by:** `api.routes_jobs`, `api.routes_analysis`, `pipeline.pipeline`, `main`
+**Used by:** `api.routes_jobs`, `api.routes_analysis`, `pipeline.pipeline`, `pipeline.reaper`, `main`
 **Notes:** no ORM. `db_cursor()` is a context manager opening a **fresh connection per block**
 and committing on normal exit only — which sidesteps SQLite's cross-thread rules between the
 worker and request handlers. `row_factory = sqlite3.Row`, so all access is by column name.
 `init_db()` runs `CREATE TABLE IF NOT EXISTS` then diffs `PRAGMA table_info(jobs)` against
 `MIGRATED_COLUMNS` and `ALTER TABLE ADD COLUMN`s what's missing — **additive only**, no renames,
 drops, rollbacks or version table. Adding a column means editing `SCHEMA` *and*
-`MIGRATED_COLUMNS`; `author`, `error_log`, `audio_format` and `attempt`
-(`INTEGER NOT NULL DEFAULT 0`) are in both. `attempt` is internal: only `POST /jobs/{id}/resume`
+`MIGRATED_COLUMNS`; `author`, `error_log`, `audio_format`, `attempt`
+(`INTEGER NOT NULL DEFAULT 0`) and `last_seen_at` are in both. `attempt` is internal: only `POST /jobs/{id}/resume`
 changes it, `run_job` scopes its status, progress and result writes to the value it read at
-start, and it never reaches `JobResponse`.
+start, and it never reaches `JobResponse`. `last_seen_at` is internal too: only
+`POST /jobs/{id}/heartbeat` writes it, and only the reaper reads it.
 **See:** [../data/schema.md](../data/schema.md)
 
 ---
 
 ## `app/api/`
 
-### `app/api/routes_jobs.py` — job lifecycle and SSE (206 lines)
-**Exports:** `router`, `ALLOWED_UPLOAD_EXTENSIONS`, `TERMINAL_STATUSES`
-**Imports from:** `db.database`, `models.schemas`, `pipeline.pipeline` (`job_dir`),
+### `app/api/routes_jobs.py` — job lifecycle and SSE (214 lines)
+**Exports:** `router`, `ALLOWED_UPLOAD_EXTENSIONS`
+**Imports from:** `db.database`, `models.schemas` (including `TERMINAL_STATUSES`), `pipeline.pipeline` (`job_dir`),
 `pipeline.thumbnail` (`THUMBNAIL_FILENAME`), `pipeline.worker` (`enqueue`)
 **Used by:** `main`
 **Routes:** `POST /jobs`, `POST /jobs/from-url`, `GET /jobs`, `GET /jobs/{id}`,
-`POST /jobs/{id}/cancel`, `POST /jobs/{id}/resume`, `POST /jobs/{id}/discard`,
+`POST /jobs/{id}/cancel`, `POST /jobs/{id}/resume`, `POST /jobs/{id}/heartbeat`,
+`POST /jobs/{id}/discard`,
 `GET /jobs/{id}/events`
 **Notes:** `_row_to_response()` maps columns **explicitly** — `error_log` and `audio_format`
 included, `attempt` and `source_url` never — and computes two fields rather than reading them:
@@ -160,7 +166,9 @@ guard makes the leftover entry a no-op. `job_events` looks the job up **before**
 stream, so an unknown id is a real 404; the generator then polls the row every 0.5 s, yields only
 on a changed payload, and breaks on a terminal status — it calls blocking SQLite from the event
 loop, and a job deleted mid-stream ends the connection with an error. `discard` branches:
-non-terminal → cancel and keep files; terminal → `DELETE` + `rmtree`.
+non-terminal → cancel and keep files; terminal → `DELETE` + `rmtree`. `heartbeat_job` writes only
+`last_seen_at`, never `updated_at`, which the SSE payload and the processing screen's stage timings
+read. Its 404 comes from the `UPDATE`'s row count, without a read first.
 **See:** [../api/jobs.md](../api/jobs.md)
 
 ### `app/api/routes_stems.py` — artifact serving (120 lines)
@@ -216,9 +224,10 @@ the pasted lyrics and never asks lrclib again.
 
 ## `app/pipeline/`
 
-`pipeline.py` orchestrates and is the only pipeline module that writes job status. Everything
-else is a leaf: value or artifact in, value or artifact out, no database access — `separation`
-reaches the row only through the progress callback `run_job` passes it.
+`pipeline.py` orchestrates and is the only pipeline module that writes job status. `worker.py`
+runs it, and `reaper.py` deletes what's left behind. Everything else is a leaf: value or artifact in,
+value or artifact out, no database access — `separation` reaches the row only through the progress
+callback `run_job` passes it.
 
 ### `app/pipeline/worker.py` — the job queue (38 lines)
 **Exports:** `job_queue`, `enqueue`, `start_worker`
@@ -229,8 +238,8 @@ reaches the row only through the progress callback `run_job` passes it.
 before its loop**, so the first job starts with the models loaded; a job queued during the warm-up
 waits no longer than it would have loading them itself. A warm-up failure is logged and swallowed —
 the first job loads whatever is missing and reports its own failure. **The queue is in-memory** — a
-restart orphans every queued and in-flight job, leaving rows permanently non-terminal with nothing
-to reap them. Strictly serial by design (Demucs wants the whole GPU) — though each run starts one
+restart orphans every queued and in-flight job, leaving rows permanently non-terminal; the reaper
+deliberately leaves non-terminal rows alone. Strictly serial by design (Demucs wants the whole GPU) — though each run starts one
 extra `chord-analysis` thread of its own, see `pipeline.py`. Multiple uvicorn workers would create
 one queue per process and break the model. Cancellation is cooperative: a cancelled run keeps
 the thread until `run_job` notices — a cancel or resume aborts a separation pass at the next
@@ -241,11 +250,42 @@ queued and then resumed sits in the queue twice, and `run_job`'s queued-only sta
 stale copy a no-op.
 **See:** [../architecture/server.md](../architecture/server.md#the-worker)
 
+### `app/pipeline/reaper.py` — deleting what discard-on-leave misses (148 lines)
+**Exports:** `sweep`, `start_reaper`
+**Imports from:** `core.config`, `db.database`, `models.schemas` (`TERMINAL_STATUSES`),
+`pipeline.pipeline` (`job_dir`)
+**Used by:** `main`
+**Notes:** `start_reaper()` starts one `daemon=True` thread named `chord-job-reaper`. It is
+idempotent per process, and when `job_ttl_hours <= 0` it only logs that the reaper is off. The thread
+calls `sweep()` at once and then every `_SWEEP_INTERVAL_SECONDS` (3600). An exception is logged and
+the loop carries on. A sweep makes two passes:
+
+- `_reap_expired_jobs` selects terminal rows (`_EXPIRED`) whose `updated_at` and `last_seen_at`
+  (when set) are both older than `job_ttl_hours`. It deletes each one with a `DELETE` that
+  **repeats the status and age conditions**, so a job that was resumed or had a heartbeat since the
+  `SELECT` survives. The directory is removed
+  only when the row was.
+- `_reap_directories` reads every row after that, then lists `jobs_dir`:
+  - A directory with no row is removed once `_last_modified` is `_GRACE_SECONDS` (3600) old.
+    `_last_modified` is the newest mtime of the directory and its direct children, because an upload
+    being copied in updates only the file's mtime.
+  - In a terminal job, `stems.partial/` is removed once the row's `updated_at` is that old.
+
+**Non-terminal rows and their files are never touched**, including stale ones left by a restart. The
+TTL comparison is done in SQL on ISO strings, which works because every timestamp comes from UTC
+`now_iso()`. Removal is `shutil.rmtree(ignore_errors=True)`, with sizes summed first for the one
+`INFO` line a sweep logs when it deleted anything. An open page keeps its job only through
+`useJobEvents`' heartbeat, since playback makes no requests. A tab whose heartbeats stop for the TTL
+loses its job. Runs beside the worker, using a fresh SQLite connection per
+`db_cursor` block. `docker-compose.yml` passes `JOB_TTL_HOURS` through.
+**See:** [../data/retention.md](../data/retention.md#the-reaper)
+
 ### `app/pipeline/pipeline.py` — the orchestrator (285 lines)
 **Exports:** `job_dir`, `run_job`, `warm_up`
 **Imports from:** `core.config`, `db.database`, `models.schemas`, `pipeline.errors`, and the leaf
 modules `chords`, `decode`, `metadata`, `separation`, `source`, `tempo`, `thumbnail`
-**Used by:** `pipeline.worker` (`run_job`, `warm_up`), and all three route modules (for `job_dir`)
+**Used by:** `pipeline.worker` (`run_job`, `warm_up`), `pipeline.reaper` and all three route
+modules (for `job_dir`)
 **Notes:** **the only module that advances job status** — the routes only insert `queued` rows
 and set `cancelled` (cancel, discard) or `queued` (resume). `run_job` starts only on a `queued`
 row, so a stale queue entry for a job that has already run does nothing. Stage order:
@@ -363,7 +403,8 @@ because the default `jobs=0` runs chunks in order. demucs 4.1.0 calls the callba
 an exception from `on_progress` aborts the pass; that is how `run_job` cancels mid-separation.
 Stems are written into a sibling `stems.partial/` (cleared first) and renamed onto `stems/` only
 once all are written, so **`stems/` is complete or absent** — which is what lets a resume skip
-separation. An aborted pass leaves an empty `stems.partial/` until the next attempt or a discard.
+separation. An aborted pass leaves an empty `stems.partial/` until the next attempt, a discard, or
+the reaper.
 Demucs works at the model's 44.1 kHz; a 44.1 or 48 kHz source keeps its rate
 (`_PRESERVED_SAMPLE_RATES`, read from the file again with `soundfile`), 48 kHz stems being
 resampled back with `julius.resample_frac`; any other rate gets the model's. The upload page's

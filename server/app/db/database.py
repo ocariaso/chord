@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     error_log TEXT,
     audio_format TEXT,
     attempt INTEGER NOT NULL DEFAULT 0,
+    last_seen_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -34,6 +35,7 @@ MIGRATED_COLUMNS = [
     ("error_log", "TEXT"),
     ("audio_format", "TEXT"),
     ("attempt", "INTEGER NOT NULL DEFAULT 0"),
+    ("last_seen_at", "TEXT"),
 ]
 
 

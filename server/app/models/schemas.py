@@ -13,6 +13,9 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+TERMINAL_STATUSES = {JobStatus.DONE.value, JobStatus.ERROR.value, JobStatus.CANCELLED.value}
+
+
 class ChordSegment(BaseModel):
     start: float
     end: float

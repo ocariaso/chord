@@ -238,7 +238,7 @@ needle's rest angle, the initial readout text — never change after mount. See
 
 | Hook | Responsibility |
 | --- | --- |
-| [`useJobEvents`](../../web/src/hooks/useJobEvents.ts) | one job's live status over SSE, reconnection with backoff, per-stage snapshots, discard-on-leave |
+| [`useJobEvents`](../../web/src/hooks/useJobEvents.ts) | one job's live status over SSE, reconnection with backoff, per-stage snapshots, discard-on-leave, and a heartbeat every 5 minutes that keeps the open job from the server's reaper |
 | [`useLyrics`](../../web/src/hooks/useLyrics.ts) | fetch lyrics once per job; `undefined` = loading, `null` = none; also returns a setter for saved lyrics |
 | [`useMediaQuery`](../../web/src/hooks/useMediaQuery.ts) | live `matchMedia` boolean — `PHONE_QUERY` in the landing, processing and results screens, and reduced motion |
 | [`usePopover`](../../web/src/hooks/usePopover.ts) | click-toggled popover (the speed menu), closed by an outside press or Escape |

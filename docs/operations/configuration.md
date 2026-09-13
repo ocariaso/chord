@@ -29,6 +29,7 @@ No `.env` file is read — `Settings` declares no `env_file` — and list values
 | `DEMUCS_OVERLAP` | `0.25` | How much of each chunk Demucs blends with its neighbours, 0…1. The default is Demucs' own. Opt-in: a lower value such as `0.1` separates faster, with more audible seams where chunks meet. |
 | `ENABLE_CHORD_DETECTION` | `true` | `false` skips the madmom stage entirely — no `analyzing` status, no `chords.json`, no key. |
 | `MAX_DURATION_SECONDS` | `720` | The longest track, in seconds, a job will separate; `0` disables the check. A URL job is refused from yt-dlp's metadata before anything downloads, an upload once the worker reads it and before separation. Both fail with *"This track is M:SS long. CHORD separates tracks up to N minutes."* |
+| `JOB_TTL_HOURS` | `24` | Hours a finished, failed or cancelled job is kept after it last changed and after the last heartbeat from a page that has it open; the reaper then deletes its row and files. Fractions are allowed, but keep it well above the web's 5-minute heartbeat (`HEARTBEAT_INTERVAL_MS`), or an open job can be deleted between two beats. `0` turns the reaper off entirely, including its removal of orphaned directories and partial separations. Compose passes it through. See [../data/retention.md](../data/retention.md#the-reaper). |
 | `CORS_ORIGINS` | `["http://localhost:5173"]` | Only relevant when the browser talks to the server directly (local dev). Irrelevant behind nginx. |
 | `DATA_DIR` | `<repo>/server/data` | |
 | `DB_PATH` | `<repo>/server/data/db.sqlite3` | |
@@ -93,21 +94,23 @@ Read by Docker Compose itself, from the shell or a `.env` beside
 | --- | --- | --- |
 | `PORT` | `8080` | host port mapped to nginx's 80 |
 | `DEVICE` | `cpu` | passed into the server container |
+| `JOB_TTL_HOURS` | `24` | passed into the server container |
 | `TORCH_INDEX_URL` | CPU wheel index | build argument |
 
 ```bash
 PORT=9000 DEVICE=cpu ./scripts/start.sh
 ```
 
-`DEVICE` is the only setting Compose passes into the server container. Any other server variable
-has to be added to the `server` service's `environment:` — that `.env` feeds Compose's own
-`${…}` substitution, not the application:
+`DEVICE` and `JOB_TTL_HOURS` are the only settings Compose passes into the server container. Any
+other server variable has to be added to the `server` service's `environment:` — that `.env` feeds
+Compose's own `${…}` substitution, not the application:
 
 ```yaml
 services:
   server:
     environment:
       DEVICE: ${DEVICE:-cpu}
+      JOB_TTL_HOURS: ${JOB_TTL_HOURS:-24}
       MAX_DURATION_SECONDS: "900"
 ```
 
@@ -143,6 +146,8 @@ constants; the timeouts and the SSE interval are literals where they're used.
 | `_TEMPO_PROGRESS` / `_CHORDS_PROGRESS` | `0.85` / `0.9` — written only for analysis still running once the stems are | `pipeline.py` |
 | `_PROGRESS_WRITE_STEP` | `0.01` — at most one row write per percentage point | `pipeline.py` |
 | `_SUPERSEDED_POLL_SECONDS` | `2.0` — how often separation checks for a cancel | `pipeline.py` |
+| `_SWEEP_INTERVAL_SECONDS` | `3600` — the reaper sweeps at startup, then hourly | `reaper.py` |
+| `_GRACE_SECONDS` | `3600` — how long a directory with no row, or a terminal job's `stems.partial/`, must stay unchanged before the reaper deletes it | `reaper.py` |
 | `_PRESERVED_SAMPLE_RATES` | `{44100, 48000}` | `separation.py` |
 | `STEM_SUFFIX` | `.flac` — stems are stored as 16-bit FLAC | `separation.py` |
 | `SAMPLE_RATE` | `44100` — the one mono decode tempo, chord and key detection share | `decode.py` |
@@ -183,6 +188,7 @@ constants; the timeouts and the SSE interval are literals where they're used.
 | seek keyboard steps | `5` s; `30` s with Shift or PageUp/PageDown | `screens/results/Transport.tsx` |
 | `MIN_LOOP_SECONDS` | `0.5` | `screens/results/ResultsScreen.tsx` |
 | `MAX_RECONNECT_ATTEMPTS` | `10`; delay 1 s, doubling to a 10 s cap | `hooks/useJobEvents.ts` |
+| `HEARTBEAT_INTERVAL_MS` | 5 minutes — how often an open job tells the server it's still in use; the server's `JOB_TTL_HOURS` must stay well above it | `hooks/useJobEvents.ts` |
 | stem meter ballistics | instant attack, 24 dB/s release | `screens/results/ConsoleView.tsx` |
 | console Peak readout | true peak, 1.5 s hold | `screens/results/ConsoleView.tsx` |
 | dial ballistics | 20 dB/s release; true peak held 1.5 s; loudness and correlation smoothed over 300 ms | `screens/results/AnalogView.tsx` |

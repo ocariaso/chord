@@ -103,7 +103,6 @@ docs/
     ├── README.md                  the index, grouped by area
     ├── local-network-exposure.md  localhost-only by default, cross-site and internal-URL checks
     ├── restart-recovery.md        interrupted jobs continue on the next start
-    ├── job-reaper.md              deleting what discard-on-leave misses
     ├── device-visibility.md       reporting a fallback to CPU
     ├── apple-silicon.md           separation on the Apple GPU (mps)
     ├── prebuilt-releases.md       published images, versions, contributor files

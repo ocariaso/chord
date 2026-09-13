@@ -15,8 +15,9 @@ and by madmom's compatibility ceiling), uvicorn, SQLite.
    configures only its own loggers, so without this the root logger's `WARNING` default would drop
    the pipeline's step timings — see
    [../operations/troubleshooting.md](../operations/troubleshooting.md#where-a-jobs-time-goes).
-3. `lifespan` → `init_db()` then `start_worker()`. The worker warms the models up on its own
-   thread, so startup doesn't wait for it.
+3. `lifespan` → `init_db()`, `start_worker()`, then `start_reaper()`. The worker warms the models
+   up on its own thread, so startup doesn't wait for it. The reaper runs its first sweep on a thread
+   of its own for the same reason ([../data/retention.md](../data/retention.md#the-reaper)).
 4. CORS middleware from `settings.cors_origins` (default `["http://localhost:5173"]`, the Vite
    dev server). In the Docker deployment CORS is irrelevant — nginx proxies `/api` so the
    browser sees one origin.
@@ -61,8 +62,9 @@ Three routers, all under `/jobs`, split by concern rather than by path:
   and saving pasted lyrics.
 
 Shared helpers live where they are used rather than in a common module: `job_dir()` comes from
-`pipeline.pipeline`, `THUMBNAIL_FILENAME` from `pipeline.thumbnail`, and `_row_to_response()` /
-`_get_job_row()` / `TERMINAL_STATUSES` are private to `routes_jobs.py`. (`pipeline.py` has a
+`pipeline.pipeline`, `THUMBNAIL_FILENAME` from `pipeline.thumbnail`, `TERMINAL_STATUSES` from
+`models.schemas` (the reaper reads it too), and `_row_to_response()` / `_get_job_row()` are private
+to `routes_jobs.py`. (`pipeline.py` has a
 `_get_job_row` of its own, which returns `None` for a missing row where the API's raises 404.)
 
 `_row_to_response()` maps columns to fields one by one, so a new column is invisible to clients
@@ -119,7 +121,8 @@ def start_worker():        # idempotent; one thread per process
 Consequences you need to hold in mind:
 
 - **The queue is in-process and in-memory.** Restarting the server loses every queued job.
-  Rows left in `queued`/`separating` are never picked up again, and nothing reaps them. Resume
+  Rows left in `queued`/`separating` are never picked up again, and the reaper leaves
+  non-terminal rows alone. Resume
   accepts only `cancelled`, so such a row can be revived only from a page that still has it open,
   by cancelling and then resuming it.
 - **Strictly serial.** One job, and one Demucs pass, at a time. Concurrency would need a real

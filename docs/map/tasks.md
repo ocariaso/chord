@@ -24,8 +24,9 @@ resumed job should start without it, clear it in `resume_job`'s `UPDATE` too.
 `JobStatus`, the `JobStatus` union in [`client.ts`](../../web/src/api/client.ts),
 `processingStage` in [`design/stages.ts`](../../web/src/design/stages.ts), `renderJob` in
 [`App.tsx`](../../web/src/App.tsx), and **both** `TERMINAL_STATUSES` sets
-([`routes_jobs.py`](../../server/app/api/routes_jobs.py) and
-[`useJobEvents.ts`](../../web/src/hooks/useJobEvents.ts)) if it's terminal. A status with its own
+([`schemas.py`](../../server/app/models/schemas.py) and
+[`useJobEvents.ts`](../../web/src/hooks/useJobEvents.ts)) if it's terminal — the server's set also
+decides which jobs the reaper may delete. A status with its own
 panel takes its words from `failureCopy` in [`design/copy.ts`](../../web/src/design/copy.ts).
 `run_job` starts only on a `queued` row, so a status a job can be queued under needs its guard
 changed too.
@@ -120,7 +121,8 @@ download. Miss `STEM_NAMES` and the API advertises stems that don't exist, produ
 | --- | --- |
 | Add/modify a column | the field checklist above. Note: additive only — no renames, drops or rollbacks |
 | Add a setting | [`core/config.py`](../../server/app/core/config.py) — it becomes an environment variable automatically. Document it in [../operations/configuration.md](../operations/configuration.md) |
-| Add job retention / a library | stop the beacon in [`useJobEvents.ts`](../../web/src/hooks/useJobEvents.ts), surface `GET /jobs` in the UI, **and add a reaper** — see [../data/retention.md](../data/retention.md#if-retention-were-wanted) |
+| Change how long jobs are kept | `JOB_TTL_HOURS` in the server's environment, passed through by [`docker-compose.yml`](../../docker-compose.yml). It is `job_ttl_hours` in [`core/config.py`](../../server/app/core/config.py): default `24`, and `0` turns the reaper off. What a sweep deletes, and the hour of grace, are in [`pipeline/reaper.py`](../../server/app/pipeline/reaper.py). An open page keeps its job with a heartbeat every `HEARTBEAT_INTERVAL_MS` from [`useJobEvents.ts`](../../web/src/hooks/useJobEvents.ts) to `heartbeat_job` in [`routes_jobs.py`](../../server/app/api/routes_jobs.py), which writes `last_seen_at` — see [../data/retention.md](../data/retention.md#the-reaper) |
+| Add job retention / a library | stop the beacon in [`useJobEvents.ts`](../../web/src/hooks/useJobEvents.ts), surface `GET /jobs` in the UI, **and stop the reaper deleting the library** — see [../data/retention.md](../data/retention.md#if-retention-were-wanted) |
 | Change the published port | `PORT` in the environment; nothing in either container knows about it |
 | Change container/image names | [`docker-compose.yml`](../../docker-compose.yml), and the proxy target `http://server:8000/` in [`nginx.conf`](../../web/nginx.conf) if the **service** name changes |
 | Fix the dev proxy port | `target` in [`vite.config.ts`](../../web/vite.config.ts) — see [../operations/local-development.md](../operations/local-development.md#the-vite-proxy-port-mismatch) |
@@ -134,7 +136,7 @@ Each is documented where it lives, not just listed here:
 | Issue | Where |
 | --- | --- |
 | Vite dev proxy targets 8787; the server runs on 8000 | [../operations/local-development.md](../operations/local-development.md#the-vite-proxy-port-mismatch) |
-| A restart orphans in-flight jobs, and nothing reaps them | [../data/retention.md](../data/retention.md#stale-rows) |
+| A restart orphans in-flight jobs, and the reaper leaves them alone | [../data/retention.md](../data/retention.md#stale-rows) |
 | *Discard* right after *Cancel* deletes the job directory while the cancelled run may still write into it | [../architecture/job-lifecycle.md](../architecture/job-lifecycle.md) |
 | A resume re-separates from scratch unless all six stems were written | [../features/stem-separation.md](../features/stem-separation.md) |
 | Stems are always 16-bit (stored as FLAC, exported as WAV), whatever the source's depth | [../features/stem-separation.md](../features/stem-separation.md) |

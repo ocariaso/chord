@@ -10,6 +10,7 @@ services:
     container_name: chord-server
     environment:
       DEVICE: ${DEVICE:-cpu}
+      JOB_TTL_HOURS: ${JOB_TTL_HOURS:-24}
     volumes:
       - ./server/data:/app/data
     expose:

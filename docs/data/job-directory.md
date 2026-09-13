@@ -86,7 +86,8 @@ it, and only then renames it to `stems/`, replacing any `stems/` already there. 
   when it holds.
 - A pass abandoned by a cancel, or cut off by a restart, leaves `stems.partial/` behind — empty
   if the pass was interrupted before its save loop. The job's next separation deletes it; a
-  discard removes it with the rest of the directory.
+  discard removes it with the rest of the directory; and the reaper removes it from a `done`,
+  `error` or `cancelled` job an hour after the job last changed.
 
 About half of WAV's ~10 MB per stem-minute at 44.1 kHz (~11 MB at 48 kHz), so roughly 125 MB for a
 four-minute song. This is the dominant disk cost and the reason for several other design choices —
