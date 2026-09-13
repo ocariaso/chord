@@ -4,6 +4,7 @@
 chord/
 ├── README.md
 ├── LICENSE
+├── CONTRIBUTING.md
 ├── .gitignore
 ├── .gitattributes
 ├── docker-compose.yml
@@ -22,10 +23,21 @@ chord/
 
 ### `README.md` — project front page
 **Notes:** name and expansion (Component Harmony & Orchestral Retrieval Decoder), a screenshot,
-the two-command quick start, and a folder-structure tree. The tree names `server/` and `web/`
-and must be updated if either is renamed again.
+the two-command quick start, a folder-structure tree, a docs index, and Contributing and License sections. The
+tree names `server/` and `web/` and must be updated if either is renamed again.
 
-### `LICENSE` — MIT.
+### `LICENSE` — PolyForm Noncommercial 1.0.0 (source-available, no commercial use)
+**Notes:** the official license text unchanged, followed by a `Required Notice:` copyright line.
+The README's License section summarizes it and notes that madmom's pretrained models are
+CC BY-NC-SA 4.0.
+
+### `CONTRIBUTING.md` — how to propose changes, pre-PR checks, contribution terms
+**Notes:** the pre-PR checklist restates facts from `CLAUDE.md` (no tests or CI, build + lint +
+an end-to-end job, keeping `docs/map/` current, the hand-synced API contract) and links
+`docs/map/tasks.md`, `docs/api/contract-sync.md`, `docs/operations/local-development.md`,
+`docs/conventions/` and `docs/todos/`. Update it if any of those move or the verification steps
+change. The contribution terms grant the project owners named there a relicensable license, so
+they must stay in step with the copyright holders in `LICENSE`'s `Required Notice:` line.
 
 ### `.gitignore`
 **Notes:** ignores `.claude/` **except** `.claude/skills/`, which is negated so project skills

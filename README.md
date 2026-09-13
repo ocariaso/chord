@@ -72,3 +72,21 @@ chord/
 | [docs/data/](docs/data/) | schema, on-disk layout, retention |
 | [docs/operations/](docs/operations/) | Docker, configuration, local dev, troubleshooting |
 | [docs/conventions/](docs/conventions/) | the code style used here |
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose a
+change, the checks to run before opening a pull request, and the contribution terms.
+
+## License
+
+CHORD is **source-available** under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may
+use, copy, modify and share it for any noncommercial purpose: personal use, hobby projects,
+research, education, charities and government use. Commercial use of any kind is not permitted,
+whether you run it on its own, bundle it into a product, or offer it as a hosted or networked
+service. It comes as is, without any warranty.
+
+Third-party components keep their own licenses. In particular, the pretrained models used by
+[madmom](https://github.com/CPJKU/madmom) for chord and key detection are licensed
+[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), which likewise forbids
+commercial use.
