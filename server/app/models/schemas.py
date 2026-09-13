@@ -1,6 +1,6 @@
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class JobStatus(str, Enum):
@@ -36,6 +36,10 @@ class LyricsResponse(BaseModel):
     plain: str | None = None
 
 
+class SaveLyricsRequest(BaseModel):
+    text: str = Field(max_length=100_000)
+
+
 class CreateJobFromUrlRequest(BaseModel):
     url: str
 
@@ -48,8 +52,10 @@ class JobResponse(BaseModel):
     progress: float
     stage_message: str | None = None
     error_message: str | None = None
+    error_log: str | None = None
     stems_model: str | None = None
     duration_seconds: float | None = None
+    audio_format: str | None = None
     key_estimate: str | None = None
     key_confidence: float | None = None
     tempo_bpm: float | None = None

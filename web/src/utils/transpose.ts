@@ -7,8 +7,8 @@ function transposeNote(root: string, semitones: number): string {
   return NOTE_NAMES[shifted];
 }
 
+/** Shifts a chord's root. A label without one — the model's "N" for no chord — comes back unchanged. */
 export function transposeChord(chord: string, semitones: number): string {
-  if (chord === "N") return "-"; // no chord detected (silence) — display as a plain dash, not the model's raw "N" label
   if (semitones === 0) return chord;
   const match = chord.match(/^([A-G]#?)(.*)$/);
   if (!match) return chord;

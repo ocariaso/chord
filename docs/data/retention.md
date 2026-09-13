@@ -14,26 +14,43 @@ misses, and how to clean up the remainder.
 | terminal (`done`/`error`/`cancelled`) | `DELETE FROM jobs` | `shutil.rmtree(job_dir, ignore_errors=True)` |
 
 The browser calls it automatically from
-[`useJobEvents`](../../web/src/hooks/useJobEvents.ts):
+[`useJobEvents`](../../web/src/hooks/useJobEvents.ts), in an effect of its own keyed on the job
+id alone, so reconnecting the event stream never fires it:
 
 ```ts
-function discardOnLeave() {
-  if (statusRef.current) navigator.sendBeacon(discardJobUrl(currentJobId));
-}
-window.addEventListener("pagehide", discardOnLeave);
-return () => { /* … */ discardOnLeave(); };   // and on effect cleanup
+useEffect(() => {
+  if (!jobId) return;
+  const currentJobId = jobId;
+
+  // Cleans this job up on the server when the page is left, instead of leaving it orphaned.
+  function discardOnLeave() {
+    if (statusRef.current) {
+      navigator.sendBeacon(discardJobUrl(currentJobId));
+    }
+  }
+
+  window.addEventListener("pagehide", discardOnLeave);
+  return () => {
+    window.removeEventListener("pagehide", discardOnLeave);
+    discardOnLeave();
+  };
+}, [jobId]);
 ```
 
 `sendBeacon` rather than `fetch` because the browser guarantees a beacon survives page
 teardown.
 
-**So "Upload another song" destroys the job you were just looking at.** `handleBack` clears
-`activeJobId`, the effect unmounts, the beacon fires, and the row and ~250 MB of stems are gone.
-This is deliberate — nothing identifies a user, so disk would otherwise grow without bound. The
-rationale is recorded in
+**So "New track" destroys the job you were looking at.** Every way back to the landing
+screen — *New track* on the results or a lost connection, *Try another source* after an error,
+*Discard* on a cancelled job, *Cancel* while stems load — goes through `handleBack` in
+[`App.tsx`](../../web/src/App.tsx), which clears `activeJobId`. The effect cleans up, the beacon
+fires, and a finished job's row and ~250 MB of stems are gone. This is deliberate — nothing
+identifies a user, so disk would otherwise grow without bound. The rationale is recorded in
 [../architecture/decisions.md](../architecture/decisions.md#discard-on-leave).
 
-Cancel, by contrast, deletes nothing — it only writes a status.
+Cancel, by contrast, deletes nothing — it only writes a status, and the files it leaves are what
+[resume](../api/jobs.md#post-jobsjob_idresume) builds on. The *Cancelled* panel keeps them only as
+long as the page stays on that job; leaving it discards the job like any other terminal one.
 
 ## What leaks
 
@@ -59,11 +76,23 @@ sqlite3 server/data/db.sqlite3 \
 
 Anything in that list older than the longest plausible separation is stale.
 
+A stale row can be revived instead of deleted. Cancel it, then resume it, and the running
+server's worker picks it up — reusing the audio, and the stems if separation had finished:
+
+```bash
+curl -X POST http://localhost:8080/api/jobs/<job_id>/cancel
+curl -X POST http://localhost:8080/api/jobs/<job_id>/resume
+```
+
+No tab is watching it any more, so nothing discards it when it finishes.
+
 ### Cancelled jobs' files
 
-A cancel (or a discard of a *running* job) leaves `original.*` and any stems already written on
-disk, with the row marked `cancelled`. Nothing revisits it. A later discard would clean it up,
-since the row is now terminal — but the client only discards the job it is currently watching.
+A discard of a *running* job — the tab left mid-processing — marks it `cancelled` and keeps
+`original.*`, the thumbnail, a completed `stems/` if there is one, and any `stems.partial/` an
+interrupted separation left. The tab that could have resumed or discarded it is gone, so nothing
+revisits it. A second discard would clean it up, since the row is now terminal — but no client
+will send one.
 
 ### Row/directory divergence
 
@@ -90,7 +119,7 @@ rm -rf server/data/jobs/* server/data/db.sqlite3
 ```
 
 `init_db()` recreates the schema on the next boot, and `config.py` recreates the directories at
-import time. Keep `models_cache/` — deleting it forces a multi-hundred-MB Demucs re-download.
+import time. The Demucs weights are in the image, so this forces no download.
 
 **Stale rows only**, keeping finished jobs:
 
@@ -119,10 +148,18 @@ find server/data/jobs -maxdepth 1 -mindepth 1 -type d -mtime +7 -exec rm -rf {} 
 
 Rows for those directories survive; run the stale-row delete or accept the divergence.
 
+**Scratch from interrupted separations**, if you're keeping the jobs themselves:
+
+```bash
+find server/data/jobs -mindepth 2 -maxdepth 2 -type d -name stems.partial -exec rm -rf {} +
+```
+
 ## What to keep
 
-`server/data/models_cache/` is a pure download cache but an expensive one. Leave it alone unless
-you're reclaiming space deliberately, and exclude it from the reset commands above.
+`server/data/models_cache/` is normally empty: the Demucs weights are baked into the server image.
+It fills only when `DEMUCS_MODEL` names a model the image wasn't built with, and deleting it then
+makes the next job download that model again — see
+[../operations/configuration.md](../operations/configuration.md#demucs-weights).
 
 ## If retention were wanted
 

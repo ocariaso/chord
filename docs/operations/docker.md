@@ -10,6 +10,7 @@
 | [`web/Dockerfile`](../../web/Dockerfile) | multi-stage build → nginx image |
 | [`scripts/start.sh`](../../scripts/start.sh) | picks the overlay and brings the stack up |
 | [`scripts/stop.sh`](../../scripts/stop.sh) | brings it down |
+| [`scripts/start.cmd`](../../scripts/start.cmd), [`scripts/stop.cmd`](../../scripts/stop.cmd) | the same two, for Windows |
 
 ## The base stack
 
@@ -54,8 +55,9 @@ Points worth noting:
   `http://localhost:8080/api/docs`.
 - **`depends_on` is start-order only**, not readiness. nginx starts before uvicorn is listening;
   early requests to `/api` get a 502 until the server is up. There is no healthcheck.
-- **The only persistent state is the bind mount** `./server/data:/app/data` — database, job
-  artifacts and the Demucs weights cache. See [../data/README.md](../data/README.md).
+- **The only persistent state is the bind mount** `./server/data:/app/data` — database and job
+  artifacts. The Demucs weights are in the image, not here. See
+  [../data/README.md](../data/README.md).
 
 ## The GPU overlay
 
@@ -79,7 +81,7 @@ services:
 It changes two things at once, and the distinction matters:
 
 - **`TORCH_INDEX_URL` is a build argument** — it selects the CUDA 12.4 torch wheel instead of
-  the CPU one. Changing it requires a **rebuild**, not just a restart.
+  the CPU one. Changing it requires a **rebuild**; a restart isn't enough.
 - **`DEVICE` is runtime** — it tells [`separation.py`](../../server/app/pipeline/separation.py)
   to ask for CUDA. That module falls back to CPU if `torch.cuda.is_available()` is false, so a
   CUDA-built image on a machine with no visible GPU degrades rather than crashing.
@@ -111,6 +113,15 @@ To force the CPU path on a GPU machine, invoke Compose directly:
 docker compose -f docker-compose.yml up -d --build
 ```
 
+### On Windows
+
+`scripts\start.cmd` and `scripts\stop.cmd` do the same, without needing Git Bash or WSL. They are
+batch files rather than PowerShell scripts because Windows' default execution policy refuses to
+run an unsigned `.ps1`; a `.cmd` runs from cmd, PowerShell or a double-click. Docker Desktop's
+WSL 2 backend passes an NVIDIA GPU through, and the Windows driver puts `nvidia-smi` on `PATH`, so
+the probe works the same way. The two pairs are separate implementations — a change to one
+belongs in the other.
+
 ## Images
 
 ### `server/Dockerfile`
@@ -124,6 +135,10 @@ RUN pip install torch torchaudio --extra-index-url ${TORCH_INDEX_URL}
 COPY requirements.txt . && RUN pip install -r requirements.txt
 RUN pip install cython wheel && pip install madmom --no-build-isolation
 COPY scripts/patch_madmom.sh … && RUN bash scripts/patch_madmom.sh
+ARG DEMUCS_MODEL=htdemucs_6s
+ENV HF_HOME=/opt/models/huggingface DEMUCS_MODEL=${DEMUCS_MODEL}
+RUN python -c "from demucs.hf import get_hf_model; get_hf_model('${DEMUCS_MODEL}')"
+ENV HF_HUB_OFFLINE=1
 COPY app app
 RUN groupadd -g 1000 chord && useradd -u 1000 -g chord -m chord && chown -R chord:chord /app
 USER chord
@@ -133,10 +148,20 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 - **Python 3.10** is pinned by madmom's compatibility ceiling, not by preference.
 - Layer order is deliberate: system packages, then torch (huge, rarely changes), then
-  requirements, then madmom, then application code last — so an edit to `app/` rebuilds only the
-  final layers.
+  requirements, then madmom, then the Demucs weights, then application code last — so an edit to
+  `app/` rebuilds only the final layers.
 - **madmom is installed separately** from `requirements.txt` and then patched in place. Full
   explanation: [../architecture/server.md](../architecture/server.md#the-madmom-problem).
+- **The Demucs weights are baked in.** demucs 4.1 downloads a named model from the Hugging Face
+  Hub into `HF_HOME`, which isn't on the data volume, so left to the first job the weights were
+  fetched again after every rebuild — with an *unauthenticated requests to the HF Hub* warning
+  each time. The build fetches them into `/opt/models/huggingface` instead, and
+  `HF_HUB_OFFLINE=1` keeps the running server off the Hub. The step calls
+  `demucs.hf.get_hf_model` rather than `get_model`, because `get_model` swallows a Hub failure and
+  falls back to demucs' legacy AWS repo, which would leave the build green and the image without
+  weights. `DEMUCS_MODEL` is a build argument that also becomes the runtime variable, so the
+  server uses the model the image carries; see
+  [configuration.md](configuration.md#demucs-weights).
 - `ffmpeg` is a runtime dependency (yt-dlp, cover-art extraction, ffprobe metadata, librosa
   decoding). `build-essential` / `pkg-config` / `libopus-dev` serve madmom's C extensions and the
   audio stack.
@@ -164,10 +189,17 @@ build** — the type check is not skippable in the Docker path.
 
 ## nginx
 
-[`web/nginx.conf`](../../web/nginx.conf) does three jobs:
+[`web/nginx.conf`](../../web/nginx.conf) does six jobs:
 
 ```nginx
+gzip on;                                 # the app shell and JSON; not stems, artwork or the event stream
+gzip_comp_level 5;
+gzip_min_length 1024;
+gzip_types text/css application/javascript application/json image/svg+xml;
+
 location /api/ {
+    client_max_body_size 512m;           # uploads: nginx's default is 1 MB
+
     proxy_pass http://server:8000/;      # trailing slash strips the /api prefix
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -178,6 +210,13 @@ location /api/ {
     proxy_read_timeout 1h;               # SSE: survive a long separation
 }
 
+location /assets/ {                     # hashed build output: cache forever
+    add_header Cache-Control "public, max-age=31536000, immutable";
+    try_files $uri =404;
+}
+
+location = /index.html { add_header Cache-Control "no-cache"; }   # names the current hashes
+
 location / { try_files $uri $uri/ /index.html; }   # SPA fallback
 ```
 
@@ -185,8 +224,19 @@ location / { try_files $uri $uri/ /index.html; }   # SPA fallback
   Removing it would break every route.
 - The three SSE directives are all required. Without `proxy_buffering off` the progress stream
   arrives in one lump at the end; without the timeout it drops mid-separation.
-- `client_max_body_size` is **not set**, so nginx's 1 MB default applies to uploads through the
-  proxy. See [troubleshooting.md](troubleshooting.md#uploads-fail-with-413).
+- **`client_max_body_size 512m`**, scoped to `/api/`, is sized for a twelve-minute lossless
+  upload; nginx's 1 MB default would refuse any real audio file. A larger body gets nginx's own
+  HTML 413 page and never reaches FastAPI; the web client recognizes the status and shows *"That
+  file is larger than the server accepts."* The server sets no limit of its own, so any other
+  proxy put in front needs an equivalent setting. See
+  [troubleshooting.md](troubleshooting.md#uploads-over-512-mb-fail).
+- **gzip** covers only the text types listed. Stems (`audio/flac`, `audio/wav`, the zip) and artwork
+  are already compressed or not worth it, and `text/event-stream` is left out so each progress event
+  leaves as soon as it's written rather than waiting on the compressor.
+- **Caching:** Vite puts a content hash in every file name under `/assets/`, so those are served
+  `immutable` for a year; `index.html`, which names the current hashes, is `no-cache`, so a rebuild
+  reaches the browser on its next load. A path the SPA fallback answers with `index.html` doesn't get
+  that header.
 
 ## Common commands
 
@@ -209,6 +259,10 @@ state, see [../data/retention.md](../data/retention.md#cleaning-up).
 
 ```bash
 PORT=9000 ./scripts/start.sh
+```
+
+```powershell
+$env:PORT = 9000; scripts\start.cmd
 ```
 
 Or put it in a `.env` beside `docker-compose.yml`. Nothing inside either container knows about

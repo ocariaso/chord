@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -10,6 +11,11 @@ from app.db.database import init_db
 from app.pipeline.worker import start_worker
 
 os.environ.setdefault("TORCH_HOME", str(settings.models_cache_dir))
+
+# Uvicorn configures only its own loggers, and the pipeline's step timings are INFO, which the root logger's
+# WARNING default would drop.
+logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.getLogger("app").setLevel(logging.INFO)
 
 
 @asynccontextmanager

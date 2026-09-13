@@ -16,6 +16,7 @@ Every category below is a folder. This page is the only file at the top level.
 | Know what's stored, where, and in what shape | [data/](data/) |
 | Run, build, deploy, or debug an environment | [operations/](operations/) |
 | Match the existing code style | [conventions/](conventions/) |
+| Change what a screen looks like or says | [conventions/design.md](conventions/design.md) — the design standard |
 | Know *why* something is built this way | [architecture/decisions.md](architecture/decisions.md) |
 
 ## The two halves
@@ -26,8 +27,10 @@ A monorepo of two deployables plus a thin script layer:
   (Demucs separation, madmom chord/key, librosa tempo, lrclib lyrics), the SQLite job store, and
   the job files on disk.
 - **[`web/`](../web/)** — a React + TypeScript + Vite single-page app served by nginx, which also
-  reverse-proxies `/api` to the server. Owns the upload screen, the live processing screen, and
-  the two mixer views (Simple and Studio).
+  reverse-proxies `/api` to the server. Owns the landing screen, the live processing screen, the
+  failure panels, and the results: one mixer state shown as three views (Mixer, Console,
+  Analog), played through a Web Audio engine with metering and pitch-preserving speed. Its design,
+  copy and UX follow [conventions/design.md](conventions/design.md), the design standard.
 
 They share no code and no generated types — the TypeScript interfaces in
 [`web/src/api/client.ts`](../web/src/api/client.ts) are hand-mirrored from the Pydantic models in
@@ -51,8 +54,8 @@ docs/
 │   ├── README.md                  system overview, the processing lifecycle, layering
 │   ├── server.md                  FastAPI layering, the worker thread, the madmom problem
 │   ├── web.md                     screen flow, state ownership, the render clock
-│   ├── audio-playback.md          the Web Audio engine and its split with WaveSurfer
-│   ├── job-lifecycle.md           every status transition, cancellation, discard
+│   ├── audio-playback.md          the Web Audio engine, waveforms, silence detection
+│   ├── job-lifecycle.md           every status transition, cancellation, resume, discard
 │   └── decisions.md               design decisions and their costs
 │
 ├── features/
@@ -61,18 +64,19 @@ docs/
 │   ├── stem-separation.md         Demucs, devices, the 6-stem model
 │   ├── chords-and-key.md          madmom detection, label normalization, key disambiguation
 │   ├── tempo-and-metronome.md     librosa BPM and the scheduled click track
-│   ├── lyrics.md                  lrclib lookup and vocal-energy offset correction
-│   ├── theming.md                 cover art extraction and dominant-color accenting
-│   ├── simple-view.md             the default mixer
-│   ├── studio-view.md             the skeuomorphic amp rack
+│   ├── lyrics.md                  lrclib lookup, vocal-energy offset correction, pasted lyrics
+│   ├── theming.md                 the fixed palette, stem hues, cover art
+│   ├── results-views.md           the Mixer, Console and Analog views over one mixer state
+│   ├── metering.md                post-fader meters, true peak, loudness, correlation
+│   ├── speed-and-loop.md          pitch-preserving speed and A–B loops
 │   ├── transpose.md               client-side chord/key transposition
-│   └── downloads.md               per-stem and zip-all downloads
+│   └── downloads.md               the export dialog: per-stem WAVs and the zip, converted from FLAC
 │
 ├── api/
 │   ├── README.md                  conventions, base paths, endpoint summary
-│   ├── jobs.md                    create, list, read, cancel, discard, SSE
+│   ├── jobs.md                    create, list, read, cancel, resume, discard, SSE
 │   ├── artifacts.md               thumbnail, stems, the zip
-│   ├── analysis.md                chords and lyrics
+│   ├── analysis.md                chords, lyrics lookup, pasted lyrics
 │   └── contract-sync.md           keeping Pydantic and TypeScript in agreement
 │
 ├── data/
@@ -90,8 +94,9 @@ docs/
 │
 └── conventions/
     ├── README.md                  patterns shared across both halves
+    ├── design.md                  the design standard, and the design check
     ├── python.md                  server-side style, layering, error handling
-    └── typescript.md              web-side style, React patterns, styling
+    └── typescript.md              web-side style, React patterns, ch- styling
 ```
 
 ## Keeping these docs true

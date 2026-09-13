@@ -48,19 +48,31 @@ intent — update them when *behavior* changes, not when a file moves.
 - **The API contract is duplicated by hand** between `server/app/models/schemas.py` and
   `web/src/api/client.ts`. Nothing enforces agreement; a rename on one side silently breaks the
   other. See [`docs/api/contract-sync.md`](docs/api/contract-sync.md).
-- **`PlaybackEngine` is the only audio truth.** WaveSurfer instances draw only.
+- **`PlaybackEngine` is the only audio truth.** Meters and dial needles bypass React —
+  `useAnimationFrame` writes them to the DOM every frame — and pitch-preserving speed runs in the
+  `chord-stretch` AudioWorklet (`web/src/audio/stretchProcessor.js`, plain JS), which the engine
+  drives only by `postMessage`.
+- **Styling is the vendored `ch-`/Nocturne classes in `web/src/styles/`.** Runtime values reach
+  them as CSS custom properties (`--v`, `--l`, `--p`, `--stem`), never as inline geometry. Inline
+  styles carry the design's own declarations, with tokens for any value a token carries, or do
+  layout; Tailwind is layout only. No new colors. `npm run lint` checks the mechanical part
+  (`web/scripts/check-design.mjs`).
 - **Comments explain *why*, never *what*.** Empty `catch` blocks are always annotated with the
   reason nothing is done. Match that.
-- The Studio view's six amps are **deliberately duplicated** presentational code — don't
-  refactor them into a shared shell.
+- **[`docs/conventions/design.md`](docs/conventions/design.md) is the design standard**, and the
+  screens under `web/src/screens/` are its reference implementation. The UI was built from a design
+  template that has since been removed (`git show 2a9783e:web/template/` lists it); every rule still
+  binding, the states each screen has and the calls taken are on that page. Every string the screens
+  render lives in `web/src/design/copy.ts`, error text from the API and the event stream aside.
 
 ## Commands
 
 ```bash
 ./scripts/start.sh          # build + up (auto-detects an NVIDIA GPU); http://localhost:8080
 ./scripts/stop.sh
+scripts\start.cmd           # Windows (cmd or PowerShell); scripts\stop.cmd to stop
 cd web && npm run dev       # Vite dev server — note the proxy port mismatch in docs/operations
 cd web && npm run build     # tsc -b && vite build
-cd web && npm run lint      # oxlint
+cd web && npm run lint      # oxlint, then the design-rule check
 docker compose logs -f server
 ```

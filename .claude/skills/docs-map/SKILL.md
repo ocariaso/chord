@@ -28,8 +28,9 @@ the files it touches, and carries three checklists that are easy to get wrong:
   columns explicitly — a new column is invisible until added there.
 - **Adding or renaming a job status** touches both `TERMINAL_STATUSES` sets, on opposite sides
   of the wire.
-- **Changing the Demucs model** touches `STEM_NAMES` and both view orderings, or the API
-  advertises stems that don't exist.
+- **Changing the Demucs model** touches `STEM_NAMES`, or the API advertises stems that don't
+  exist — and the web's `STEM_KEYS` and `stemNames` in `web/src/design/`, or a new stem is never
+  loaded.
 
 Using the router is faster than grepping and stops you missing a required edit.
 
@@ -77,8 +78,8 @@ or load-bearing** — not a restatement of the code:
   blocking zip in a threadpool"*.
 - Duplication that must stay in sync — *"`NOTE_NAMES` duplicates the array in
   `server/app/pipeline/chords.py`"*.
-- Known bugs and gaps — *"`handleDownloadAll` strips only `/\.mp3$/i`, so a FLAC upload
-  downloads as `song.flac_stems.zip`"*.
+- Known bugs and gaps — *"the dev proxy targets port 8787, but the server's documented port is
+  8000"*.
 - Fields or files that exist but are unused — *"`stems_model` exists but is never written"*.
 
 Skip anything a reader gets for free from the signature.
@@ -152,14 +153,13 @@ comm -23 /tmp/disk.txt /tmp/mapped.txt
 **Expected output** — these are covered collectively by design, not gaps. Anything *else* in the
 list is a real gap:
 
-- the six `*Amp.tsx` files (covered as a group under `studio/amps/`)
 - `tsconfig.app.json`, `tsconfig.node.json` (grouped with `tsconfig.json`)
 - `favicon.svg`, `icons.svg`, `hero.png`, `react.svg`, `vite.svg`, `package-lock.json`
-  (grouped in `web.md`'s trailing "and" entry)
+  (grouped in `web.md`'s closing "everything else" entry)
 - every `__init__.py` (one collective line at the end of `server.md`)
 
 **2. Map entries whose file no longer exists.** Entries are written relative to a convenient
-root (`app/api/routes_jobs.py`, `studio/Knob.tsx`, `src/App.tsx`), so match by path suffix:
+root (`app/api/routes_jobs.py`, `controls/Knob.tsx`, `src/App.tsx`), so match by path suffix:
 
 ```bash
 python3 - <<'PYEOF'
@@ -177,8 +177,8 @@ print("\n".join(stale) or "every entry resolves to a file")
 PYEOF
 ```
 
-Entries containing a `*` or ending in `/` describe a group (`app/*/__init__.py`,
-`studio/amps/`) and are skipped. `path/to/file.ext` from the entry template in
+Entries containing a `*` or ending in `/` describe a group (`app/*/__init__.py`)
+and are skipped. `path/to/file.ext` from the entry template in
 `docs/map/README.md` is not an entry — ignore it if a looser grep picks it up.
 
 **3. Broken links.** Both paths and `#anchors`, across every doc:

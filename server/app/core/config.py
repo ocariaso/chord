@@ -13,8 +13,15 @@ class Settings(BaseSettings):
 
     demucs_model: str = "htdemucs_6s"
     device: str = "cuda"
+    # How much of each chunk Demucs blends with its neighbours; 0.25 is Demucs' own default. Lower is faster, with more
+    # audible seams where chunks meet, so the default keeps separation quality as it was.
+    demucs_overlap: float = 0.25
 
     enable_chord_detection: bool = True
+
+    # Longer tracks are refused before separation: six decoded stems of a long mix outgrow what a
+    # browser tab can hold. The landing page's "up to 12 minutes" copy assumes the default; 0 disables.
+    max_duration_seconds: float = 720
 
     cors_origins: list[str] = ["http://localhost:5173"]
 

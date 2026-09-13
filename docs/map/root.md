@@ -10,7 +10,9 @@ chord/
 ├── docker-compose.gpu.yml
 ├── scripts/
 │   ├── start.sh
-│   └── stop.sh
+│   ├── stop.sh
+│   ├── start.cmd
+│   └── stop.cmd
 ├── server/          → server.md
 ├── web/             → web.md
 └── docs/            → this documentation
@@ -33,9 +35,10 @@ artifact and the SQLite database out of git.
 
 ### `.gitattributes`
 **Notes:** `* text=auto eol=lf`, plus `*.png` and `*.ico` as binary. LF normalization matters
-because [`scripts/`](../../scripts/) and
+because the `.sh` files in [`scripts/`](../../scripts/) and
 [`server/scripts/patch_madmom.sh`](../../server/scripts/patch_madmom.sh) are shell scripts that
-break with CRLF line endings.
+break with CRLF line endings. `*.cmd` is the one exception, checked out as CRLF: cmd.exe
+misparses batch files with LF endings (labels and `goto` in particular).
 
 ---
 
@@ -73,4 +76,15 @@ makes a no-op fast, and it prevents running a stale image). Prints the URL, usin
 bind mount, not a volume, so `down -v` wouldn't either. See
 [../data/retention.md](../data/retention.md#cleaning-up).
 
-Both scripts are marked executable in git (mode 100755).
+Both `.sh` scripts are marked executable in git (mode 100755).
+
+### `scripts/start.cmd` — Windows counterpart of `start.sh`
+**Notes:** the same steps in batch: `cd /d "%~dp0.."` to the repo root, the same two-part
+`nvidia-smi` probe, the same `docker compose … up -d --build --remove-orphans`, the same URL.
+Batch rather than PowerShell because the default execution policy refuses an unsigned `.ps1`.
+Messages use `-` instead of `—` and avoid parentheses, which would end the `if (…)` block they
+sit in. `PORT` is read from the environment (`$env:PORT = 9000` in PowerShell). Must be kept in
+step with `start.sh` by hand.
+
+### `scripts/stop.cmd` — Windows counterpart of `stop.sh`
+**Notes:** `docker compose down --remove-orphans` from the repo root.

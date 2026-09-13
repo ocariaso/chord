@@ -1,13 +1,22 @@
 @import "tailwindcss";
 
+/* The app is exactly one viewport and never scrolls: screens share out the height they're given instead. */
 html,
 body,
 #root {
   height: 100%;
+  overflow: hidden;
 }
 
+html {
+  background: var(--ch-well);
+}
+
+/* The design's canvas in tokens: a raised glow at the top left falling away to the well, sized to the viewport. */
 body {
   margin: 0;
+  background: radial-gradient(120% 90% at 18% 0%, var(--ch-panel-raised) 0%, var(--color-bg) 55%, var(--ch-well) 100%) top /
+    100% 100% no-repeat;
 }
 
 button:not(:disabled) {
@@ -16,23 +25,4 @@ button:not(:disabled) {
 
 button:disabled {
   cursor: not-allowed;
-}
-
-@keyframes marquee-loop {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(var(--marquee-distance, 0px));
-  }
-}
-
-@keyframes eq-bounce {
-  0%,
-  100% {
-    transform: scaleY(0.25);
-  }
-  50% {
-    transform: scaleY(1);
-  }
 }

@@ -16,30 +16,44 @@ Requires [Docker](https://www.docker.com/).
 ./scripts/stop.sh
 ```
 
+On Windows, from cmd or PowerShell:
+
+```powershell
+scripts\start.cmd
+scripts\stop.cmd
+```
+
 ## Folder structure
 
 ```
 chord/
-  server/                   FastAPI service: separation (Demucs), chord/key detection (madmom), lyrics
+  server/                   FastAPI service: separation (Demucs), tempo (librosa), chord/key detection (madmom), lyrics
     app/
       api/                  HTTP routes
       core/                 config
       db/                   SQLite access
       models/               pydantic schemas
-      pipeline/              separation, chords, lyrics, the job worker
+      pipeline/             separation, tempo, chords, lyrics, user-facing errors, the job worker
     scripts/                one-off setup scripts (e.g. patching madmom)
     data/                   gitignored, runtime-only: db.sqlite3, jobs/, models_cache/
     Dockerfile
   web/                      React + TypeScript + Vite SPA
+    scripts/                check-design.mjs, the design-rule check npm run lint runs
     src/
       api/                  server client
-      components/           Upload, Processing, and the Simple/Studio result views
-      hooks/                 job status, lyrics, dominant color, etc.
-      audio/                the Web Audio playback engine
+      audio/                the Web Audio engine, meter math, the time-stretch worklet
+      components/           shared pieces: screen card, dialog, cover art, footer, icons
+        controls/           faders, knobs, MUTE/SOLO toggles, stem waveforms
+      design/               the design's vocabulary: copy, player state, stems, stages, breakpoint
+      hooks/                job events, lyrics, slider and seek input, animation frames, etc.
+      screens/              landing, processing, failure; results with its Mixer, Console and Analog views
+      styles/               vendored Nocturne tokens and the ch- component layer
+      utils/                dB and pan/tone conversions, waveform peaks, transpose, time, etc.
     Dockerfile
     nginx.conf              serves the build and proxies /api to the server
   scripts/
     start.sh / stop.sh
+    start.cmd / stop.cmd    the same, for Windows
   docs/                     full documentation — see docs/README.md
   docker-compose.yml
   docker-compose.gpu.yml    override start.sh applies when an NVIDIA GPU is detected

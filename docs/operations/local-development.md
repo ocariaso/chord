@@ -24,7 +24,7 @@ Scripts, from [`package.json`](../../web/package.json):
 | --- | --- |
 | `npm run dev` | Vite dev server with HMR |
 | `npm run build` | `tsc -b && vite build` — **the type check is part of the build** |
-| `npm run lint` | oxlint |
+| `npm run lint` | oxlint, then [`scripts/check-design.mjs`](../../web/scripts/check-design.mjs), which checks `src/` against the design's rules: tokens and classes the vendored stylesheets define, no new colours or fonts, only `--v`, `--l`, `--p` and `--stem` set inline, no classes defined in app CSS ([the rules](../conventions/design.md)) |
 | `npm run preview` | serve the production build locally |
 
 ### The dev proxy
@@ -67,7 +67,38 @@ uvicorn app.main:app --reload --port 8787
 ```
 
 …or change `target` to `http://localhost:8000`, which is the likelier intent. This doc doesn't
-assume which, because either is a real choice — just be deliberate about it.
+assume which, because either is a real choice — be deliberate about it.
+
+### Secure-context features
+
+`http://localhost:5173` counts as a secure origin, so AudioWorklet — which pitch-preserving speed
+runs in — and the async Clipboard API both work. Reach the dev server from another device by LAN
+address (`npm run dev -- --host`) and neither does: the speed chip is disabled, and *Copy log*
+falls back to a hidden textarea and `document.execCommand("copy")`. The same applies to the Docker
+deployment reached by LAN address.
+
+### The design
+
+The UI was built from a design template that has since been removed. Its rules now live in
+[../conventions/design.md](../conventions/design.md), the design standard, and the screens in
+[`web/src/screens/`](../../web/src/screens/) are its reference implementation. To check a layout
+change, follow [Checking a UI change](../conventions/design.md#checking-a-ui-change);
+[Screens and their states](../conventions/design.md#screens-and-their-states) lists every state a
+screen has to render. The original template can still be read from git history, for example
+`git show "2a9783e:web/template/CHORD Template.dc.html"` or
+`git show 2a9783e:web/template/template/INSTRUCTIONS.md`.
+
+### Development-only behavior
+
+Two things happen under `npm run dev` that a production build never does:
+
+- **Stems download twice.** `StrictMode` runs `ResultsScreen`'s mount effect twice, so it creates a
+  `PlaybackEngine`, disposes it, and creates another. Nothing aborts the first engine's fetches —
+  they finish and are thrown away — so a finished job's six FLACs cross the network twice.
+- **Editing code can discard the job you're watching.** The discard beacon is sent from an effect
+  cleanup in `useJobEvents`, and React Fast Refresh re-runs effects when you save a module `App`
+  depends on — `App.tsx` itself, or a non-component module such as `useJobEvents.ts`. A running
+  job is cancelled; a finished one is deleted. Start a fresh job after such an edit.
 
 ## Server only
 
@@ -113,7 +144,8 @@ uvicorn app.main:app --reload --port 8000     # or 8787, per the mismatch above
 ```
 
 `--reload` restarts on code changes. Remember that a restart **drops the in-memory job queue** —
-any job mid-flight is orphaned in a non-terminal status. See
+any job mid-flight is orphaned in a non-terminal status, and cancelling then resuming it through
+the API is the only way to run it again. See
 [../data/retention.md](../data/retention.md#stale-rows).
 
 Python 3.10 specifically: the Dockerfile pins `python:3.10-slim`, and the patch script targets
@@ -121,16 +153,18 @@ Python 3.10 specifically: the Dockerfile pins `python:3.10-slim`, and the patch 
 
 ### System dependencies
 
-Needed on the host, not just in the image:
+Needed on the host as well as in the image:
 
 | Tool | Used by |
 | --- | --- |
 | `ffmpeg` | yt-dlp's audio extraction, cover-art extraction, thumbnail conversion, librosa decoding |
 | `ffprobe` | ID3 artist tag reading ([`metadata.py`](../../server/app/pipeline/metadata.py)) |
+| libsndfile | duration and format (`read_audio_info`), the source sample rate in `separation.py`, reading the vocals stem for the lyrics offset — shipped inside the `soundfile` wheel |
 | a C toolchain | madmom's Cython extensions |
 
-All three failure paths degrade gracefully rather than crashing — a missing `ffprobe` just means
-no `author`.
+The ffmpeg and ffprobe paths degrade rather than crash — a missing `ffprobe` means no `author`.
+libsndfile doesn't: a file it can't open fails the job, because nothing after that step can run
+without a duration.
 
 ## Both, without Docker
 
@@ -154,8 +188,10 @@ may not be writable by your user (or vice versa).
 
 ## First run is slow
 
-The first separation downloads the `htdemucs_6s` weights (several hundred MB) into
-`server/data/models_cache/`. Subsequent jobs reuse them. On CPU, expect several minutes per
+Outside Docker the weights aren't baked in. The first separation downloads `htdemucs_6s` (about
+53 MB) from the Hugging Face Hub into `~/.cache/huggingface` — not `server/data/models_cache/`,
+which demucs uses only on its fallback path — and logs the Hub's *unauthenticated requests*
+warning, which is harmless. Subsequent jobs reuse them. On CPU, expect several minutes per
 four-minute track after that.
 
 ## No test suite
@@ -164,7 +200,7 @@ There are no tests in either half, and no CI. The practical verification loop is
 
 ```bash
 cd web && npm run build      # tsc -b catches type errors; vite build catches the rest
-cd web && npm run lint       # oxlint
+cd web && npm run lint       # oxlint, then the design check
 ```
 
 and for the server, running a real job end to end. `GET /health` confirms the process is up;

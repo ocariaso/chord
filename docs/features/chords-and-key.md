@@ -1,21 +1,22 @@
 # Chords and key detection
 
-Produces the chord timeline and the key readout. Runs under `status=analyzing`, and is the one
-stage that can be switched off entirely (`ENABLE_CHORD_DETECTION=false`).
+Produces the chord timeline and the key readout. Runs beside separation, shows as
+`status=analyzing` only if it is still running once the stems are written, and is the one stage that
+can be switched off entirely (`ENABLE_CHORD_DETECTION=false`).
 
 ## Pipeline
 
-[`chords.py`](../../server/app/pipeline/chords.py) `analyze_audio(path)` returns
+[`chords.py`](../../server/app/pipeline/chords.py) `analyze_audio(signal)` returns
 `(list[ChordSegment], KeyEstimate)` using three madmom processors:
 
 ```
-audio file ──► CNNChordFeatureProcessor ──► features ──► CRFChordRecognitionProcessor
-                                                              │
-                                                    (start, end, "C#:min") triples
-                                                              │
-                                                    label normalization → ChordSegment[]
+decoded Signal ──► CNNChordFeatureProcessor ──► features ──► CRFChordRecognitionProcessor
+                                                                  │
+                                                        (start, end, "C#:min") triples
+                                                                  │
+                                                        label normalization → ChordSegment[]
 
-audio file ──► CNNKeyRecognitionProcessor ──► prediction vector
+decoded Signal ──► CNNKeyRecognitionProcessor ──► prediction vector
                                                     │
                                         key_prediction_to_label → "Db major"
                                                     │
@@ -27,7 +28,21 @@ decodes them into temporally smoothed segments. Running the CNN alone would give
 per-frame labels rather than the clean segment boundaries the timeline needs.
 
 All three processors are lazily constructed module-level singletons, the same pattern as the
-Demucs separator — construction loads model data and is not cheap.
+Demucs separator — construction loads model data and is not cheap. `load_models()` builds them in
+the worker's warm-up, before the first job.
+
+The `Signal` is the job's one decode of the original mix, from
+[`decode.decode_mono`](../../server/app/pipeline/decode.py): mono at 44.1 kHz, the shape both models
+read, so their `SignalProcessor` passes it through untouched and the file is decoded once for chords,
+key and tempo instead of three times. Measured against the old path-based calls, the chord features,
+key prediction and segments are byte-identical.
+
+Analysis runs on the job's analysis thread, started with separation, right after tempo detection
+and on the same decode. If it is still running once the stems are written, `run_job` writes
+`status=analyzing`, progress `0.9` and *Detecting chords and key* while it waits; if it finished
+during separation, the job never reports `analyzing` at all. `chords.json` and `key.json` are
+written by `run_job` on the worker thread once the result is collected, so a cancelled run's
+analysis writes nothing — though it can't be stopped, and finishes unread.
 
 ## Label normalization
 
@@ -40,7 +55,7 @@ normalized on the way in. Everything downstream of this module deals only in sha
 | --- | --- |
 | `C:maj` | `C` |
 | `C:min` | `Cm` |
-| `N` | `N` (no chord — the UI renders it as `-`) |
+| `N` | `N` (no chord — the UI renders it as `—`) |
 | anything else, e.g. `C:7` | `C7` (root + quality appended verbatim) |
 
 **Key labels**: the key model names some keys with flats (`Db major`). `_FLAT_TO_SHARP` maps all
@@ -80,11 +95,12 @@ Note that `total_duration` matches on **root only**, via `_ROOT_RE` — so `C`, 
 which exact chord.
 
 `confidence` is carried over unchanged even when the key is flipped, so the number does not
-reflect the swap.
+reflect the swap. That now shows: the analysis bar prints it next to the key as *NN% confident*,
+and after a flip that percentage is the model's confidence in the key it originally chose.
 
-This is a heuristic and can be wrong on modal or chromatic material. The UI's answer to that is
-the manual [transpose](transpose.md) control, whose tooltip says so explicitly: *"Adjust the key
-if detected wrong. This will transpose the chords accordingly."*
+This is a heuristic and can be wrong on modal or chromatic material. The UI's answer is the manual
+[transpose](transpose.md) control beside the key, whose hint reads *semitones · chords follow* —
+shifting it moves the key label and every chord together.
 
 ## Outputs, and where each one goes
 
@@ -103,37 +119,66 @@ artifact; it's the only place the structured `{key, mode, confidence}` survives.
 
 `ChordSegment.confidence` is **hardcoded to `1.0`** for every segment. The field exists in the
 schema and crosses the wire, but carries no information — the CRF decoder's per-segment
-likelihood isn't extracted. Nothing in the UI reads it.
+likelihood isn't extracted. Nothing in the UI reads it. (`key_confidence`, by contrast, is
+displayed.)
 
 ## Turning it off
 
 `ENABLE_CHORD_DETECTION=false` makes `run_job` skip the whole block: no `analyzing` status, no
 `analysis/` directory, no `key_estimate`. Jobs still complete with stems and tempo. On the
-client, `getChords` then 404s, the `.catch` leaves `chordSegments` empty, and `ChordTimeline`
-returns `null` early (`if (segments.length === 0) return null`) — so the Simple view simply has
-no timeline and the Studio LCD shows `—`. Nothing errors.
+client, `getChords` then 404s, `ResultsScreen`'s `.catch` stores `null`, and the chord bar replaces
+the strip with *No chord analysis for this track.*; the chord readout shows `—`, and the key reads
+`—` with no confidence. Nothing errors.
 
 This is also the escape hatch if madmom's install breaks; see
 [madmom is patched in place](../architecture/decisions.md#madmom-is-patched-in-place).
 
 ## Client rendering
 
-Fetched once per job in `StemMixer` and passed to both views.
+`ResultsScreen` fetches the segments once per job and holds a three-state value: `undefined` while
+the request is out, `null` when there is no analysis, otherwise the list. Everything is drawn by
+[`ChordBar.tsx`](../../web/src/screens/results/ChordBar.tsx), which renders once above whichever
+[view](results-views.md) is showing; the key is drawn by
+[`AnalysisBar.tsx`](../../web/src/screens/results/AnalysisBar.tsx). Both look the same at every
+width.
 
-- **Simple** — [`ChordTimeline.tsx`](../../web/src/components/ChordTimeline.tsx): the active
-  chord large, the next five progressively dimmed (`UPCOMING_OPACITY`), plus a proportional
-  segment bar where each segment's width is `(end - start) / duration` and the active one takes
-  the accent color. A white playhead is positioned by percentage, and `useSeekDrag` on the bar
-  makes it click-and-drag seekable.
-- **Studio** — [`MasterUnit.tsx`](../../web/src/components/studio/MasterUnit.tsx): the same data
-  on a simulated LCD, in Orbitron with a green text-shadow glow, upcoming chords fading through
-  a hardcoded green ramp (`UPCOMING_COLORS`).
+**The readout row.** The active chord in `.ch-chord-now`, then the next three chords — skipping
+`N` segments — stepping down through the neutral ramp (500, 600, 700), then `m:ss / m:ss` at the end
+of the row. Where no segment is active, or the active segment is `N`, the readout is `—`.
 
-Both find the active chord with the same linear scan:
+**The strip.** `.ch-chordstrip` holds one `.ch-chord` per segment, each with `flex: end − start`,
+so widths are proportional to duration. Spacers before the first segment and after the last keep
+those gaps at their share, since the strip spans the whole track (`max(duration, last end)`). The
+active segment takes `.is-current` (an accent fill) and earlier ones `.is-past`.
 
-```ts
-segments.findIndex((s) => currentTime >= s.start && currentTime < s.end)
-```
+A segment shows its label only when there is room: its width in pixels — from the strip's
+`ResizeObserver`-measured width — must be at least `7 px × label length + 8 px`, and `N` segments
+never show one. The reason is in the code: a clipped label would read as a different chord (`C#m7`
+cut to `C#`). Labels are the transposed ones, and so is the length used for the room check. A
+segment carries no hover `title`, so a chord too narrow for its label is a blank on the strip; the
+readout row names it only once it is current or one of the next three.
 
-Run every animation frame, on a few hundred segments. Fine in practice; the first thing to
-optimize if the timeline ever gets long.
+On the strip sits the playhead (`--p`) and nothing else: an A–B loop isn't marked there (see
+[speed and loop](speed-and-loop.md#ab-loop)). The strip seeks on press and drag through
+[`useSeekDrag`](../../web/src/hooks/useSeekDrag.ts); it is `aria-hidden`, because the transport's
+seek slider is the accessible way to seek.
+
+**The key.** `transposeKeyLabel(key_estimate, transpose)` in 26 px, or `—`, followed by
+`Math.round(key_confidence × 100)% confident` when a confidence exists.
+
+The chord bar takes `getTime`, not a time, and reads the clock every animation frame through
+`useClockValue`. Two binary searches over the sorted segments give what the bar shows: `endedCount`
+(how many segments have ended — every one before it is `.is-past`) and `activeSegment` (the one
+playing, or −1 before the first chord and in a gap). The bar renders only when one of those, the
+`m:ss` readout or the lyric line changes (see [rendering cost](results-views.md#rendering-cost)), and
+each render rebuilds every segment's label and width. The strip's playhead moves through
+`usePlayhead`, without a render. In a gap between chords, the next-three list starts after the
+segments already ended.
+
+## Known gaps
+
+- `ChordSegment.confidence` is a constant, and `key_confidence` isn't corrected after a relative-key
+  flip.
+- `key.json` is unserved.
+- A segment too narrow for its label has no hover `title`, so it can't be read on the strip.
+- Sharps only, in both the key and the chords.

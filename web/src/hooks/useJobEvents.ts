@@ -1,53 +1,55 @@
-import { useEffect, useRef, useState } from "react";
-import { discardJobUrl, getJob, jobEventsUrl, type Job } from "../api/client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError, discardJobUrl, getJob, jobEventsUrl, type Job } from "../api/client";
+import { processingStage } from "../design/stages";
 
 const TERMINAL_STATUSES = new Set(["done", "error", "cancelled"]);
+export const MAX_RECONNECT_ATTEMPTS = 10;
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 10_000;
 
-/** Tracks a job's live status via SSE. */
-export function useJobEvents(jobId: string | null): { job: Job | null; error: string | null } {
+export type ConnectionState =
+  | { status: "live" }
+  | { status: "retrying"; attempt: number; lastError: string }
+  | { status: "failed"; lastError: string; notFound: boolean };
+
+const LIVE: ConnectionState = { status: "live" };
+
+/**
+ * Tracks a job's live status via SSE, reconnecting with backoff when the stream drops. `reconnect`
+ * resubscribes at once — pass the job a call just returned (a resume) to show it before the stream does.
+ * `stageSnapshots` holds the first update seen in each processing stage, so the screen can time them.
+ */
+export function useJobEvents(jobId: string | null): {
+  job: Job | null;
+  connection: ConnectionState;
+  stageSnapshots: Record<number, Job>;
+  reconnect: (latest?: Job) => void;
+} {
   const [job, setJob] = useState<Job | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Keyed by job so a new job never inherits the previous one's connection trouble or stage timings.
+  const [connection, setConnection] = useState<{ jobId: string | null; state: ConnectionState }>({ jobId: null, state: LIVE });
+  const [snapshots, setSnapshots] = useState<{ jobId: string | null; byStage: Record<number, Job> }>({
+    jobId: null,
+    byStage: {},
+  });
+  const [generation, setGeneration] = useState(0);
   const statusRef = useRef<string | null>(null);
 
+  const deliver = useCallback((next: Job, restart = false) => {
+    setJob(next);
+    statusRef.current = next.status;
+    const stage = processingStage(next);
+    setSnapshots((current) => {
+      const sameRun = current.jobId === next.id && !restart;
+      if (sameRun && current.byStage[stage]) return current;
+      return { jobId: next.id, byStage: { ...(sameRun ? current.byStage : {}), [stage]: next } };
+    });
+  }, []);
+
+  // Discard sits in its own effect, keyed on the job alone, so reconnecting can never fire it.
   useEffect(() => {
-    if (!jobId) {
-      setJob(null);
-      setError(null);
-      statusRef.current = null;
-      return;
-    }
-
+    if (!jobId) return;
     const currentJobId = jobId;
-    let cancelled = false;
-    setError(null);
-    statusRef.current = null;
-
-    getJob(currentJobId)
-      .then((initial) => {
-        if (!cancelled) {
-          setJob(initial);
-          statusRef.current = initial.status;
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message);
-      });
-
-    const source = new EventSource(jobEventsUrl(currentJobId));
-
-    source.onmessage = (event) => {
-      const data: Job = JSON.parse(event.data);
-      if (cancelled) return;
-      setJob(data);
-      statusRef.current = data.status;
-      if (TERMINAL_STATUSES.has(data.status)) {
-        source.close();
-      }
-    };
-
-    source.onerror = () => {
-      source.close();
-    };
 
     // Cleans this job up on the server when the page is left, instead of leaving it orphaned.
     function discardOnLeave() {
@@ -57,14 +59,104 @@ export function useJobEvents(jobId: string | null): { job: Job | null; error: st
     }
 
     window.addEventListener("pagehide", discardOnLeave);
-
     return () => {
-      cancelled = true;
-      source.close();
       window.removeEventListener("pagehide", discardOnLeave);
       discardOnLeave();
     };
   }, [jobId]);
 
-  return { job, error };
+  useEffect(() => {
+    if (!jobId) {
+      statusRef.current = null;
+      return;
+    }
+
+    const currentJobId = jobId;
+    let cancelled = false;
+    let source: EventSource | null = null;
+    let retryTimer: number | undefined;
+    let attempt = 0;
+
+    function report(state: ConnectionState) {
+      setConnection({ jobId: currentJobId, state });
+    }
+
+    function scheduleRetry(lastError: string) {
+      attempt++;
+      if (attempt > MAX_RECONNECT_ATTEMPTS) {
+        report({ status: "failed", lastError, notFound: false });
+        return;
+      }
+      report({ status: "retrying", attempt, lastError });
+      const delay = Math.min(RECONNECT_MAX_DELAY_MS, RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1));
+      retryTimer = window.setTimeout(connect, delay);
+    }
+
+    function openStream() {
+      const stream = new EventSource(jobEventsUrl(currentJobId));
+      source = stream;
+      stream.onmessage = (event) => {
+        const data: Job = JSON.parse(event.data);
+        if (cancelled) return;
+        deliver(data);
+        attempt = 0;
+        report(LIVE);
+        if (TERMINAL_STATUSES.has(data.status)) {
+          stream.close();
+        }
+      };
+      stream.onerror = () => {
+        // EventSource would retry on its own with nothing to resume from; take over instead.
+        stream.close();
+        if (cancelled || TERMINAL_STATUSES.has(statusRef.current ?? "")) return;
+        scheduleRetry("The progress stream closed unexpectedly");
+      };
+    }
+
+    function connect() {
+      getJob(currentJobId)
+        .then((current) => {
+          if (cancelled) return;
+          deliver(current);
+          if (TERMINAL_STATUSES.has(current.status)) {
+            report(LIVE);
+          } else {
+            openStream();
+          }
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          const message = error instanceof Error ? error.message : String(error);
+          if (error instanceof ApiError && error.status === 404) {
+            // The job is gone; retrying can't bring it back.
+            report({ status: "failed", lastError: message, notFound: true });
+            return;
+          }
+          scheduleRetry(message);
+        });
+    }
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      source?.close();
+      window.clearTimeout(retryTimer);
+    };
+  }, [jobId, generation, deliver]);
+
+  const reconnect = useCallback(
+    (latest?: Job) => {
+      if (latest) deliver(latest, true);
+      setGeneration((value) => value + 1);
+    },
+    [deliver]
+  );
+
+  return {
+    job: job && job.id === jobId ? job : null,
+    connection: connection.jobId === jobId ? connection.state : LIVE,
+    stageSnapshots: snapshots.jobId === jobId ? snapshots.byStage : {},
+    reconnect,
+  };
 }

@@ -1,6 +1,6 @@
 import re
-from pathlib import Path
 
+from madmom.audio.signal import Signal
 from madmom.features.chords import CNNChordFeatureProcessor, CRFChordRecognitionProcessor
 from madmom.features.key import CNNKeyRecognitionProcessor, key_prediction_to_label
 
@@ -76,16 +76,23 @@ def _resolve_relative_ambiguity(key_estimate: KeyEstimate, segments: list[ChordS
     return key_estimate
 
 
-def analyze_audio(audio_path: Path) -> tuple[list[ChordSegment], KeyEstimate]:
+def load_models() -> None:
+    """Builds the chord and key networks now, rather than inside the first job."""
+    _get_chord_processors()
+    _get_key_processor()
+
+
+def analyze_audio(signal: Signal) -> tuple[list[ChordSegment], KeyEstimate]:
+    """Chords and key from the mono 44.1 kHz Signal `decode.decode_mono` returns, which both models take as it is."""
     feature_proc, decode_proc = _get_chord_processors()
-    features = feature_proc(str(audio_path))
+    features = feature_proc(signal)
     raw_chords = decode_proc(features)
     segments = [
         ChordSegment(start=float(start), end=float(end), chord=_madmom_label_to_chord(label), confidence=1.0)
         for start, end, label in raw_chords
     ]
 
-    prediction = _get_key_processor()(str(audio_path))
+    prediction = _get_key_processor()(signal)
     key_name, mode = key_prediction_to_label(prediction).rsplit(" ", 1)
     key_estimate = KeyEstimate(key=_normalize_root(key_name), mode=mode, confidence=float(prediction.max()))
     key_estimate = _resolve_relative_ambiguity(key_estimate, segments)
