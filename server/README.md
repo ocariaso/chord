@@ -1,4 +1,4 @@
-# CHORD backend
+# CHORD server
 
 FastAPI service that separates an uploaded MP3 into stems (Demucs) and detects
 chords/key (madmom). Runs locally against the machine's GPU; designed to be

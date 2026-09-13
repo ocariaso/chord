@@ -20,7 +20,7 @@ Requires [Docker](https://www.docker.com/).
 
 ```
 chord/
-  backend/                  FastAPI service: separation (Demucs), chord/key detection (madmom), lyrics
+  server/                   FastAPI service: separation (Demucs), chord/key detection (madmom), lyrics
     app/
       api/                  HTTP routes
       core/                 config
@@ -30,16 +30,31 @@ chord/
     scripts/                one-off setup scripts (e.g. patching madmom)
     data/                   gitignored, runtime-only: db.sqlite3, jobs/, models_cache/
     Dockerfile
-  frontend/                 React + TypeScript + Vite SPA
+  web/                      React + TypeScript + Vite SPA
     src/
-      api/                  backend client
+      api/                  server client
       components/           Upload, Processing, and the Simple/Studio result views
       hooks/                 job status, lyrics, dominant color, etc.
       audio/                the Web Audio playback engine
     Dockerfile
-    nginx.conf              serves the build and proxies /api to the backend
+    nginx.conf              serves the build and proxies /api to the server
   scripts/
     start.sh / stop.sh
+  docs/                     full documentation — see docs/README.md
   docker-compose.yml
   docker-compose.gpu.yml    override start.sh applies when an NVIDIA GPU is detected
 ```
+
+## Documentation
+
+[`docs/`](docs/) covers the system in depth, one folder per category:
+
+| | |
+| --- | --- |
+| [docs/map/](docs/map/) | file-by-file index — [tasks.md](docs/map/tasks.md) routes "change X" to the files involved |
+| [docs/architecture/](docs/architecture/) | how it fits together, and [why](docs/architecture/decisions.md) |
+| [docs/features/](docs/features/) | each capability end to end |
+| [docs/api/](docs/api/) | HTTP reference |
+| [docs/data/](docs/data/) | schema, on-disk layout, retention |
+| [docs/operations/](docs/operations/) | Docker, configuration, local dev, troubleshooting |
+| [docs/conventions/](docs/conventions/) | the code style used here |

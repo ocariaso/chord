@@ -2,14 +2,14 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
+SERVER_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    data_dir: Path = BACKEND_DIR / "data"
-    db_path: Path = BACKEND_DIR / "data" / "db.sqlite3"
-    jobs_dir: Path = BACKEND_DIR / "data" / "jobs"
-    models_cache_dir: Path = BACKEND_DIR / "data" / "models_cache"
+    data_dir: Path = SERVER_DIR / "data"
+    db_path: Path = SERVER_DIR / "data" / "db.sqlite3"
+    jobs_dir: Path = SERVER_DIR / "data" / "jobs"
+    models_cache_dir: Path = SERVER_DIR / "data" / "models_cache"
 
     demucs_model: str = "htdemucs_6s"
     device: str = "cuda"

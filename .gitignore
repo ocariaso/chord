@@ -1,15 +1,19 @@
-.claude/
+# Ignore local Claude Code state, but keep project skills version-controlled so the
+# docs-map rule persists for everyone. (Must be `.claude/*`, not `.claude/`: git cannot
+# re-include a path inside an excluded directory.)
+.claude/*
+!.claude/skills/
 .scratch/
 
-# backend
-backend/.venv/
-backend/data/
-backend/__pycache__/
-backend/**/__pycache__/
+# server
+server/.venv/
+server/data/
+server/__pycache__/
+server/**/__pycache__/
 *.pyc
 .env
 .env.*
 
-# frontend
-frontend/node_modules/
-frontend/dist/
+# web
+web/node_modules/
+web/dist/

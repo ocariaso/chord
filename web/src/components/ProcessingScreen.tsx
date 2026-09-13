@@ -7,7 +7,7 @@ interface ProcessingScreenProps {
   job: Job | null;
   connectionError: string | null;
   onRetry: () => void;
-  /** Overrides the default cancelJob call, for reuse where there's no backend job to cancel. */
+  /** Overrides the default cancelJob call, for reuse where there's no server job to cancel. */
   onCancel?: () => void;
 }
 
