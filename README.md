@@ -1,7 +1,7 @@
+## CHORD
 Component Harmony & Orchestral Retrieval Decoder
 
-<img width="1586" height="2670" alt="image" src="https://github.com/user-attachments/assets/b5ddb9e6-321e-4fc0-b709-b94f2e91ccd7" />
-
+<img width="4456" height="888" alt="image" src="https://github.com/user-attachments/assets/475c8a8a-fc8a-493b-912b-2df4e72bdc5b" />
 
 ## How to run
 
