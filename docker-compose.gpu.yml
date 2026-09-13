@@ -1,5 +1,5 @@
 services:
-  backend:
+  server:
     build:
       args:
         TORCH_INDEX_URL: https://download.pytorch.org/whl/cu124

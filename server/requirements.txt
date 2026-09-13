@@ -1,0 +1,17 @@
+# Install PyTorch + torchaudio separately first, matched to your CUDA driver version — see README.md.
+# e.g. pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+demucs
+# Installed by demucs anyway, but separation.py imports it directly to resample stems.
+julius
+librosa
+soundfile
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic-settings
+yt-dlp
+httpx
+
+# madmom needs special install steps (system headers, --no-build-isolation,
+# and a couple of compatibility patches) — see README.md, not a plain pip line.

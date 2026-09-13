@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* The app is exactly one viewport and never scrolls: screens share out the height they're given instead. */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+html {
+  background: var(--ch-well);
+}
+
+/* The design's canvas in tokens: a raised glow at the top left falling away to the well, tinted per track. */
+body {
+  margin: 0;
+  background: radial-gradient(120% 90% at 18% 0%, var(--page-ground-1) 0%, var(--page-ground-2) 55%, var(--page-ground-3) 100%) top /
+    100% 100% no-repeat;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Scrolls a title that's too long for its container, looping over two back-to-back copies of the text. */
+@keyframes chord-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}

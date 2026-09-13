@@ -1,22 +1,29 @@
+name: chord
+
 services:
-  backend:
+  server:
     build:
-      context: ./backend
+      context: ./server
       args:
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    image: chord-server
+    container_name: chord-server
     environment:
       DEVICE: ${DEVICE:-cpu}
+      JOB_TTL_HOURS: ${JOB_TTL_HOURS:-24}
     volumes:
-      - ./backend/data:/app/data
+      - ./server/data:/app/data
     expose:
       - "8000"
     restart: unless-stopped
 
-  frontend:
+  web:
     build:
-      context: ./frontend
+      context: ./web
+    image: chord-web
+    container_name: chord-web
     ports:
       - "${PORT:-8080}:80"
     depends_on:
-      - backend
+      - server
     restart: unless-stopped
