@@ -21,7 +21,7 @@ The shape returned by every endpoint on this page. Defined in
   "error_log": null,                // the technical detail behind it, if there is any
   "stems_model": null,              // ALWAYS null — see below
   "duration_seconds": 214.6,        // written when separation starts; null before
-  "audio_format": "FLAC 24/48",     // written with duration_seconds; "MP3 44.1 kHz" for lossy sources
+  "audio_format": "FLAC 24/48",     // "MP3 44.1 kHz" for a lossy upload, "OPUS 48 kHz" for a link — see below
   "key_estimate": null,             // "<root> <mode>", sharps only, e.g. "A# minor" — set with "done"
   "key_confidence": null,           // set with "done"
   "tempo_bpm": null,                // one decimal place — set with "done"; null if no beat was found
@@ -40,9 +40,21 @@ Fields that behave unexpectedly:
 - **`stem_names` is not a directory listing.** `_row_to_response` returns the constant
   `STEM_NAMES` (all six) when `status == "done"`, and `[]` otherwise. A job that produced fewer
   stems would still advertise six. The zip endpoint, by contrast, globs the real directory.
-- **`has_thumbnail` is a `stat` on every serialization**, including each 0.5 s SSE tick.
+- **`has_thumbnail` is a `stat` on every serialization**, including each 0.25 s SSE tick. For an
+  upload it turns true a moment *after* `status` becomes `separating`: the embedded cover is
+  extracted beside separation, not before it.
+- **`audio_format` describes an upload's file and a link's source.** An upload's is read from the
+  file when separation starts, with `duration_seconds`: `"FLAC 24/48"`, `"MP3 44.1 kHz"`. A link's
+  audio is converted to FLAC on the way in, so its label is written earlier — with the title, when
+  the download finishes — and names the codec it arrived in, without a bit depth: `"OPUS 48 kHz"`,
+  `"AAC 44.1 kHz"`. A link whose codec yt-dlp doesn't report gets the converted file's own label,
+  `"FLAC 16/48"`, which says nothing of a lossy source. See
+  [../features/ingest.md](../features/ingest.md#the-download).
+- **`author` can arrive after `separating`.** An upload's artist tag is read beside separation
+  too.
 - **`progress` is only partly a measurement.** During separation it follows Demucs' own chunk
-  progress across 0.10–0.85, written at most once per percentage point. Everywhere else it is a
+  progress across 0.10–0.85, written at most once per percentage point and at most every 0.25 s.
+  Everywhere else it is a
   fixed step: `0 → 0.05` (download) `→ 0.10 … 0.85` (separation) `→ 0.85` (tempo) `→ 0.90`
   (chords and key) `→ 1.0`. An upload never shows 0.05. Tempo, chord and key detection run beside
   separation, so the 0.85 and 0.90 steps — and `status: "analyzing"` — are written only for a step
@@ -172,7 +184,7 @@ were relaxed.
 **Response** — `200`, `JobResponse`. `404` *"Job not found"*.
 
 `useJobEvents` calls it on every connection attempt, before opening the SSE stream, so the screen
-has data without waiting up to 500 ms for the first tick. A 404 here is what ends reconnection:
+has data without waiting for the stream's first event. A 404 here is what ends reconnection:
 the client shows *Job not found* instead of retrying.
 
 ## `GET /jobs/{job_id}/events`
@@ -194,9 +206,11 @@ data: {"id":"3f2a…","status":"done","progress":1.0,…}
 
 Semantics:
 
-- The row is re-read every **0.5 s**; an event is emitted only when the serialized JSON
-  **changed**. Since `updated_at` moves on every write, no write is deduplicated away — but
-  several writes inside one 0.5 s window arrive as a single event showing the last of them.
+- The row is re-read every **0.25 s** (`_EVENT_POLL_SECONDS`); an event is emitted only when the
+  serialized JSON **changed**. Since `updated_at` moves on every write, no write is deduplicated
+  away — but several writes inside one 0.25 s window arrive as a single event showing the last of
+  them. The pipeline writes separation progress no faster than that, so those arrive one for one.
+  A finished job is seen an eighth of a second after it finishes, on average.
 - The first event goes out on the first read, so a client that reconnects always receives the
   current state.
 - The stream **closes** once the status is terminal. Clients should not expect a sentinel event.
@@ -272,7 +286,7 @@ started with — so the old run can't overwrite the new one, and stops at its ne
 
 | Artifact | On resume |
 | --- | --- |
-| `original.mp3` of a URL job | kept — the download is skipped when the file exists, and the title and author it found are already on the row |
+| `original.flac` of a URL job | kept — the download is skipped when the file exists, and the title, author and `audio_format` it found are already on the row. A job directory from before link audio was kept as FLAC holds `original.mp3` instead, and downloads again |
 | `thumbnail.jpg` | kept — extraction only runs when it's missing |
 | `stems/` | kept when every `STEM_NAMES` FLAC is there, and separation is skipped; otherwise separation runs again from the start |
 | tempo, chords, key | always recomputed |
@@ -285,8 +299,8 @@ resumed directly either, but cancelling it first makes it resumable — the reco
 Two details keep a resume from losing or repeating work:
 
 - **A URL job cancelled while `fetching` keeps its real title.** The download finishes
-  regardless, and the write that sets `original_filename` and `author` from yt-dlp's metadata is
-  the one pipeline write not scoped to the attempt, so it lands on the cancelled row. The resumed
+  regardless, and the write that sets `original_filename`, `author` and `audio_format` from yt-dlp's
+  metadata is the one pipeline write not scoped to the attempt, so it lands on the cancelled row. The resumed
   run skips the download but already has them — for the results header, the export filenames and
   the lyrics lookup.
 - **A job resumed while its first queue entry still waits runs once.** Resuming a job that was

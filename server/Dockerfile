@@ -36,5 +36,11 @@ COPY app app
 RUN groupadd -g 1000 chord && useradd -u 1000 -g chord -m chord && chown -R chord:chord /app
 USER chord
 
+# numba compiles librosa's helpers the first time each one runs and keeps the result in ~/.cache/numba. Run here, as
+# the user the server runs as, that cache is part of the image; left to the server, every new container compiled them
+# again before its first job. numba keys the cache on the CPU it compiled for, so an image started on a different
+# processor compiles once more there.
+RUN python -c "from app.pipeline import tempo; tempo.warm_up()"
+
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

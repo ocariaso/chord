@@ -45,27 +45,27 @@ everything it writes is scoped to that attempt — see [Resuming](#resuming).
                          row missing, or not queued? → return
                          attempt = row.attempt
                                          │
-               source_url set? ─── yes ──┼─► original.mp3 already there (a resume)? → skip this
+               source_url set? ─── yes ──┼─► original.flac already there (a resume)? → skip this
                                          │   fetching  progress 0.05  "Downloading audio"
-                                         │   yt-dlp → original.mp3 (refused first if metadata says too long)
-                                         │   UPDATE original_filename=title, author=uploader  (unscoped)
-                                         │
-                                    no ──┼─► ffprobe ID3 artist → UPDATE author (if found)
+                                         │   yt-dlp → original.flac (refused first if metadata says too long)
+                                         │   UPDATE original_filename=title, author=uploader,
+                                         │          audio_format=source codec  (unscoped)
                                          │
                        [checkpoint: superseded? → return]
                                          │
-                           thumbnail.jpg missing? → ffmpeg embedded cover art
                            soundfile → duration, format label
                            longer than max_duration_seconds? → TrackTooLongError
                                          │
                                          ├─► separating  progress 0.10  "Separating stems"
-                                         │   same UPDATE: duration_seconds, audio_format
+                                         │   same UPDATE: duration_seconds (and audio_format, for an upload)
                                          │   start the chord-analysis thread, which runs beside all of this:
+                                         │     upload: ffprobe ID3 artist → UPDATE author (if found)
+                                         │     thumbnail.jpg missing? → ffmpeg embedded cover art
                                          │     decode the original once → librosa tempo
                                          │                              → madmom chords + key (if enabled)
                                          │   stems/ complete? → skip separation
                                          │   else Demucs → stems.partial/ → renamed to stems/
-                                         │     progress 0.10 → 0.85 as chunks start, ≤ 1 write per 1%
+                                         │     progress 0.10 → 0.85 as chunks start, ≤ 1 write per 1% and per 0.25 s
                                          │     at a chunk start, every ≥ 2 s: superseded? → abandon
                                          │
                        [checkpoint: superseded? → return]
@@ -89,9 +89,9 @@ everything it writes is scoped to that attempt — see [Resuming](#resuming).
 
 Every `UPDATE` in the diagram but one is `_update_job(job_id, attempt, …)`, which appends
 `WHERE id = ? AND attempt = ? AND status != 'cancelled'`. A write from a run that was cancelled,
-deleted or resumed past matches no row and does nothing. The exception is the title and author a
-download finds: `_record_track_identity` writes them by id alone, so they land even when the run
-has been cancelled — see [Resuming](#resuming). A checkpoint is `_is_superseded(job_id, attempt)`:
+deleted or resumed past matches no row and does nothing. The exception is the title, author and
+source format a download finds: `_record_track_identity` writes them by id alone, so they land even
+when the run has been cancelled — see [Resuming](#resuming). A checkpoint is `_is_superseded(job_id, attempt)`:
 true when the row is gone, is `cancelled`, or carries a different attempt. The first check, before
 anything else, is stricter: `run_job` returns unless the row is `queued`.
 
@@ -120,9 +120,11 @@ writing anything.
 ### Why the results are batched
 
 `tempo_bpm`, `key_estimate` and `key_confidence` accumulate in a local `done_fields` dict and are
-written in the *same* `UPDATE` that sets `status=done`. `duration_seconds` and `audio_format` go
-out earlier, in the update that sets `status=separating`, so the processing screen can show them
-while separation runs (`original_filename` and `author` are earlier still). Either way the
+written in the *same* `UPDATE` that sets `status=done`. `duration_seconds` and an upload's
+`audio_format` go out earlier, in the update that sets `status=separating`, so the processing screen
+can show them while separation runs. A link's `original_filename`, `author` and `audio_format` are
+earlier still, written when its download finishes; an upload's `author` comes a moment after
+`separating`, from the analysis thread. Either way the
 terminal status is a complete-data guarantee: a client that sees `done` has already received every
 result field, in that payload or a previous one. It's what lets the SSE stream break immediately
 on a terminal status without a final re-read, and what lets `App` switch to the results the
@@ -146,8 +148,15 @@ Separation fills 0.10 to 0.85 from its own chunk progress. `separation.separate(
 `(model index + chunk offset / shifted length) / models`; chunks run in order, so the starting
 chunk's offset is the share already done — and `_separation_progress` in
 [`pipeline.py`](../../server/app/pipeline/pipeline.py) maps it onto the span, writing the row only
-when progress has moved at least 1% — up to 75 writes. The last chunk runs with the bar short of
-0.85; the tempo update sets it, when there is one.
+when progress has moved at least 1% and at least 0.25 s (`_PROGRESS_WRITE_SECONDS`) have passed
+since the last write. That is at most 75 writes, and on a GPU fewer: the event stream reads the row
+every 0.25 s, so a faster write is one nobody sees, made by the thread that is driving the GPU. The
+last chunk runs with the bar short of 0.85; the tempo update sets it, when there is one.
+
+The same thread that runs analysis first reads an upload's artist tag and embedded cover
+(`_read_tags`). Those used to come before `separating`; they are cosmetic, and two ffmpeg starts
+ahead of any work cost every job about half a second. So `author` and `has_thumbnail` can change a
+moment *after* the row says `separating`.
 
 Because the processing screen times each stage by the first update it saw in it, those times now
 measure the wait that remained rather than the work: *Separating stems* ends at the next stage the
@@ -176,12 +185,13 @@ async def event_stream():
             last_payload = payload
         if response.status in TERMINAL_STATUSES:
             break
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(_EVENT_POLL_SECONDS)   # 0.25
 ```
 
 - Looks the job up once before the response starts, so an unknown id gets a real `404` rather
   than a `200` and a dropped connection.
-- Re-reads the row every 0.5 s; emits only when the serialized JSON changed.
+- Re-reads the row every 0.25 s; emits only when the serialized JSON changed. A finished job is
+  noticed half that long after it finishes, on average.
 - Breaks on a terminal status, closing the response — which is what the browser sees as the
   stream ending normally.
 - The `updated_at` column changes on every write, so any stage change — or a 1% step of
@@ -190,8 +200,8 @@ async def event_stream():
   inside an already-started response body. The client sees the connection drop.
 
 On the browser side, [`useJobEvents`](../../web/src/hooks/useJobEvents.ts) fetches
-`GET /jobs/{id}` once immediately (so the first paint has data rather than waiting up to 500 ms),
-then opens the `EventSource`. When the stream errors before a terminal status, the hook closes it
+`GET /jobs/{id}` once immediately (so the first paint has data rather than waiting for the stream
+to open), then opens the `EventSource`. When the stream errors before a terminal status, the hook closes it
 and starts over — `getJob`, then a new stream — after 1, 2, 4 and 8 seconds, then every 10
 seconds, for up to 10 attempts, while `App` shows *Connection lost* with the retry count. Each
 message resets the count. A 404 from `getJob` — including the one that follows a deleted job's
@@ -222,8 +232,8 @@ Cancellation is **cooperative**. It writes a row and nothing else:
   already running finishes on its own, unread, and can overlap the next job the worker picks up.
   Nothing it computes is written: `run_job` writes the analysis files and row fields itself.
 - Writes the cancelled run still attempts are dropped by `_update_job`'s `status != 'cancelled'`
-  guard, so the row stays `cancelled`. The one write that isn't guarded — the title and author a
-  finished download found — changes only those two columns.
+  guard, so the row stays `cancelled`. The one write that isn't guarded — the title, author and
+  source format a finished download found — changes only those three columns.
 - Files already written stay on disk: the original, `thumbnail.jpg`, a finished `stems/`. An
   abandoned separation leaves only an empty `stems.partial/`, which the next separation clears.
   Cancel does not clean up. `discard` does, and so does the
@@ -244,7 +254,7 @@ The new attempt reuses what the cancelled one finished:
 
 | Artifact | Reused when | Otherwise |
 | --- | --- | --- |
-| `original.mp3` (URL jobs) | the file exists | downloaded again |
+| `original.flac` (URL jobs) | the file exists | downloaded again — as it is for a job directory from before link audio was FLAC, which holds `original.mp3` |
 | `stems/` | all six `STEM_NAMES` FLACs are there | separated again — `stems/` is complete or absent, never partial |
 | tempo, chords, key | never | detected again |
 
@@ -257,7 +267,8 @@ starts once the old one has returned.
 Two more details keep a resume from losing or repeating work:
 
 - **A URL job cancelled during its download keeps its title.** The resumed run finds
-  `original.mp3` and skips the whole download block, so it can't learn the title and author again.
+  `original.flac` and skips the whole download block, so it can't learn the title, the author or
+  the codec the audio came in again.
   `_record_track_identity` therefore writes them straight after the download without the attempt
   guard — they describe the job however the run ended — and the results header, the export
   filenames and the lyrics lookup get the real title, not the URL.

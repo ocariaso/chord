@@ -19,9 +19,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     key_estimate      TEXT,                        -- "<root> <mode>", e.g. "A# minor"
     key_confidence    REAL,
     source_url        TEXT,                        -- set only for /jobs/from-url jobs
-    tempo_bpm         REAL,                        -- NULL when librosa found no beat
+    tempo_bpm         REAL,                        -- NULL when no tempo was found
     error_log         TEXT,                        -- the technical detail behind error_message
-    audio_format      TEXT,                        -- "FLAC 24/48", "MP3 44.1 kHz"
+    audio_format      TEXT,                        -- "FLAC 24/48", "MP3 44.1 kHz"; a link's source codec, "OPUS 48 kHz"
     attempt           INTEGER NOT NULL DEFAULT 0,  -- bumped by resume; not exposed by the API
     last_seen_at      TEXT,                        -- last heartbeat from an open page; not exposed by the API
     created_at        TEXT NOT NULL,               -- ISO-8601 UTC
@@ -58,10 +58,14 @@ from the migration. The two paths order columns differently — `ADD COLUMN` app
 - **`stage_message`** isn't touched by the error write, so a failed row keeps the stage message
   it last had — unless the run failed while reading the audio, between the download and
   separation, when the error write sets it to `NULL`. A resume clears it too.
-- **`duration_seconds` and `audio_format`** come from `metadata.read_audio_info` and are written
-  in the same `UPDATE` that sets `status='separating'`, so the processing screen can show them
-  while separation runs. `audio_format` is `"<format> <bits>/<kHz>"` for PCM subtypes
-  (`"FLAC 24/48"`) and `"<format> <kHz> kHz"` otherwise (`"MP3 44.1 kHz"`).
+- **`duration_seconds` and `audio_format`** come from `metadata.read_audio_info`.
+  `duration_seconds` is written in the same `UPDATE` that sets `status='separating'`, and so is an
+  upload's `audio_format`, so the processing screen can show them while separation runs.
+  `audio_format` is `"<format> <bits>/<kHz>"` for PCM subtypes (`"FLAC 24/48"`) and
+  `"<format> <kHz> kHz"` otherwise (`"MP3 44.1 kHz"`). **A link's `audio_format` is written
+  earlier, with its title and author**, by the one write that isn't scoped to the attempt: it names
+  the codec the audio arrived in (`"OPUS 48 kHz"`), which only the download knows, since the file
+  on disk is a FLAC either way. A resume doesn't clear it.
 - **`attempt`** starts at 0 and is incremented by `POST /jobs/{id}/resume`. `run_job` returns at
   once unless the row is `queued`, reads `attempt` then, and makes every write but one
   `WHERE id = ? AND attempt = ? AND status != 'cancelled'`, so a superseded or cancelled run can't
@@ -78,9 +82,9 @@ from the migration. The two paths order columns differently — `ADD COLUMN` app
   in `analysis/key.json`, which no endpoint serves.
 - **`tempo_bpm`, `key_estimate`, `key_confidence`** are all written in the *same* `UPDATE` that
   sets `status='done'` — see [../architecture/job-lifecycle.md](../architecture/job-lifecycle.md).
-  `tempo_bpm` stays `NULL` when librosa finds no beat, which it reports as 0 BPM.
+  `tempo_bpm` stays `NULL` when tempo detection finds no onsets, which it reports as 0 BPM.
 - **`source_url`** being non-null is how `run_job` picks the URL path; it then downloads only if
-  `original.mp3` isn't already on disk.
+  `original.flac` isn't already on disk.
 - **Timestamps** are ISO-8601 UTC strings (`datetime.now(timezone.utc).isoformat()`), not SQLite
   datetimes. `updated_at` moves on every write, which is what makes each SSE payload distinct.
 

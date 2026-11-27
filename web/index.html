@@ -7,7 +7,15 @@
     <title>CHORD</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+    <!-- Loaded as a print sheet and switched on once it arrives, so the first paint never waits on another server:
+         CHORD runs without a network, and a stylesheet that can't be fetched would hold the page blank until it gave up.
+         The text shows in the fallback font until Inter is there, as display=swap already had it. -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
   </head>
   <body>
     <div id="root"></div>

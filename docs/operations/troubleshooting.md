@@ -213,13 +213,40 @@ a noticeable while on CPU. It holds near 85% while the six stems are encoded, af
 ### The first job after a start waits on *Queued*
 
 Before it takes its first job, the worker thread warms up: it loads the Demucs model onto the
-device and, on a GPU, runs it once so CUDA loads its kernels; runs librosa's beat tracker once so
-numba compiles it (about 19 s on its own); and builds the chord and key networks and runs them once.
+device and, on a GPU, runs it once so CUDA loads its kernels and settles how it will run; estimates
+one tempo, so librosa's imports and anything numba still has to compile are out of the way; and
+builds the chord and key networks and runs them once.
 A job submitted meanwhile shows *Queued* at 0% until that finishes; the server log reports
 `Model warm-up took N.N s`, and before it `Models run on <GPU name>` — or a warning that `DEVICE` asked
 for CUDA and torch can't use it (see [the GPU entry](#docker-compose-says-the-gpu-overlay-is-invalid-or-no-gpu-is-used)). Nothing downloads: the weights are in the image. If the warm-up
 fails, the failure is logged and the first job loads what's missing itself. A first job that sits
 at 10% for much longer is downloading a model the image wasn't built with; see the next entry.
+
+The warm-up is about 6 s on a GPU. One of 30 s or more means numba is compiling: its cache is
+[baked into the image](docker.md#serverdockerfile), keyed on the CPU, so an image built on another
+machine — or one from before the cache was baked in — compiles in its first start. Restarting the
+same container is quick again, since the cache it wrote is still in it; a new container from that
+image compiles again. Rebuilding on the machine that runs it fixes it for good.
+
+On a GPU the log also says how separation will run, in two `INFO` lines from
+`app.pipeline.separation`:
+
+```text
+… A chunk separates in 135 ms in float32 and 101 ms in half precision; using half precision
+… Separation replays a recorded CUDA graph, 8.3e-05 of its peak from the model run directly
+```
+
+| Line | Meaning |
+| --- | --- |
+| `A chunk separates in … using half precision` / `… using float32` | the two timings `DEMUCS_HALF_PRECISION` allows, and the one that won. Absent when the setting is `false` |
+| `Separation replays a recorded CUDA graph, X of its peak from the model run directly` | the recording reproduced the model and every pass will replay one. `X` is 0 in float32 and around 1e-4 in half precision. Absent when `DEMUCS_CUDA_GRAPH` is `false` |
+| `WARNING … A recorded CUDA graph is X of its peak from the model; running the model directly` | the recording didn't match — more than 2% out — so it isn't used. Separation is correct, and slower beside analysis. Expect it after a demucs upgrade that changed the model's forward pass |
+| `WARNING … Couldn't record the separation model as a CUDA graph; running it directly`, with a traceback | recording failed outright, at start-up or at the start of a pass. Chunks run through the model from then on, until the server restarts. A driver or torch that can't capture the model is the likely cause; `DEMUCS_CUDA_GRAPH=false` stops it trying |
+| `WARNING … Half precision returned audio that isn't finite; separating in float32 from here on` | a pass came back with a NaN or an infinity. That pass was run again in float32 — the job is fine, and its model pass ran twice — and half precision is off until the server restarts. A GPU that does this does it after every start; set `DEMUCS_HALF_PRECISION=false` to skip the wasted pass |
+
+A replayed recording gives the stems the model does. Half precision gives slightly different ones;
+[stem separation](../features/stem-separation.md#how-a-chunk-runs-on-a-gpu) has the measurements
+and what each setting does.
 
 ### Where a job's time goes
 
@@ -230,16 +257,19 @@ docker compose logs -f server
 ```
 
 ```text
-… INFO app.pipeline.pipeline: Job 3f2a…: download took 6.1 s
-… INFO app.pipeline.pipeline: Job 3f2a…: analysis decode took 1.2 s
-… INFO app.pipeline.pipeline: Job 3f2a…: tempo detection took 3.4 s
-… INFO app.pipeline.pipeline: Job 3f2a…: chord and key detection took 1.1 s
-… INFO app.pipeline.pipeline: Job 3f2a…: separation took 14.2 s
-… INFO app.pipeline.pipeline: Job 3f2a…: finished in 20.6 s
+… INFO app.pipeline.pipeline: Job 3f2a…: download took 3.1 s
+… INFO app.pipeline.pipeline: Job 3f2a…: analysis decode took 1.9 s
+… INFO app.pipeline.pipeline: Job 3f2a…: tempo detection took 1.5 s
+… INFO app.pipeline.pipeline: Job 3f2a…: chord and key detection took 1.2 s
+… INFO app.pipeline.pipeline: Job 3f2a…: separation took 10.9 s
+… INFO app.pipeline.pipeline: Job 3f2a…: finished in 14.3 s
 ```
 
 The decode, tempo and chord lines come from the analysis thread, which runs beside separation, so
-they can print before separation's and their seconds overlap it. The processing screen's stage times
+they can print before separation's and their seconds overlap it. `separation` is the whole of it:
+decoding the track, the model's pass and writing the stems. For a 6:20 track on an RTX 4060 that is
+about 0.8 s, 7 s and 2–4 s; the last part is the CPU's, and on a machine with few cores, or busy
+ones, it is where the spread comes from. The processing screen's stage times
 are no substitute: they measure how long each stage was the one on screen, and a step that finished
 during separation shows done with no time at all. Outside Docker the same lines go to uvicorn's
 stderr.
@@ -270,7 +300,9 @@ download. By design:
 
 A resume reuses what the cancelled run left: the downloaded audio with the title and author it
 brought, the cover art, and the stems — but only a complete set. An interrupted separation starts
-again from the beginning, and tempo and chord detection always run again. See
+again from the beginning, and tempo and chord detection always run again. A link job from before
+link audio was kept as FLAC downloads again too: its directory holds `original.mp3`, and a resume
+looks for `original.flac`. See
 [../api/jobs.md](../api/jobs.md#post-jobsjob_idresume).
 
 ### Jobs stuck in `queued` or `separating` forever
@@ -389,8 +421,8 @@ predates tempo detection.
 ### The metronome is at the right tempo but off the beat
 
 Beat one is anchored to time zero of the track, not to a detected downbeat —
-[`tempo.py`](../../server/app/pipeline/tempo.py) discards `beat_track`'s frame positions and
-keeps only the scalar BPM. A song with an intro or a pickup bar will have a click offset from
+[`tempo.py`](../../server/app/pipeline/tempo.py) estimates a tempo and never places a beat, so the
+scalar BPM is all the browser has. A song with an intro or a pickup bar will have a click offset from
 the groove. Explained, with the fix, in
 [../features/tempo-and-metronome.md](../features/tempo-and-metronome.md#phase-alignment).
 
@@ -467,7 +499,9 @@ See [../features/theming.md](../features/theming.md).
 
 CHORD's type is Inter, loaded from Google Fonts by [`index.html`](../../web/index.html). Offline,
 or behind a network that blocks the font CDN, `--font-body` falls back to `system-ui`. Nothing
-else changes.
+else changes, and the page doesn't wait for the font to find out: the stylesheet is loaded so that
+it can't hold up the first paint, which also means text shows in the system font for a moment on a
+first visit, before Inter arrives.
 
 ### "Preparing zip…" takes a long time
 

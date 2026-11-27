@@ -42,7 +42,7 @@ Everything under `data/` is runtime-only and gitignored:
 data/db.sqlite3           # job metadata
 data/models_cache/        # TORCH_HOME: demucs' fallback download cache, normally empty
 data/jobs/<job_id>/
-  original.mp3
+  original.flac             # a link's audio, or a FLAC upload; original.mp3 for an MP3 upload
   stems/{vocals,drums,bass,guitar,piano,other}.flac
   analysis/{chords.json,key.json}
 ```

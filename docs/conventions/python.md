@@ -34,8 +34,8 @@ Saving pasted lyrics is parsing plus one file write.
 On every signature, using modern syntax:
 
 ```python
-def download_audio(url: str, output_dir: Path, max_duration_seconds: float) -> tuple[Path, str, str | None]: ...
-def read_audio_info(audio_path: Path) -> tuple[float, str]: ...
+def download_audio(url: str, output_dir: Path, max_duration_seconds: float) -> Download: ...
+def read_audio_info(audio_path: Path, source_codec: str | None = None) -> tuple[float, str]: ...
 def separate(input_path: Path, output_dir: Path, on_progress: Callable[[float], None] | None = None) -> list[str]: ...
 ```
 
@@ -111,8 +111,8 @@ Checkpoints between stages call `_is_superseded(job_id, attempt)` — row gone, 
 `UPDATE` can overwrite a cancel, or clobber the run a resume started. The cost of the guard is that
 a cancelled run's writes vanish silently, useful ones included, so a value a later attempt can't
 produce again needs a deliberate exception. There is one: `_record_track_identity` writes a
-download's title and author by id alone, because a resume skips the download that found them. It
-touches no status, progress or result column. See [resume](../api/jobs.md#post-jobsjob_idresume).
+download's title, author and source format by id alone, because a resume skips the download that
+found them. It touches no status, progress or result column. See [resume](../api/jobs.md#post-jobsjob_idresume).
 
 Before any of that, `run_job` returns unless the row is `queued`. A job cancelled while it waited
 and then resumed is in the in-memory queue twice, and the check is what stops the second entry from

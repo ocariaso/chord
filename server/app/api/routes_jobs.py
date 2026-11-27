@@ -44,6 +44,9 @@ def _row_to_response(row) -> JobResponse:
 
 ALLOWED_UPLOAD_EXTENSIONS = {".mp3", ".flac"}
 _UPLOAD_COPY_CHUNK_BYTES = 1024 * 1024
+# How often the event stream re-reads the job row. A finished job is noticed half this long after it finishes, on
+# average, and the pipeline writes separation progress no faster (`_PROGRESS_WRITE_SECONDS`).
+_EVENT_POLL_SECONDS = 0.25
 
 
 def _save_upload(file: UploadFile, destination: Path) -> int:
@@ -209,6 +212,6 @@ async def job_events(job_id: str) -> StreamingResponse:
                 last_payload = payload
             if response.status in TERMINAL_STATUSES:
                 break
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(_EVENT_POLL_SECONDS)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

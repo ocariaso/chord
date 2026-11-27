@@ -141,7 +141,13 @@ change to it is one of seven actions in one reducer. An action that changes noth
 state it was given, so a redundant dispatch renders nothing. The playback position is deliberately
 not in it.
 
-Plus `useLyrics(job.id)`, which also returns the setter `LyricsDialog`'s save goes through, and two
+Plus `useLyrics(job.id)`, which also returns the setter `LyricsDialog`'s save goes through. It is
+called partway down the component, after the effect that loads the stems, and that placement is the
+point: effects run in the order their hooks are called, each of the three that start requests issues
+them at once, and a browser keeps six connections to one server over HTTP/1.1. So the chords, a few
+kilobytes, go first; then the six stems, which the screen waits on; then the lyrics, whose lookup
+can hold a connection for seconds. Asked for first, the lyrics left the sixth stem queued behind
+another stem's download. And two
 `useMediaQuery` flags: `PHONE_QUERY` from [`design/layout.ts`](../../web/src/design/layout.ts), kept
 as `isPhone`, and `prefers-reduced-motion`. `isPhone` locks the view to the Mixer, withholds the tab
 handler from `ResultsTopbar`, drops the panel's `tabpanel` role, and is `Transport`'s `compact`

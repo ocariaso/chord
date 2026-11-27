@@ -63,7 +63,7 @@ POST /jobs            (multipart file)          POST /jobs/from-url   ({"url": .
               worker thread picks it up (serially)
                            │
         ┌──────────────────┴───────────────────────┐
-        │  status=fetching   (URL jobs only)       │  yt-dlp -> original.mp3, title, uploader
+        │  status=fetching   (URL jobs only)       │  yt-dlp -> original.flac, title, uploader
         │  (status unchanged)                      │  duration + format; too long -> error
         │  status=separating  progress 0.1 -> 0.85 │  Demucs -> stems/*.flac, progress measured
         │    beside it: one analysis thread        │  decode once -> librosa tempo, madmom chords + key
@@ -72,7 +72,7 @@ POST /jobs            (multipart file)          POST /jobs/from-url   ({"url": .
         │  status=done        progress 1.0         │  one final UPDATE: status, tempo, key
         └──────────────────────────────────────────┘
                            │
-        browser is subscribed to GET /jobs/{id}/events (SSE, 0.5s poll of the row),
+        browser is subscribed to GET /jobs/{id}/events (SSE, 0.25s poll of the row),
         and reconnects with backoff if the stream drops
                            │
         status becomes terminal -> stream ends

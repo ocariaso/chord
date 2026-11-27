@@ -78,8 +78,11 @@ recomputed at most every 100 ms and the last value is reused in between.
 
 32768 is the largest `fftSize` an `AnalyserNode` allows, and above 81 920 Hz 400 ms is more samples
 than that. The window start is clamped at 0, so such a context measures the whole buffer instead — a
-window of about 370 ms at 88.2 kHz and 340 ms at 96 kHz. `new AudioContext()` is created without a
-`sampleRate` and runs at the output device's rate, so a high-rate interface is all it takes.
+window of about 370 ms at 88.2 kHz and 340 ms at 96 kHz. The engine runs its context at the stems'
+rate, which is 44.1 or 48 kHz, so this is reached only on its fallback: when it can't read a rate
+from the stems, or the browser won't open a context at it, the context stays at the output device's
+rate, and a high-rate interface is then all it takes
+([audio playback](../architecture/audio-playback.md#the-context-runs-at-the-stems-sample-rate)).
 
 ### Correlation
 

@@ -109,8 +109,8 @@ failure rather than on the landing screen.
 ydl_opts = {
     "format": "bestaudio/best",
     "outtmpl": str(output_dir / "original.%(ext)s"),
-    "postprocessors": [{"key": "FFmpegExtractAudio",
-                        "preferredcodec": "mp3", "preferredquality": "192"}],
+    "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "flac"}],
+    "postprocessor_args": {"extractaudio": ["-sample_fmt", "s16"]},
     "writethumbnail": True,
     "quiet": True, "no_warnings": True, "noplaylist": True,
     "match_filter": skip_if_too_long,
@@ -118,8 +118,15 @@ ydl_opts = {
 ```
 
 - `bestaudio/best` plus the `FFmpegExtractAudio` postprocessor means **whatever the source is,
-  the pipeline always gets a 192 kbps MP3** at `original.mp3`. This is why `run_job` can
-  hardcode `original.mp3` for URL jobs while upload jobs glob for the extension.
+  the pipeline always gets a FLAC** at `original.flac` (`DOWNLOAD_FILENAME`). This is why `run_job`
+  can name the file for URL jobs while upload jobs glob for the extension.
+- **FLAC, not the 192 kbps MP3 this used to make**, for two reasons. ffmpeg writes a FLAC about four
+  times as fast — 1.6 s against 6.0 s for a 6:20 track — and a link's audio is already lossy, so an
+  MP3 of it was a second lossy encoding for separation to hear through. The cost is disk: about
+  42 MB for six minutes where the MP3 was 9 MB, for as long as the job lives.
+- `-sample_fmt s16` keeps it 16-bit, as the stems are. Left to itself ffmpeg writes a lossy codec's
+  decoded samples as 24-bit: a file twice the size that holds nothing more. A direct link to a file
+  that is already FLAC is copied as it is, a 24-bit one included.
 - `noplaylist` — a link into a playlist fetches only that one track.
 - `writethumbnail` saves the cover image next to the audio; see below.
 - `match_filter` refuses a source that is too long **from its metadata, before downloading
@@ -127,15 +134,35 @@ ydl_opts = {
   told to skip; once `extract_info` returns, `download_audio` raises `TrackTooLongError`. A source
   whose metadata has no duration — some direct file links, for instance — is downloaded in full and
   caught by the check after [reading the audio](#reading-the-audio).
-- Returns `(path, title, author)` where `author` is `info["uploader"]` or `info["channel"]`.
-  `run_job` then writes `original_filename=title, author=author` with `_record_track_identity`, so
+- Returns a `Download` — `(path, title, author, audio_format)` — where `author` is
+  `info["uploader"]` or `info["channel"]` and `audio_format` is the
+  [label](#reading-the-audio) the processing screen shows.
+  `run_job` then writes `original_filename=title, author=author, audio_format=audio_format` with
+  `_record_track_identity`, so
   the UI's title switches from the raw URL to the real track title mid-job. That one write isn't
-  scoped to the run's attempt: a job cancelled during its download still keeps the title and
-  author, which matters because a resume skips the download that found them.
+  scoped to the run's attempt: a job cancelled during its download still keeps the title, author
+  and format, which matters because a resume skips the download that found them.
+
+The label can't come from the file, as an upload's does: every link is a FLAC by the time it is
+read, whatever it was. `_source_codec` takes the codec from yt-dlp's metadata instead — `acodec`
+for a site it knows (`opus`, `mp4a`, `aac`, `mp3`, `vorbis`), or the file extension for a direct
+link, whose metadata names no codec (`mp3`, `m4a`, `aac`, `opus`) — and `read_audio_info` puts it
+in the label with the file's sample rate, which the conversion keeps:
+
+| Source | Label |
+| --- | --- |
+| YouTube, whose best audio is usually Opus | `OPUS 48 kHz` |
+| a site serving AAC, or a direct `.m4a` link | `AAC 44.1 kHz` |
+| a direct `.mp3` link | `MP3 48 kHz` |
+| a lossless source, e.g. a direct `.flac` link | the file's own label, `FLAC 24/48` |
+| a codec it doesn't recognize, e.g. a direct `.webm` link | the converted file's label, `FLAC 16/48` |
+
+The last row is the label being wrong about quality: that source was lossy, and nothing says so.
 
 `run_job` sets `status=fetching`, `progress=0.05` and *Downloading audio* before the download — but
-only when `original.mp3` doesn't exist yet. A [resumed](stem-separation.md#resume) link job keeps the
-audio its cancelled attempt already fetched. Until the file is in place the run's failure stage is
+only when `original.flac` doesn't exist yet. A [resumed](stem-separation.md#resume) link job keeps the
+audio its cancelled attempt already fetched. (A job directory from before link audio was kept as
+FLAC holds `original.mp3`, which doesn't count, so resuming such a job downloads again.) Until the file is in place the run's failure stage is
 `downloading`, so an unexpected error there reads *"The audio download stopped with an error."*
 
 Any `yt_dlp.utils.DownloadError` is re-raised as `SourceDownloadError`, a `UserFacingError` whose
@@ -151,7 +178,7 @@ here, but a server-side request forgery surface if this were ever exposed beyond
 
 yt-dlp writes its thumbnail as `original.<ext>` — the same stem as the audio, with whatever
 extension the source used (`.webp`, `.jpg`, `.png`). `_normalize_downloaded_thumbnail` walks
-`output_dir.glob("original.*")`, skips `.mp3`, converts whatever it finds to
+`output_dir.glob("original.*")`, skips `original.flac`, converts whatever else it finds to
 `thumbnail.jpg` through ffmpeg, and unlinks the original. That collision of names is exactly why
 the function exists, and why it must run before anything else globs the directory.
 
@@ -163,17 +190,21 @@ url:      nothing on disk yet,                  filename = the URL
                         │
                         └──► queued ──► worker ──► run_job
                                                      │
-                source_url set? ──yes──► original.mp3 exists? ──no──► fetching: yt-dlp → original.mp3
-                              │                         │              title/author overwrite the row
+                source_url set? ──yes──► original.flac exists? ──no──► fetching: yt-dlp → original.flac
+                              │                         │              title/author/audio_format
+                              │                         │              overwrite the row
                               │                         yes (resumed) ─┐
-                              └──no───► ffprobe artist tag → author    │
+                              └──no──────────────────┐                 │
                                                      │ ◄───────────────┘
-                                          embedded cover → thumbnail.jpg, if there is none yet
-                                                     │
                                           read_audio_info → duration, audio_format
                                           longer than MAX_DURATION_SECONDS? → error
                                                      │
-                                          status=separating, with duration_seconds and audio_format
+                                          status=separating, with duration_seconds
+                                          (and audio_format, for an upload)
+                                                     │
+                                          beside separation, on the analysis thread:
+                                            upload: ffprobe artist tag → author
+                                            embedded cover → thumbnail.jpg, if there is none yet
                                                      │
                                                    (identical from here on)
 ```
@@ -185,22 +216,32 @@ ffprobe missing, a 15 s timeout, a non-zero exit, unparseable JSON, no tag — r
 job proceeds without an author. `author` feeds the results topbar, the processing screen's subtitle
 and the lyrics lookup.
 
+The artist tag and the embedded cover are read by `_read_tags` in
+[`pipeline.py`](../../server/app/pipeline/pipeline.py), the first task on the job's analysis thread,
+once the row says `separating`. Neither separation nor analysis needs them, and read ahead of both,
+as they were, two ffmpeg starts took about half a second in which nothing else happened. So the
+processing screen opens on the file name and the gradient tile, and the artist and the cover arrive
+a moment into separation. A failure there is logged and costs the job nothing but those two.
+
 ## Reading the audio
 
-`metadata.read_audio_info(path)` opens the file with `soundfile.info` and returns the duration
-(`frames / samplerate`) and a short format label:
+`metadata.read_audio_info(path, source_codec=None)` opens the file with `soundfile.info` and returns
+the duration (`frames / samplerate`) and a short format label:
 
 | Source | Label |
 | --- | --- |
 | a PCM subtype with a fixed bit depth, e.g. FLAC | `"<format> <bits>/<kHz>"` — `FLAC 24/48`, `FLAC 16/44.1` |
 | lossy, e.g. MP3 | `"<format> <kHz> kHz"` — `MP3 44.1 kHz` |
+| called with a `source_codec`, as [the download](#the-download) does for a lossy link | `"<codec> <kHz> kHz"` — `OPUS 48 kHz` |
 
 Unlike `extract_author`, this **raises** when libsndfile can't open the file, because nothing after
 it can run without a duration. A misnamed or corrupt upload therefore fails here, before separation,
 with *"CHORD couldn't read the audio source."* and libsndfile's error as the log.
 
-`duration_seconds` and `audio_format` are written in the same update that sets `status=separating`,
-not with the final results, so the processing screen can show `author · 3:51 · FLAC 24/48` while
+`duration_seconds` is written in the same update that sets `status=separating`, not with the final
+results, and for an upload so is `audio_format`; a link's was written with its title, since `run_job`
+reads the converted file here and would only learn that it is a FLAC. So the processing screen can
+show `author · 3:51 · FLAC 24/48` while
 separation runs — `author · 3:51` on a phone, whose layout leaves the format out. `duration_seconds`
 also drives the lyrics lookup.
 
@@ -208,12 +249,12 @@ also drives the lyrics lookup.
 
 `MAX_DURATION_SECONDS` ([`config.py`](../../server/app/core/config.py), default `720`, `0` disables)
 caps what the server will separate. The reason is in the browser: each stem is decoded into 32-bit
-float samples at the audio context's rate, so twelve minutes of stereo at 48 kHz is about 276 MB per
+float samples at its own rate, so twelve minutes of stereo at 48 kHz is about 276 MB per
 stem and 1.7 GB for all six in one tab.
 
 | Source | Checked |
 | --- | --- |
-| upload | after the whole file has been uploaded, read and had its cover extracted; before separation |
+| upload | after the whole file has been uploaded and its header read; before separation |
 | link | from yt-dlp's metadata before downloading; again after download when the metadata had no duration |
 
 Either way the job fails with `TrackTooLongError`'s message, *"This track is 13:05 long. CHORD

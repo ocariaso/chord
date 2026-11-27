@@ -85,8 +85,11 @@ fallback serves `index.html` for other paths without that header.
 
 ### `index.html` — the shell
 **Notes:** `#root` div, module script, `/favicon.svg`, and a Google Fonts stylesheet for **Inter
-400/500/600** with `preconnect` hints — the only typeface the design uses. Offline, the token
-stacks fall back to `system-ui`.
+400/500/600** with `preconnect` hints — the only typeface the design uses. The stylesheet is linked
+with `media="print"` and an `onload` that sets it to `all`, so **the first paint never waits on
+another server**: an ordinary stylesheet link blocks rendering until it arrives or fails, and CHORD
+otherwise runs without a network. Text shows in the fallback until Inter is there, as
+`display=swap` already had it. Offline, the token stacks fall back to `system-ui`.
 
 ### `package.json`
 **Notes:** `version` is injected into the app as `__APP_VERSION__` and rendered in the footer.
@@ -234,7 +237,7 @@ converts as it streams, which only `ExportDialog` fetches. Every interface here 
 
 ## `src/audio/`
 
-### `src/audio/playbackEngine.ts` — the audio truth (633 lines)
+### `src/audio/playbackEngine.ts` — the audio truth (692 lines)
 **Exports:** `StemInput`, `StemLoadFailure`, `LoopRegion`, `MeterReadings`,
 `createMeterReadings`, `PlaybackEngine`
 **Imports from:** `audio/meters`, `audio/stretchProcessor.js` (as a URL, via `?url`)
@@ -245,6 +248,13 @@ Tone tilt, around `StemInput.tonePivotHz`) → gain (fader × mute/solo) → `St
 with a splitter and two `AnalyserNode`s tapped after the panner. The master feeds the destination, a
 peak/correlation/true-peak analyser pair, and a K-weighting `IIRFilterNode` chain into a loudness
 pair; `metronomeGain` connects **straight to the destination**, bypassing master volume.
+The context and everything shared come from the module function `createOutput(sampleRate?)`: the
+constructor opens one at the device's rate, and **`adoptSampleRate` replaces it, before the first
+decode, with one at the stems' own rate** when that differs — read by `flacSampleRate` from the
+first stem's FLAC STREAMINFO (the 20 bits at byte 18). `decodeAudioData` resamples to its context's
+rate, a quarter of the decode for six 48 kHz stems on a 44.1 kHz device (1.4 s → 1.03 s for 6:20 in
+Chrome); the browser converts the one mixed output as it plays instead. Settled once per engine
+(`sampleRateSettled`); a rate the browser won't open a context at leaves the device's in place.
 **`load()` resolves with the stems that failed** (`{name, url, message}` — the HTTP status and any
 string `detail`, or the decode error) instead of rejecting, and **reports no progress**: each stem
 is fetched whole, then decoded. A retry calls it again with inputs rebuilt from the failures, since
@@ -262,7 +272,7 @@ browsers expose only to secure origins**; it also turns false if the module fail
 120 ms ahead) over `trackPieces`, which cuts context time at loop wraps — so clicks follow loops and
 speed; beat one is still track time zero. Momentary loudness measures the last 400 ms of a
 32768-sample analyser buffer; above 81.9 kHz that is more than the buffer holds, so it measures the
-whole buffer. Every gain, pan and tone change goes through `setTargetAtTime` (15 ms). `dispose()`
+whole buffer — a rate the context reaches only when it stayed on a high-rate device's. Every gain, pan and tone change goes through `setTargetAtTime` (15 ms). `dispose()`
 must be called — browsers limit open contexts. `getStemState()`, `loopRegion` and
 `isMetronomeEnabled` have no callers.
 **See:** [../architecture/audio-playback.md](../architecture/audio-playback.md)
@@ -449,7 +459,8 @@ Pure functions, one subject per file.
 `results/Transport`
 **Notes:** `"3:51"` (`"0:00"` for non-finite), with 5 ms of slack before flooring: decoding at a
 device rate other than a stem's own can leave it a frame short — a 36-second track decodes to
-35.99998 s at 44.1 kHz — which would otherwise read 0:35.
+35.99998 s at 44.1 kHz — which would otherwise read 0:35. `PlaybackEngine` now opens its context at
+the stems' rate, so that decode happens only when a browser refuses the rate.
 
 ### `src/utils/tempo.ts` — `formatBpm(bpm)` (4 lines)
 **Used by:** `results/AnalysisBar`
@@ -781,7 +792,7 @@ caller. `role="alert"` announces it on mount.
 
 ## `src/screens/results/` — the results screen
 
-### `results/ResultsScreen.tsx` — the results state hub (407 lines)
+### `results/ResultsScreen.tsx` — the results state hub (415 lines)
 **Exports:** `ResultsScreen`
 **Imports from:** `api/client`, `audio/playbackEngine`, `components/FitToPanel`, `design/copy`,
 `design/layout`, `design/player`, `design/stems`, `hooks/useLyrics`, `hooks/useMediaQuery`,
@@ -826,7 +837,11 @@ Seeking outside a set loop ends it, and a second loop press within 0.5 s of A is
 faders go through `db()` and the master through `masterDb()`; the metronome is offered only for a
 non-zero tempo, speed only when `supportsTimeStretch`. The load effect depends on the stems by value
 (`stemList`, the kept names joined), so a job update that carries a new array of the same stems
-doesn't download them again.
+doesn't download them again. **The order of its three request-starting effects is deliberate**:
+chords, then the engine's six stems, then `useLyrics` — which is why that hook is called in the
+middle of the component, not with the other state. A browser keeps six connections to one server over
+HTTP/1.1, and the lyrics lookup can hold one for seconds; asked for ahead of the stems, it left the
+sixth stem waiting on another to finish.
 **See:** [../features/results-views.md](../features/results-views.md)
 
 ### `results/playerReducer.ts` — every `PlayerState` change (58 lines)

@@ -21,7 +21,7 @@ stems in your browser* until the last stem has arrived and decoded.
 
 ## `PlaybackEngine`
 
-[`web/src/audio/playbackEngine.ts`](../../web/src/audio/playbackEngine.ts) (~635 lines) — a
+[`web/src/audio/playbackEngine.ts`](../../web/src/audio/playbackEngine.ts) (~690 lines) — a
 plain class, no React. It owns the `AudioContext` and is the single source of truth for audio
 state. The DSP helpers behind its meters live in
 [`audio/meters.ts`](../../web/src/audio/meters.ts); the time-stretch runs on the audio thread in
@@ -68,6 +68,35 @@ The metronome bypasses `masterGain` and connects straight to `destination`, so t
 does not attenuate the click and no meter sees it. Whether that's desirable is a design choice,
 but it's deliberate: the click is a practice aid, not part of the mix.
 
+### The context runs at the stems' sample rate
+
+Everything under *shared* in that diagram — the context, `masterGain`, the meter taps, the
+metronome's gain — comes from one function, `createOutput(sampleRate?)`, and the engine can call it
+twice. The constructor calls it with no rate, which opens the context at the output device's own.
+Then `load()`, when the first stem's bytes arrive and before anything is decoded, calls
+`adoptSampleRate` with the rate that stem declares: `flacSampleRate` reads it from the FLAC's
+STREAMINFO block, which is always the first thing in the file — the 20 bits at byte 18. If that
+isn't the context's rate, the engine closes the context it has and opens another at the stems' rate
+through `createOutput` again.
+
+The reason is `decodeAudioData`, which resamples whatever it decodes to its context's rate. Six
+48 kHz stems of a 6:20 track took 1.4 s to decode in Chrome on a 44.1 kHz device and 1.03 s in a
+48 kHz context: a quarter of the decode was resampling. With the context at the stems' rate the
+buffers hold the separated samples as they are, and the browser converts the one mixed output to
+the device's rate as it plays, which costs almost nothing.
+
+- Every stem of a job has one rate ([why](../features/stem-separation.md#sample-rate)), so the
+  first to arrive speaks for all of them; the rate is settled once per engine
+  (`sampleRateSettled`), and a retry of failed stems doesn't revisit it.
+- A response that isn't a FLAC yields no rate, and a rate the browser refuses to open a context at
+  throws in `createOutput`; either way the engine stays on the device's rate and the stems are
+  resampled as they decode, as they always were.
+- Nothing is attached to the first context when it is replaced: stem chains are built per decoded
+  buffer, and the stretch worklet loads on first use.
+- The K-weighting coefficients, the stretch worklet's frame sizes and the decoded buffers' size all
+  follow the context's rate, so they now follow the stems'. A 48 kHz job's buffers are 9% larger
+  on a 44.1 kHz device than they were, and a 44.1 kHz job's 8% smaller on a 48 kHz one.
+
 ### Transport
 
 State is a handful of fields:
@@ -110,7 +139,9 @@ hearing it.
   stop itself; `ResultsScreen`'s frame loop sees the flag and pauses.
 
 `duration` is the **max** of all buffer durations, not the first — stems can differ by a frame
-or two. Decoding resamples to the context's rate and can leave a stem a frame short of its written
+or two. Decoding at a rate other than a stem's own — which happens only when the context
+[couldn't be opened at the stems' rate](#the-context-runs-at-the-stems-sample-rate) — resamples, and
+can leave a stem a frame short of its written
 length — a 36-second track decodes to 35.99998 s at 44.1 kHz — so
 [`formatTime`](../../web/src/utils/time.ts) adds 5 ms before flooring, or the readouts would call
 it `0:35`.
@@ -269,8 +300,8 @@ inside the current window exist at any moment, and each one removes itself when 
 The window starts at `now` whenever the timer fires late, so a main-thread stall longer than the
 120 ms lookahead **drops** the clicks it spanned rather than playing them late.
 
-Beat one is aligned to *time zero of the track*, not to a detected downbeat — librosa's
-`beat_track` gives a tempo, and CHORD doesn't use the beat positions. So the click is
+Beat one is aligned to *time zero of the track*, not to a detected downbeat — the server
+estimates a tempo and never places a beat. So the click is
 rhythmically correct but not necessarily phase-aligned to the music, and a loop whose start isn't
 on a multiple of the beat hears clicks offset from its own start. See
 [../features/tempo-and-metronome.md](../features/tempo-and-metronome.md).
@@ -278,7 +309,9 @@ on a multiple of the beat hears clicks offset from its own start. See
 ### Lifecycle and disposal
 
 `load(stems)` fetches and decodes all stems in parallel via `Promise.all`. Each response is read
-whole with `arrayBuffer()` and handed to `decodeAudioData`; a non-2xx response fails that stem with
+whole with `arrayBuffer()` and handed to `decodeAudioData` — after `adoptSampleRate`, which for the
+first stem to arrive may [move the engine to another context](#the-context-runs-at-the-stems-sample-rate);
+a non-2xx response fails that stem with
 its status and the server's `detail`, as in `404 Stem not ready`. There is no progress callback —
 the loading screen shows the template's fixed 100% state instead. `load` **never rejects**: it
 resolves with a `{name, url, message}` for each stem that failed, having added every stem that

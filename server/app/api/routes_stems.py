@@ -18,6 +18,13 @@ _WAV_HEADER_BYTES = 44
 _WAV_BLOCK_FRAMES = 1 << 16
 
 
+class _StemFile(FileResponse):
+    """A FileResponse that reads a megabyte at a time. Starlette's 64 KB is a trip to its thread pool and back for
+    every read, and six stems download at once ahead of playback: the trips, not the disk, set the pace."""
+
+    chunk_size = 1024 * 1024
+
+
 class _ChunkSink:
     """A write-only stream that hands back whatever was written since it was last drained. It has no tell() or
     seek(), so ZipFile writes each entry's sizes after its data instead of seeking back for them."""
@@ -93,7 +100,7 @@ async def get_thumbnail(job_id: str) -> FileResponse:
 @router.get("/{job_id}/stems/{stem_name}.flac")
 async def get_stem(job_id: str, stem_name: str) -> FileResponse:
     """The stem as stored, for playback: half the bytes of WAV to download before the mixer can start."""
-    return FileResponse(_stem_path(job_id, stem_name), media_type="audio/flac")
+    return _StemFile(_stem_path(job_id, stem_name), media_type="audio/flac")
 
 
 @router.get("/{job_id}/stems/{stem_name}.wav")

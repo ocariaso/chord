@@ -151,6 +151,7 @@ ENV HF_HUB_OFFLINE=1
 COPY app app
 RUN groupadd -g 1000 chord && useradd -u 1000 -g chord -m chord && chown -R chord:chord /app
 USER chord
+RUN python -c "from app.pipeline import tempo; tempo.warm_up()"
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
@@ -159,6 +160,15 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 - Layer order is deliberate: system packages, then torch (huge, rarely changes), then
   requirements, then madmom, then the Demucs weights, then application code last — so an edit to
   `app/` rebuilds only the final layers.
+- **numba's cache is baked in.** numba compiles librosa's helpers the first time each runs and
+  keeps the result in `~/.cache/numba`, which lives in the container, not on the data volume: every
+  new container compiled them again before its first job, most of a 29–40 s warm-up. The last `RUN`
+  estimates one tempo as the `chord` user — the user the server runs as, so the cache is where the
+  server will look for it — and the warm-up in a new container is about 6 s. Two things follow.
+  The step comes after `COPY app app`, since it runs CHORD's own `tempo.warm_up()`, so it reruns,
+  for a few seconds, on every code change. And numba keys the cache on the CPU it compiled for: an
+  image started on a different processor from the one that built it finds no match and compiles
+  once more.
 - **madmom is installed separately** from `requirements.txt` and then patched in place. Full
   explanation: [../architecture/server.md](../architecture/server.md#the-madmom-problem).
 - **The Demucs weights are baked in.** demucs 4.1 downloads a named model from the Hugging Face

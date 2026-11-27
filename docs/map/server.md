@@ -27,7 +27,7 @@ Dependency direction is strictly downward: `api → pipeline, db, models`;
 
 ## Build and dependencies
 
-### `Dockerfile` — the server image (40 lines)
+### `Dockerfile` — the server image (46 lines)
 **Notes:** `python:3.10-slim` (pinned by madmom's compatibility ceiling). Installs `ffmpeg`,
 `build-essential`, `pkg-config`, `libopus-dev`; then torch via the `TORCH_INDEX_URL` build arg;
 then `requirements.txt`; then madmom separately with `--no-build-isolation` followed by
@@ -36,9 +36,14 @@ then `requirements.txt`; then madmom separately with `--no-build-isolation` foll
 `HF_HOME=/opt/models/huggingface`, and `HF_HUB_OFFLINE=1` is set after it so the server never
 contacts the Hub. The download calls `demucs.hf.get_hf_model`, not `get_model`, because
 `get_model` swallows a Hub failure and falls back to the legacy AWS repo, which would pass the
-build with nothing baked. Then `COPY app app` last so code edits rebuild only the final layers. Creates
+build with nothing baked. Then `COPY app app`, late so code edits rebuild only the final layers. Creates
 and switches to a non-root `chord` user (uid/gid 1000) — **the host's `server/data` must be
-writable by uid 1000**. `CMD uvicorn app.main:app --host 0.0.0.0 --port 8000`.
+writable by uid 1000**. Its last `RUN`, as that user, is `tempo.warm_up()`: numba compiles librosa's
+helpers on first use and caches the result in `~/.cache/numba`, so running it here **bakes the cache
+into the image**. Left to the server, every new container compiled them again before its first job —
+most of a 29–40 s warm-up that is now about 6 s. numba keys the cache on the CPU it compiled for, so
+an image started on a different processor compiles once more there. The step follows `COPY app app`,
+so it reruns on every code change. `CMD uvicorn app.main:app --host 0.0.0.0 --port 8000`.
 
 ### `requirements.txt`
 **Notes:** `demucs`, `julius`, `sphn`, `librosa`, `soundfile`, `fastapi`, `uvicorn[standard]`,
@@ -79,7 +84,7 @@ without it the root logger's `WARNING` default would drop the pipeline's step ti
 runs `init_db()`, then `start_worker()`, then `start_reaper()`. Adds CORS from `settings.cors_origins`
 (irrelevant behind nginx). Mounts the three routers plus `GET /health`.
 
-### `app/core/config.py` — settings and paths (35 lines)
+### `app/core/config.py` — settings and paths (43 lines)
 **Exports:** `SERVER_DIR`, `Settings`, `settings`
 **Imports from:** —
 **Used by:** `db.database`, `pipeline.pipeline`, `pipeline.reaper`, `pipeline.separation`,
@@ -87,7 +92,11 @@ runs `init_db()`, then `start_worker()`, then `start_reaper()`. Adds CORS from `
 **Notes:** `pydantic_settings.BaseSettings`, so **every field is an environment variable of the
 same name**. Fields: `data_dir`, `db_path`, `jobs_dir`, `models_cache_dir`, `demucs_model`
 (`htdemucs_6s`), `device` (`cuda`), `demucs_overlap` (`0.25`, Demucs' own default; lower is an
-opt-in trade of chunk seams for speed), `enable_chord_detection` (`True`), `max_duration_seconds`
+opt-in trade of chunk seams for speed), `demucs_half_precision` (`True`: lets a CUDA GPU run the
+separation network in half precision when it is faster at it; `False` keeps float32 always),
+`demucs_cuda_graph` (`True`: lets a CUDA GPU replay the network from a recorded CUDA graph; `False`
+never tries) — both read only by `separation`, and neither does anything off a GPU —
+`enable_chord_detection` (`True`), `max_duration_seconds`
 (`720`; `0` disables the limit), `job_ttl_hours` (`24`, a float; `0` or less turns the reaper
 off), `cors_origins`. The four path fields are **independent defaults,
 not layered** — overriding `DATA_DIR` alone moves nothing. `enable_chord_detection` and
@@ -141,7 +150,7 @@ start, and it never reaches `JobResponse`. `last_seen_at` is internal too: only
 
 ## `app/api/`
 
-### `app/api/routes_jobs.py` — job lifecycle and SSE (214 lines)
+### `app/api/routes_jobs.py` — job lifecycle and SSE (217 lines)
 **Exports:** `router`, `ALLOWED_UPLOAD_EXTENSIONS`
 **Imports from:** `db.database`, `models.schemas` (including `TERMINAL_STATUSES`), `pipeline.pipeline` (`job_dir`),
 `pipeline.thumbnail` (`THUMBNAIL_FILENAME`), `pipeline.worker` (`enqueue`)
@@ -154,7 +163,7 @@ start, and it never reaches `JobResponse`. `last_seen_at` is internal too: only
 included, `attempt` and `source_url` never — and computes two fields rather than reading them:
 `stem_names` is the **constant** `STEM_NAMES` gated on `status == "done"` (not a directory
 listing), and `has_thumbnail` is a filesystem `.exists()` on every serialization including each
-0.5 s SSE tick. `create_job` copies the upload into `original.<ext>` with `_save_upload`
+0.25 s SSE tick. `create_job` copies the upload into `original.<ext>` with `_save_upload`
 (`shutil.copyfileobj`, 1 MB chunks) via `run_in_threadpool`, keeping the file off the event loop;
 Starlette has already spooled the multipart body to a temporary file by then, so a large upload
 briefly occupies disk twice. An empty upload is a 400 **and** its job directory is removed.
@@ -165,15 +174,17 @@ Upload validation is extension-only with no server-side size cap — behind ngin
 (possibly still finishing a stage) — then enqueues without checking whether the id is already
 queued. A job cancelled while still waiting is then queued twice; `run_job`'s queued-only start
 guard makes the leftover entry a no-op. `job_events` looks the job up **before** it opens the
-stream, so an unknown id is a real 404; the generator then polls the row every 0.5 s, yields only
-on a changed payload, and breaks on a terminal status — it calls blocking SQLite from the event
-loop, and a job deleted mid-stream ends the connection with an error. `discard` branches:
+stream, so an unknown id is a real 404; the generator then polls the row every
+`_EVENT_POLL_SECONDS` (0.25 s — `pipeline.py` writes separation progress no faster, see
+`_PROGRESS_WRITE_SECONDS` there), yields only on a changed payload, and breaks on a terminal
+status — it calls blocking SQLite from the event loop, and a job deleted mid-stream ends the
+connection with an error. `discard` branches:
 non-terminal → cancel and keep files; terminal → `DELETE` + `rmtree`. `heartbeat_job` writes only
 `last_seen_at`, never `updated_at`, which the SSE payload and the processing screen's stage timings
 read. Its 404 comes from the `UPDATE`'s row count, without a read first.
 **See:** [../api/jobs.md](../api/jobs.md)
 
-### `app/api/routes_stems.py` — artifact serving (120 lines)
+### `app/api/routes_stems.py` — artifact serving (127 lines)
 **Exports:** `router`
 **Imports from:** `models.schemas` (`STEM_NAMES`), `pipeline.pipeline` (`job_dir`),
 `pipeline.separation` (`STEM_SUFFIX`), `pipeline.thumbnail` (`THUMBNAIL_FILENAME`)
@@ -183,9 +194,12 @@ read. Its 404 comes from the `UPDATE`'s row count, without a read first.
 **Notes:** touches no database. `_stem_path` validates the name against `STEM_NAMES` (*"Unknown
 stem"*) and finds the stored `<name>.flac` through `STEM_SUFFIX` (*"Stem not ready"*) for both stem
 routes. Separation renames `stems/` into place only when every stem is written, so *"Stem not
-ready"* means absent, never half-written. **`.flac`** is the file as stored, a `FileResponse`
-(`audio/flac`) — range requests work, though nothing relies on them: `fetchStem` in
-`web/src/audio/playbackEngine.ts` reads it whole. **`.wav`** (`download_stem_wav`) converts as it
+ready"* means absent, never half-written. **`.flac`** is the file as stored, a `_StemFile`
+(`audio/flac`) — a `FileResponse` whose `chunk_size` is 1 MiB, because Starlette's 64 KB is a trip
+to its thread pool and back for every read, and six stems download at once ahead of playback. Range
+requests work, though nothing relies on them: `fetchStem` in
+`web/src/audio/playbackEngine.ts` reads it whole, and takes the stems' sample rate from the first
+one's FLAC header. **`.wav`** (`download_stem_wav`) converts as it
 streams: `_wav_stream` yields a 44-byte PCM header — every size is known from the FLAC's header —
 then decodes the FLAC 65 536 frames at a time (`_WAV_BLOCK_FRAMES`) with `soundfile` and yields each
 block as 16-bit little-endian PCM; the FLAC is lossless at 16 bits, so the samples are exactly the
@@ -282,7 +296,7 @@ loses its job. Runs beside the worker, using a fresh SQLite connection per
 `db_cursor` block. `docker-compose.yml` passes `JOB_TTL_HOURS` through.
 **See:** [../data/retention.md](../data/retention.md#the-reaper)
 
-### `app/pipeline/pipeline.py` — the orchestrator (285 lines)
+### `app/pipeline/pipeline.py` — the orchestrator (299 lines)
 **Exports:** `job_dir`, `run_job`, `warm_up`
 **Imports from:** `core.config`, `db.database`, `models.schemas`, `pipeline.errors`, and the leaf
 modules `chords`, `decode`, `metadata`, `separation`, `source`, `tempo`, `thumbnail`
@@ -291,12 +305,18 @@ modules (for `job_dir`)
 **Notes:** **the only module that advances job status** — the routes only insert `queued` rows
 and set `cancelled` (cancel, discard) or `queued` (resume). `run_job` starts only on a `queued`
 row, so a stale queue entry for a job that has already run does nothing. Stage order:
-fetch-or-read-author → thumbnail → `metadata.read_audio_info` and the duration limit →
-`status=separating` → **analysis starts beside separation** → separate → collect tempo → collect
-chords → done, with `_is_superseded()` checkpoints after the download, after separation, after
+fetch (link jobs) → `metadata.read_audio_info` and the duration limit →
+`status=separating` → **tags and analysis start beside separation** → separate → collect tempo →
+collect chords → done, with `_is_superseded()` checkpoints after the download, after separation, after
 tempo and before the final write. At `status=separating` the run creates a
-`ThreadPoolExecutor(max_workers=1, thread_name_prefix="chord-analysis")`, and `_start_analysis`
-queues on it one `decode.decode_mono` of the original, then tempo detection, then (if
+`ThreadPoolExecutor(max_workers=1, thread_name_prefix="chord-analysis")`. Its first task is
+`_read_tags`: an upload's artist tag (`metadata.extract_author`, written with `_update_job`) and the
+embedded cover (`thumbnail.extract_embedded_cover`, when there is no `thumbnail.jpg` yet). Neither
+separation nor analysis needs them, and run ahead of both — as they were — two ffmpeg starts cost
+about half a second before any work began; the artist and cover now reach the processing screen a
+moment after separation starts. `_read_tags` logs and swallows its own failures, since nothing
+collects its future. Then `_start_analysis`
+queues one `decode.decode_mono` of the original, then tempo detection, then (if
 `enable_chord_detection`) chord and key detection, both reading that one decode; it returns
 `(tempo_future, chords_future | None)`. After separation — or at once, when the stems were already
 complete — `run_job` collects the futures **in stage order**, writing `progress=0.85, "Detecting
@@ -311,31 +331,38 @@ interrupted: an abandoned run's decode, tempo or chord step finishes unread on i
 possibly overlapping the next job. `_timed(step)` logs `"<step> took N.N s"` at `INFO`, raised or
 not, for `Job <id>: download`, `: separation`, `: analysis decode`, `: tempo detection`, `: chord
 and key detection` and `Model warm-up`, plus `"Job <id>: finished in N.N s"` after the done write.
-`warm_up()` loads the Demucs model onto its device (on a GPU, running it once), compiles librosa's
-beat tracker (`tempo.warm_up`), and, if chord detection is on, builds the chord and key processors and
-runs them once — without it the first job after every restart paid about 19 s of numba compilation
-alone, and on a GPU CUDA's first-use kernel loading. `run_job` reads
+`warm_up()` loads the Demucs model onto its device (on a GPU, running it once and settling its
+precision and whether it replays from a recording — see `separation.py`), runs tempo detection once
+(`tempo.warm_up`), and, if chord detection is on, builds the chord and key processors and
+runs them once — without it the first job after every restart paid for librosa's imports and numba's
+compiling, and on a GPU CUDA's first-use kernel loading. `run_job` reads
 `attempt` once at start, and every status, progress and result write goes through
 `_update_job(job_id, attempt, **fields)`, scoped
 `WHERE id = ? AND attempt = ? AND status != 'cancelled'` — neither a cancelled job nor a run
 retired by resume can be overwritten. The one exception is `_record_track_identity`, which saves
-yt-dlp's title and author **unscoped**: a resume skips the download when `original.mp3` exists,
-so a run cancelled mid-download must still keep them. `_is_superseded` is true when the row is
+the download's title, author and source format (`audio_format`) **unscoped**: a resume skips the
+download when `original.flac` (`source.DOWNLOAD_FILENAME`) exists, so a run cancelled mid-download
+must still keep them. `_is_superseded` is true when the row is
 gone, `cancelled`, or on another attempt. Inside separation, `_separation_progress` maps the
 pass's fraction onto `_SEPARATION_PROGRESS` (0.1–0.85), writes the row only once progress has moved
-`_PROGRESS_WRITE_STEP` (0.01 of the whole bar — up to 75 writes), and polls `_is_superseded` at
+`_PROGRESS_WRITE_STEP` (0.01 of the whole bar) **and** `_PROGRESS_WRITE_SECONDS` (0.25 s, the event
+stream's own poll interval) have passed since the last write — at most 75 writes, and about four a
+second on a GPU, where a write nobody reads only holds up the pass — and polls `_is_superseded` at
 most every `_SUPERSEDED_POLL_SECONDS` (2 s), raising `_Superseded` — so a cancel or resume
 **aborts the Demucs pass at the next chunk boundary**; a download still runs to completion, and
-analysis on its own thread too. Resume skips: no download when `original.mp3` exists, no
+analysis on its own thread too. Resume skips: no download when `original.flac` exists (a job
+directory from before link audio was FLAC holds `original.mp3` and downloads again), no
 separation when `_stems_complete()` finds every `STEM_NAMES` file with `separation.STEM_SUFFIX`
 (`.flac` — a job directory from before stems were FLAC holds `.wav`s and separates again); tempo and
 chords always rerun. Ladder: 0.05 download → 0.10…0.85 separation (measured) → 0.85 tempo (`_TEMPO_PROGRESS`,
 only if still running) → 0.90 chords (`_CHORDS_PROGRESS`, only if still running) → 1.0; tempo runs
-under `status=separating` (only progress/message change). `duration_seconds` and `audio_format` are written with
-`status=separating`, so the processing screen can show them; `tempo_bpm`, `key_estimate` and
+under `status=separating` (only progress/message change). `duration_seconds` is written with
+`status=separating`, and so is an upload's `audio_format`, so the processing screen can show them; a
+link's `audio_format` is already on the row, written with its title, because it names the codec the
+audio came in, which the FLAC it was converted to can't. `tempo_bpm`, `key_estimate` and
 `key_confidence` still accumulate in `done_fields` and land in the **same `UPDATE` that sets
-`status=done`**, so a terminal status still guarantees complete results; librosa's 0 BPM for a
-track with no beat is stored as `null`, which keeps the metronome disabled. A track longer than
+`status=done`**, so a terminal status still guarantees complete results; the 0 BPM `detect_tempo`
+reports for a track with no onsets is stored as `null`, which keeps the metronome disabled. A track longer than
 `max_duration_seconds` raises `TrackTooLongError` before separation. Failures: `_Superseded`
 returns silently; the catch-all `except Exception` re-checks `_is_superseded`, then
 `_describe_failure(stage, exc)` gives a `UserFacingError` its own message with its chained cause
@@ -363,14 +390,24 @@ long. CHORD separates tracks up to N minutes."* The duration is rounded **up** t
 a track a fraction of a second over a whole-minute limit never reads as exactly the limit.
 **See:** [../architecture/server.md](../architecture/server.md#error-handling)
 
-### `app/pipeline/source.py` — URL download (69 lines)
-**Exports:** `SourceDownloadError`, `download_audio`
-**Imports from:** `pipeline.errors`, `pipeline.thumbnail`
+### `app/pipeline/source.py` — URL download (98 lines)
+**Exports:** `DOWNLOAD_FILENAME`, `SourceDownloadError`, `Download`, `download_audio`
+**Imports from:** `pipeline.errors`, `pipeline.metadata`, `pipeline.thumbnail`
 **Used by:** `pipeline.pipeline`
 **Notes:** wraps yt-dlp with `format: bestaudio/best` plus an `FFmpegExtractAudio` postprocessor
-pinned to **192 kbps mp3**, so URL jobs always yield `original.mp3` regardless of source.
-`noplaylist`, `writethumbnail`. Returns `(path, title, author)` where author is
-`uploader`/`channel`. `SourceDownloadError` is a `UserFacingError`: its message is written for
+pinned to **FLAC**, so URL jobs always yield `original.flac` (`DOWNLOAD_FILENAME`) regardless of
+source. ffmpeg writes a FLAC about four times as fast as the 192 kbps MP3 this used to make (1.6 s
+against 6.0 s for 6:20), and separation hears the source as it decoded, not through a second lossy
+encoding; the file is about five times the MP3's size on disk. `postprocessor_args` forces
+`-sample_fmt s16` — ffmpeg would otherwise write a lossy codec's decoded samples as 24-bit — while a
+direct link to a FLAC is copied as it is, a 24-bit one included.
+`noplaylist`, `writethumbnail`. Returns a `Download` named tuple, `(path, title, author,
+audio_format)`, where author is `uploader`/`channel` and `audio_format` is the processing screen's
+label: `_source_codec` reads yt-dlp's `acodec` (`_SOURCE_CODECS`: opus, mp4a, aac, mp3, vorbis) or,
+for a direct link, whose metadata names no codec, the extension (`_SOURCE_EXTENSIONS`), and
+`metadata.read_audio_info(path, codec)` turns that into `"OPUS 48 kHz"`; a lossless or unrecognized
+source — a direct `.webm` link, for one — gets the converted file's own label, `"FLAC 16/48"`.
+`SourceDownloadError` is a `UserFacingError`: its message is written for
 users and shown verbatim, and the chained yt-dlp `DownloadError` becomes the job's `error_log`.
 The duration limit arrives as the `max_duration_seconds` argument (`0` = none): the `match_filter`
 `skip_if_too_long` returns a reason when the metadata `duration` exceeds it, which makes yt-dlp
@@ -378,8 +415,9 @@ skip the download **without raising**, so `download_audio` records the duration 
 `TrackTooLongError` itself. A source whose metadata has no `duration` (a direct file link, say)
 downloads in full and is refused afterwards by `run_job`'s own check.
 `_normalize_downloaded_thumbnail` resolves the name collision where yt-dlp writes artwork as
-`original.<ext>` — it must run before anything else globs the directory. No URL allowlist or size
-cap.
+`original.<ext>` — everything named `original.*` but `DOWNLOAD_FILENAME` is taken for artwork, and
+it must run before anything else globs the directory. No URL allowlist or size cap.
+**See:** [../features/ingest.md](../features/ingest.md#the-download)
 
 ### `app/pipeline/decode.py` — one decode for every analysis (12 lines)
 **Exports:** `SAMPLE_RATE`, `decode_mono`
@@ -404,14 +442,15 @@ or `cpu` when that is a CUDA device torch can't use, logging a **warning** once.
 reaches its device through it, so the TF32 setting is in place before any convolution runs.
 **See:** [../features/stem-separation.md](../features/stem-separation.md#device-selection)
 
-### `app/pipeline/separation.py` — Demucs (218 lines)
+### `app/pipeline/separation.py` — Demucs (473 lines)
 **Exports:** `STEM_SUFFIX`, `load_model`, `separate`
 **Imports from:** `core.config`, `pipeline.device`
 **Used by:** `pipeline.pipeline`, `api.routes_stems` and `api.routes_analysis` (`STEM_SUFFIX`)
 **Notes:** lazy module-level `BagOfModels` singleton from `demucs.pretrained.get_model` (a bare model
 becomes a bag of one), moved onto `resolve_device()` once and kept there; `load_model()` builds it
 ahead of the first job, for `pipeline.warm_up`, and on a GPU runs it once on a second of silence, so
-CUDA loading its kernels isn't the first job's wait. **It runs Demucs' inference itself**, not
+CUDA loading its kernels isn't the first job's wait, then settles how it will run: `_settle_precision`
+and `_settle_recording`, below. **It runs Demucs' inference itself**, not
 through `demucs.api.Separator`: `_separate` is `Separator.separate_tensor` (normalize by the mono
 mix's mean and std — **in place, on the tensor passed in** — weigh a bag's models per source,
 denormalize) and `_apply_model` is `apply_model` with demucs 4.1.0's defaults — one random shift
@@ -423,7 +462,41 @@ cache) has room for twice the separated track plus `_GPU_MODEL_BYTES` (0.5 GiB),
 otherwise — not "whatever fits", because the Windows driver spills an over-full GPU into system memory
 and runs several times slower rather than failing. `on_progress(fraction)` is called as each chunk
 starts, `(model index + offset / shifted length) / models`; an exception raised from it abandons the
-pass — that is how `run_job` cancels mid-separation. The track is decoded by `sphn.read` at its own
+pass — that is how `run_job` cancels mid-separation.
+**On a CUDA GPU three things change how a chunk runs; none applies anywhere else.**
+(1) `_keep_forward_on_gpu` replaces three demucs helpers **by module attribute**, arithmetic
+unchanged: `demucs.htdemucs.pad1d` with `_pad1d` (demucs' ends in an assert that compares tensors
+on the GPU and waits for the answer, every chunk), `demucs.htdemucs.spectro` with `_spectro` (the
+Hann window is cached on the device in `_stft_windows`; demucs builds it on the CPU and copies it
+across per call), and `demucs.transformer.create_2d_sin_embedding` with an `lru_cache` of itself
+(demucs recomputes it on the CPU per chunk; every chunk has one shape).
+(2) **Half precision.** `settings.demucs_half_precision` lets `_settle_precision` time one
+full-length chunk each way (`_chunk_seconds`, the faster of two tries) and set `_half_precision`
+only where half is faster — about 100 ms against 135 on an RTX 4060; a card without tensor cores
+stays float32. `_run_model` then wraps the forward in `torch.autocast(dtype=float16)` and returns
+float32. `_accept_half_precision` patches each `HTDemucs`' `_mask` to cast to float32 first, since
+`view_as_complex` has no half-precision form. After every pass `_separate` checks `_finite` (a sum,
+so no mask the size of the track); a pass with a NaN or infinity is logged, **run again in float32**,
+and half precision stays off for the process. HTDemucs models only.
+(3) **A recorded CUDA graph.** When `_recording` is set, `_apply_model` calls `_record` on the
+first chunk of an `HTDemucs`' pass: `_RecordedModel` captures the model's forward with
+`torch.cuda.graph` (under `torch.cuda.device`, since a graph records the current device's stream)
+and replays it for every chunk — one launch in place of thousands, each of which needed the GIL.
+The recording stops short of the inverse STFT, because `torch.istft` checks its window on the CPU:
+`model._ispec` is swapped for the capture for a stand-in that keeps the spectrogram and returns
+zero, and each replay finishes with the real `_ispec` and the sum, after `_wait_for_gpu` (which
+sleeps on a `torch.cuda.Event`, where waiting inside CUDA would spin a core). **A recording is made
+per pass and dropped with it** — about 0.04 s — so no GPU memory is held between jobs. In float32
+the replay equals the model bit for bit, and the stems are byte-identical to those of the code
+before it. **`_recording` is `False` at import and only `_settle_recording` sets it**, at load, when
+`settings.demucs_cuda_graph` allows: it runs a chunk of noise through every `HTDemucs` in the bag
+directly — which is also what builds, with the CPU's help, the things a forward keeps and a capture
+can't make — then from a recording, and turns recording on only if the two agree within
+`_RECORDING_TOLERANCE` (0.02 of the peak; about 8e-5 in half precision, 0 in float32). So a pass
+replays a recording only if one was verified in this process: after a failed warm-up, or a failed
+check, chunks run through the model directly. `_record` clears `_recording` for the rest of the
+process on any exception.
+All of (1)–(3) mirror demucs 4.1.0's internals and nothing pins that version. The track is decoded by `sphn.read` at its own
 rate, falling back to demucs' ffmpeg `AudioFile`, and resampled to the model's on the device with
 `demucs.audio.convert_audio`. Stems are written into a sibling `stems.partial/` (cleared first) and
 renamed onto `stems/` only once all are written, so **`stems/` is complete or absent** — which is what
@@ -437,15 +510,23 @@ Every stem is a **16-bit FLAC** (`STEM_SUFFIX = ".flac"`) whatever the source de
 converts it where it was separated: it scales a stem that would clip down as a whole — the arithmetic
 of Demucs' `prevent_clip(mode="rescale")`, in place — then rounds with libsndfile's own scale (×32768,
 round half to even, clamp), so the samples are bit for bit those `soundfile` would write from the
-float stem; only the int16 array crosses to the CPU. `soundfile.write(..., subtype="PCM_16",
-compression_level=_FLAC_COMPRESSION_LEVEL)` (0.5: FLAC level 4, the default level's size, about a
-third faster) runs on a `ThreadPoolExecutor` of one thread per core, at most one per stem —
-libsndfile encodes outside the GIL; `_write_flac` holds the one `soundfile.write` call.
+float stem; only the int16 array crosses to the CPU. `_write_flac` holds the one
+`soundfile.write(..., format="FLAC", subtype="PCM_16", compression_level=_FLAC_COMPRESSION_LEVEL)`
+call (0.5: FLAC level 4, the default level's size, about a third faster), **into a file object opened
+with a 4 MiB buffer** (`_WRITE_BUFFER_BYTES`): libsndfile writes a FLAC frame — a few kilobytes — at a
+time, and under Docker Desktop the data directory is a share of the host's disk where every write is
+a round trip. Six stems of a 6:20 track took 8–14 s to write that way and 2.0 s buffered, the files
+byte for byte the same. `_write_stems` runs the writes on a `ThreadPoolExecutor` of one thread per
+core plus one for whichever is waiting on the disk, at most one per stem — libsndfile encodes outside
+the GIL — and a semaphore lets it convert no more stems than the encoders can take, one each and one
+waiting, where all six stems' samples used to be in memory at once.
 `torch.cuda.empty_cache()` runs after every pass, in a `finally`.
-Returns the model's source names, but `run_job` ignores the return value. The unguarded `global` is
+Returns the model's source names, but `run_job` ignores the return value. The unguarded `global`s are
 safe only because a single thread calls this.
 **See:** [../features/stem-separation.md](../features/stem-separation.md),
-[../architecture/decisions.md](../architecture/decisions.md#chord-runs-demucs-chunk-loop-itself)
+[../architecture/decisions.md](../architecture/decisions.md#chord-runs-demucs-chunk-loop-itself) and the
+two records after it, on [half precision](../architecture/decisions.md#separation-runs-in-half-precision-where-the-gpu-is-faster-at-it)
+and the [recorded graph](../architecture/decisions.md#the-separation-model-is-replayed-from-a-recorded-cuda-graph)
 
 ### `app/pipeline/networks.py` — madmom's networks, run by torch (132 lines)
 **Exports:** `TorchNetwork`, `run_on_torch`
@@ -492,23 +573,36 @@ exposes a manual transpose. `ChordSegment.confidence` is **hardcoded to `1.0`**.
 duplicated in `web/src/utils/transpose.ts`.
 **See:** [../features/chords-and-key.md](../features/chords-and-key.md)
 
-### `app/pipeline/tempo.py` — BPM detection (22 lines)
+### `app/pipeline/tempo.py` — BPM detection (99 lines)
 **Exports:** `detect_tempo`, `warm_up`
 **Imports from:** —
-**Used by:** `pipeline.pipeline`
+**Used by:** `pipeline.pipeline`, and `server/Dockerfile`, whose last step runs `warm_up` to bake
+numba's cache into the image
 **Notes:** `detect_tempo(samples, sample_rate)` takes mono samples, not a path — `run_job` passes
-the shared `decode.decode_mono` `Signal`. Integer PCM is scaled to float by its dtype's maximum,
-then `librosa.beat.beat_track` runs on the **original mix** (not the drums stem) **at the decoded
-rate**, 44.1 kHz, rounded to one decimal. Don't resample it down: at 22.05 kHz the onset envelope has
-half the frames and the estimate coarsens enough to make the metronome drift (a 120 BPM click read
-117.5). `warm_up()` runs the tracker once on 2 s of seeded noise at `_WARM_UP_RATE` (22 050 Hz):
-numba compiles librosa's beat tracker on first use in every process — about 19 s, longer than
-tracking a whole song — and silence would skip the compiled path, having no onsets. **`beat_track`'s beat frame positions are
-discarded** — only the scalar BPM is kept, which is why the metronome can't phase-align to the
-downbeat. `np.atleast_1d(tempo)[0]` normalizes across librosa versions.
+the shared `decode.decode_mono` `Signal`. It returns **the tempo `librosa.beat.beat_track` reports**,
+from the **original mix** (not the drums stem) **at the decoded rate**, 44.1 kHz, rounded to one
+decimal — without calling it. librosa builds the whole track's spectrogram and then one
+autocorrelation window per frame, all at once: over a gigabyte for a six-minute track, growing with
+its length, beside a separation that needs the memory. Here both are built in blocks.
+`_onset_envelope` is `librosa.onset.onset_strength(aggregate=np.median)` with the mel spectrogram
+under it made `_SPECTROGRAM_BLOCK_FRAMES` (2048) frames at a time — `_window` cuts the samples for a
+block, scales integer PCM by its dtype's maximum and pads the edges with the zeros a centred STFT
+would — and is the same to the bit. `_mean_tempogram` sums `librosa.feature.tempogram` over
+`_TEMPOGRAM_BLOCK_FRAMES` (512) at a time, which differs from librosa's mean in the last bits only,
+and `librosa.feature.tempo(tg=…, aggregate=None)` picks the BPM. A track with no onsets returns 0,
+as `beat_track` does. For 6:20 of audio: 1.2 s and 154 MiB of peak memory, where `beat_track` took
+3.3 s and 1,122 MiB. The constants at the top are librosa's own defaults, spelled out because the
+estimate is assembled here; change them and the result is no longer librosa's. Don't resample the
+input down: at 22.05 kHz the onset envelope has half the frames and the estimate coarsens enough to
+make the metronome drift (a 120 BPM click read 117.5). `warm_up()` estimates the tempo of 2 s of
+seeded int16 noise at `_WARM_UP_RATE` (44 100 Hz): librosa imports its submodules on first use and
+numba compiles their vectorized helpers then, and silence would stop short of the tempogram, having
+no onsets. **No beat positions are computed** — the beat tracker that would place them never runs —
+which is why the metronome can't phase-align to the downbeat. `np.atleast_1d(tempo)[0]` normalizes
+across librosa versions.
 **See:** [../features/tempo-and-metronome.md](../features/tempo-and-metronome.md)
 
-### `app/pipeline/lyrics.py` — lrclib lookup, pasted lyrics, offset correction (158 lines)
+### `app/pipeline/lyrics.py` — lrclib lookup, pasted lyrics, offset correction (163 lines)
 **Exports:** `LRCLIB_BASE`, `guess_candidates`, `parse_lyrics_text`, `estimate_lyrics_offset`,
 `fetch_lyrics`
 **Imports from:** —
@@ -523,16 +617,20 @@ without one are **dropped**, and `plain` is rebuilt from the timed lines; otherw
 text becomes `plain`; blank text is `None`. `estimate_lyrics_offset` cross-correlates LRC-expected
 vocal activity against measured RMS activity of the separated vocals stem, searching −10 s…+30 s
 in 0.25 s bins and accepting a shift only if it beats no-shift by 15%
-(`_MIN_SCORE_IMPROVEMENT`); wrapped in a bare `except Exception` returning `0.0`.
+(`_MIN_SCORE_IMPROVEMENT`); wrapped in a bare `except Exception` returning `0.0`. `_vocal_activity`
+reads the stem `_RMS_BLOCK_WINDOWS` (64 windows, 16 s) at a time: the whole stem decoded at once is
+about 300 MB for six minutes, held while the page that asked for lyrics is also fetching every stem.
 **See:** [../features/lyrics.md](../features/lyrics.md)
 
-### `app/pipeline/metadata.py` — audio info and artist tag (54 lines)
+### `app/pipeline/metadata.py` — audio info and artist tag (58 lines)
 **Exports:** `read_audio_info`, `extract_author`
 **Imports from:** —
-**Used by:** `pipeline.pipeline`
-**Notes:** `read_audio_info` reads the header with `soundfile.info` and returns
-`(frames / samplerate, label)`: `"<FORMAT> <bits>/<kHz>"` for the fixed-depth subtypes in
-`_BIT_DEPTHS` (`"FLAC 24/48"`), `"<FORMAT> <kHz> kHz"` for everything else (`"MP3 44.1 kHz"`). It
+**Used by:** `pipeline.pipeline`, `pipeline.source` (`read_audio_info`)
+**Notes:** `read_audio_info(audio_path, source_codec=None)` reads the header with `soundfile.info`
+and returns `(frames / samplerate, label)`: `"<FORMAT> <bits>/<kHz>"` for the fixed-depth subtypes in
+`_BIT_DEPTHS` (`"FLAC 24/48"`), `"<FORMAT> <kHz> kHz"` for everything else (`"MP3 44.1 kHz"`). Given a
+`source_codec` — `source.download_audio` passes the lossy codec a link's audio was in before it
+became the FLAC being read — the label names that, with no bit depth: `"OPUS 48 kHz"`. It
 runs for every job and **raises** on audio libsndfile can't open — deliberately, since nothing
 after it can run without a duration — which `run_job` reports as *"CHORD couldn't read the audio
 source."* `extract_author` is the opposite: it shells out to
@@ -540,7 +638,7 @@ source."* `extract_author` is the opposite: it shells out to
 among `artist`, `ARTIST`, `Artist`, `album_artist`, `ALBUM_ARTIST`, and turns **every** failure
 mode — ffprobe missing, timeout, non-zero exit, unparseable JSON, no tag — into `None`, so the
 job proceeds without an author. It is used only for uploads; URL jobs get their author from
-yt-dlp.
+yt-dlp. `run_job` calls it from `_read_tags`, on the analysis thread, beside separation.
 
 ### `app/pipeline/thumbnail.py` — cover art via ffmpeg (30 lines)
 **Exports:** `THUMBNAIL_FILENAME`, `extract_embedded_cover`, `convert_to_jpg`

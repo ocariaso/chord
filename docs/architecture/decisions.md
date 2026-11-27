@@ -21,6 +21,15 @@ progressive start, and that number is why the
 [FLAC](#stems-are-stored-as-flac-and-exported-as-wav), which shortens the download but not the
 decode or the memory.
 
+The context's rate is the stems' own. `decodeAudioData` resamples to its context's rate, and for
+six 48 kHz stems on a 44.1 kHz output device that was a quarter of the decode (1.4 s against
+1.03 s for a 6:20 track in Chrome). So before its first decode the engine reads the rate from the
+first stem's FLAC header and, if the device's differs, reopens its context at the stems'; the
+browser then converts the one mixed output as it plays. That costs a context opened and thrown
+away on such a device, and a dependency on the stems being FLAC that goes beyond decoding them —
+anything else, or a rate the browser refuses, falls back to resampling every stem as before. See
+[audio-playback.md](audio-playback.md#the-context-runs-at-the-stems-sample-rate).
+
 ## Stems are stored as FLAC and exported as WAV
 
 **Constraint:** every stem is downloaded whole before playback can start — about 10 MB per
@@ -32,14 +41,19 @@ separated*, and no feature may be removed to save bytes.
 where the stem was separated, with the arithmetic of Demucs' own `prevent_clip(mode="rescale")` — the
 clip handling `save_audio` applied — and libsndfile's own scale and rounding, so they are bit for bit
 what libsndfile would have written from the float stem; `save_audio` would also have started an
-ffmpeg process per FLAC file. Lossless, at about half WAV's bytes. Playback fetches `stems/<name>.flac` as stored, and
+ffmpeg process per FLAC file. Each file is written through a 4 MiB buffer: libsndfile writes a
+FLAC frame at a time, and on a data directory shared from the host's disk — what Docker Desktop
+gives a bind mount — each of those writes was a round trip, 8–14 s for the six stems of a 6:20
+track against 2.0 s buffered. Lossless, at about half WAV's bytes. Playback fetches `stems/<name>.flac` as stored, and
 `decodeAudioData` reads it natively. Export fetches `stems/<name>.wav`, which the server converts as
 it streams — a 44-byte header, then the FLAC decoded a block at a time — and the zip carries the same
 converted WAVs, deflated at level 1 and streamed. A lossless 16-bit FLAC decodes to exactly the
 separated samples, so the WAV the user saves is the one Demucs' output would have been.
 
 **Cost:** encoding time after every separation — the one part of it still on the CPU, spread over a
-thread per core — and a decode on the server for every export — twice for a stem saved alone and in the zip. Still 16-bit whatever the source's
+thread per core and one more, and run after the model's pass when it could run beside it: 2.2–3.8 s
+of a 6:20 track's job on 2 CPUs ([todo](../todos/encode-stems-during-separation.md)) — and a decode
+on the server for every export — twice for a stem saved alone and in the zip. Still 16-bit whatever the source's
 depth. A job directory written before the switch holds `.wav` stems, which `_stems_complete` doesn't
 recognise and neither stem route serves, so resuming such a job separates it again. See
 [../features/downloads.md](../features/downloads.md).
@@ -165,7 +179,7 @@ were CPU work (librosa, madmom). On a GPU, separation of a four-minute track too
 analysis run after it was most of the wait. (madmom's networks have since moved to torch — see
 [the next record](#madmoms-networks-run-on-torch) — which shrank analysis to a few seconds; running it
 beside separation still hides those.) And the first job after a start paid for loading every
-model, including about 19 s of numba compiling librosa's beat tracker.
+model, including, then, about 19 s of numba compiling librosa's beat tracker.
 
 **Choice:** when a job enters `separating`, `run_job` starts one `chord-analysis` thread
 (`ThreadPoolExecutor(max_workers=1)`). It decodes the original once
@@ -174,13 +188,24 @@ as it is) and runs tempo detection, then chord and key detection, on that one de
 thread runs Demucs. After separation the worker collects the results in stage order, writing
 *Detecting tempo* or *Detecting chords and key* only for a step still running, and writes
 `chords.json`, `key.json` and the final row itself, so an abandoned run's analysis writes nothing.
-Before its first job the worker calls `warm_up`: the Demucs weights, the beat tracker's compile and
+The same thread first reads an upload's artist tag and embedded cover (`_read_tags`), which nothing
+waits for; ahead of separation, as they were, they held every job up by about half a second.
+Before its first job the worker calls `warm_up`: the Demucs model, tempo detection run once and
 the madmom networks. See [job-lifecycle.md](job-lifecycle.md#progress-values).
 
 **Cost:**
 
 - **CPU contention.** On a CPU-only host Demucs and analysis compete for the same cores, so
   separation slows by some of what analysis takes; the gain is mostly on a GPU.
+- **The GIL, and memory.** Two threads in one process share both. Launching a chunk's thousands
+  of GPU operations from Python needed the GIL for each, so analysis running beside separation held
+  every chunk up by a third or more — a pass of 9.1 s that takes 7.0 s now that a chunk is
+  [one launch](#the-separation-model-is-replayed-from-a-recorded-cuda-graph). And librosa's tempo
+  estimate held over a gigabyte for a six-minute track, enough to push a 4 GiB Docker VM into swap
+  under the separation; it is [built in blocks](#tempo-is-librosas-assembled-in-blocks) for that
+  reason.
+- **The artist and the cover arrive late.** They reach the processing screen a moment after
+  separation starts, not before it.
 - **Analysis can't be cancelled.** `shutdown(cancel_futures=True)` drops only steps that haven't
   started. A cancelled, superseded or failed run's decode, tempo or chord step keeps running,
   unread, and can overlap the next job.
@@ -234,25 +259,167 @@ instead of 8.0 s from a 48 kHz one, with stems that differ from Demucs' only by 
 or more below the signal. See
 [../features/stem-separation.md](../features/stem-separation.md#the-separation-pass).
 
-**Cost:** CHORD owns about sixty lines that mirror demucs 4.1.0's inference. A demucs upgrade that
+**Cost:** CHORD owns about sixty lines that mirror demucs 4.1.0's inference — and, since the two
+records below, three of demucs' helpers and the tail of its forward pass as well. A demucs upgrade that
 changes it — a new default, another shift policy — doesn't reach CHORD until it is copied across, and
 only the defaults exist here: one shift, chunked, linear blend. The GPU holds the whole separated track
 for the length of the pass, where Demucs held a chunk — about 3.5 GiB of headroom for twelve minutes.
 On a GPU without that room the model still runs there, but chunks are copied back and added up in RAM,
 and the stems resampled and converted on the CPU: closer to the old speed.
 
+## Separation runs in half precision where the GPU is faster at it
+
+**Constraint:** with the chunk loop on the GPU, the model's own pass is most of a job, and the
+GPU is busy for all of it — 99% on an RTX 4060. Batching chunks, TF32 and cuDNN's benchmark mode
+had each been measured and bought little or cost memory. Half precision is the one setting that
+makes the arithmetic itself cheaper, and it changes the result.
+
+**Choice:** `DEMUCS_HALF_PRECISION`, on by default, and decided per machine. When the model is
+loaded, `_settle_precision` times one full-length chunk in float32 and one under
+`torch.autocast(dtype=float16)`, and turns half precision on only if it was faster: about 100 ms
+against 135 on the RTX 4060. A card without tensor cores computes half precision slower than float32
+and stays where it was. Only the network runs in it — its output is cast to float32 before
+HTDemucs reads it as a complex spectrogram, which has no half-precision form, so the inverse STFT,
+the overlap-add and the stems are float32 as before. After every pass a sum over the result says
+whether anything in it is NaN or infinite; such a pass is run again in float32 and half precision
+is off for the rest of the process. See
+[../features/stem-separation.md](../features/stem-separation.md#how-a-chunk-runs-on-a-gpu).
+
+**Cost:** the stems are no longer float32's. Against float32 with the same random shift, on the
+one track measured: 62 dB below the signal on drums, bass and vocals, 56 dB on guitar, 42–45 dB on
+two stems that were nearly silent there, and at most 41 of 32768 on a sample — 190 on a
+three-second clip, 302 on one driven into clipping. The claim this rests on is that Demucs itself
+is looser than that: it shifts its chunks at random on every run, and two float32 runs of that track
+differ from each other by 0.4–27 dB and up to 3218 of 32768. That is an argument about audibility
+on one track, not a measurement of separation quality, and nobody has listened for it across a
+library. `DEMUCS_HALF_PRECISION=false` restores float32, in which CHORD's stems are byte for byte
+what they were. The NaN check covers the failure half precision is known for, and nothing subtler:
+it reruns a whole pass when it fires, and a model other than `HTDemucs` never gets half precision at
+all. The choice also rests on two timings of one chunk at start-up, on a GPU the desktop is using
+too; a wrong call there stands until the next start.
+
+## The separation model is replayed from a recorded CUDA graph
+
+**Constraint:** HTDemucs' forward pass is thousands of small GPU operations, and PyTorch launches
+each one from Python. On the RTX 4060 that was about 70 ms of the worker thread's time for a chunk
+the GPU computes in 100, and every launch takes the GIL — which the
+[analysis thread](#analysis-runs-beside-separation) wants too. Beside a thread busy in Python a
+chunk took 581 ms; beside the real analysis the pass over a 6:20 track took 9.1 s where it takes
+6.5–7 s alone. A second process for the analysis would have ended the contention at the price of a
+second copy of the Python stack in memory, on a machine where memory was already the problem.
+
+**Choice:** record the forward pass once and replay it. `_RecordedModel` captures it with
+`torch.cuda.graph` and replays it for every chunk: one launch of the same operations — 6 ms of the
+thread's time, 120 ms a chunk beside that busy thread, and about 7.0 s for the 6:20 pass with the
+analysis running. In float32 the replay equals the model bit for bit, and the stems are
+byte-identical to the ones the previous code wrote. Three things make the forward recordable:
+
+- A graph can't hold a step that leaves the GPU, and demucs' forward has three per chunk. `pad1d`
+  asserts on a comparison made on the GPU, `spectro` builds its window on the CPU, and
+  `create_2d_sin_embedding` computes the positional embedding there. `_keep_forward_on_gpu` replaces
+  them, by module attribute, with equivalents that don't — the same arithmetic, and a wait saved per
+  chunk even without a recording.
+- `torch.istft` checks its window on the CPU, inside torch, where it can't be replaced. So the
+  recording stops short of it: `_ispec` is swapped during capture for a stand-in that keeps the
+  spectrogram and returns zero, and each replay finishes with the real inverse STFT and the sum.
+- A recording is made at the first chunk of a pass and dropped with the pass. It takes about
+  0.04 s, and a recording holds the model's working memory for as long as it lives; kept, it would
+  be half a gigabyte of a shared GPU held between jobs.
+
+Nothing replays a recording that hasn't been checked. `_settle_recording` runs a chunk of noise
+through the model directly and from a recording when the model loads, and turns recording on only
+if they agree within 2% of the peak (they agree exactly in float32, to about 8e-5 in half
+precision); a recording that can't be made, then or later, ends recording for the process. In
+either case, and when the warm-up itself failed, chunks run through the model as they always did.
+`DEMUCS_CUDA_GRAPH=false` never tries.
+
+**Cost:** more of demucs is CHORD's now, and held by its internals: three helpers replaced by
+assigning to `demucs.htdemucs` and `demucs.transformer`, `_ispec` and `_mask` swapped on the model
+object, and the knowledge that `forward` ends with an inverse STFT added to the waveform branch.
+All of it describes demucs 4.1.0, which `requirements.txt` doesn't pin. The check at start-up is
+what stands between a demucs that has moved and wrong stems, and it is one chunk of noise against a
+2% tolerance: it catches a forward that no longer matches, not a small error. A capture bakes in
+whatever the forward did once, so a model whose forward is random at inference would be recorded
+wrong — `htdemucs_6s` isn't, and the check would see it — and only `HTDemucs` is recorded at all,
+because only its chunks all have one shape. In half precision a replay and a direct run differ by
+up to about a thousandth of the peak, so with both on, a job's stems depend on which path ran. And
+a capture that fails inside CUDA leaves an error behind it; separation carried on correctly after
+one in testing, and a later recording worked, but that is one driver on one card.
+
+## Tempo is librosa's, assembled in blocks
+
+**Constraint:** CHORD wants the tempo `librosa.beat.beat_track` reports and never read the beat
+positions it also returns. librosa estimates that tempo from a tempogram: one eight-second
+autocorrelation window for every frame of the onset envelope, built for the whole track at once on
+top of the whole track's spectrogram. For a 6:20 track that peaked 1,122 MiB above the process's
+baseline, and it grows with the track — about 2 GiB at twelve minutes — on the
+[analysis thread](#analysis-runs-beside-separation), while separation holds the track too. In a
+4 GiB Docker VM that was already using its swap, tempo detection took 11–16 s for that track where
+it takes 3.3 s with memory to spare, and the time it took grew faster than the track did.
+
+**Choice:** `tempo.py` assembles the same estimate from librosa's own parts, a block at a time.
+The mel spectrogram under the onset envelope is built 2048 frames at a time and handed to
+`librosa.onset.onset_strength` as its `S`; the tempogram is computed 512 frames at a time and only
+its running sum kept; `librosa.feature.tempo` picks the BPM from the mean. The envelope is the same
+to the bit and the mean differs in its last bits, so the BPM is librosa's — equal on every case
+tried. Peak memory is 154 MiB for that track, flat in its length, and the estimate takes 1.2 s
+where `beat_track` took 3.3 s. The beat tracker never runs. See
+[../features/tempo-and-metronome.md](../features/tempo-and-metronome.md#detection).
+
+Not running the tracker also removed most of what numba compiled at start-up. What is left is
+compiled once, at image build: the [`Dockerfile`](../../server/Dockerfile)'s last step runs
+`tempo.warm_up()` as the server's user, so numba's cache is in the image and a new container's
+warm-up is about 6 s where it was 29–40 s.
+
+**Cost:** CHORD owns the way librosa 0.11 turns audio into a tempo — its STFT's centring and
+padding, its eight-second window, its 120 BPM prior — spelled out as constants that have to stay
+librosa's defaults for the result to stay librosa's. A librosa that changes any of them changes
+`beat_track` and not CHORD. The equality was checked on one recording cut several ways and on
+synthetic input, not on a library. A first beat time, which the
+[metronome](../features/tempo-and-metronome.md#phase-alignment) wants, is now a tracker run that has
+to be added, where before it was a return value being thrown away. And the build's warm-up step
+sits after `COPY app`, so every code change reruns it, and numba keys its cache on the CPU: an image
+built on one machine and run on another compiles again at its first start.
+
+## A link's audio is kept as FLAC
+
+**Constraint:** a link's audio arrives in whatever codec the site serves — Opus or AAC, usually —
+and the pipeline wants one known file it can decode twice, once for separation and once for
+analysis. It used to be a 192 kbps MP3, which libsndfile and both decoders read, at the price of
+encoding it: 6.0 s of ffmpeg for a 6:20 track, before any work on it, and a second lossy encoding
+between the source and the separation.
+
+**Choice:** `FFmpegExtractAudio` writes a 16-bit FLAC, `original.flac`. ffmpeg does that in 1.6 s
+for the same track, and the separation hears the source as it decoded. 16-bit is forced
+(`-sample_fmt s16`), since ffmpeg would write a lossy codec's decoded samples as 24-bit for nothing;
+a link that is already a FLAC is copied as it is. Because the file no longer says what the source
+was, the download reports it: `audio_format` for a link is the codec yt-dlp names, written with the
+title — `OPUS 48 kHz` where it used to read `MP3 48 kHz`, which was never the source either. See
+[../features/ingest.md](../features/ingest.md#the-download).
+
+**Cost:** disk — about 42 MB for six minutes where the MP3 was 9 MB, held until the job is
+discarded, and read twice across a shared data directory. The label is a guess when yt-dlp doesn't
+name a codec: a direct link to an `.m4a` or `.mp3` is labelled by its extension, and one to a
+`.webm` gets the converted file's `FLAC 16/48`, which reads as lossless and isn't. `audio_format`
+now has two writers, on two sides of the attempt guard, and means the file for an upload and the
+source for a link. A job directory from before the change holds `original.mp3`, which a resumed
+link job no longer looks for, so it downloads again.
+
 ## The database row is the only progress channel
 
 **Constraint:** the worker thread and the HTTP request handlers are different threads; the UI
 needs sub-second progress, and a cancel or resume has to reach a running job.
 
-**Choice:** stages `UPDATE` the row; the SSE endpoint re-reads the row every 0.5 s and yields on
+**Choice:** stages `UPDATE` the row; the SSE endpoint re-reads the row every 0.25 s and yields on
 change. Control travels the same way in reverse: cancel and resume are row writes, and the worker
 discovers them by re-reading the row. No queues, no pub/sub, no shared memory between the two.
 
-**Cost:** up to 500 ms of latency, one SELECT per subscriber per tick, and a blocking SQLite read
-from inside the async event loop. Measured separation progress adds up to 75 writes per job, one
-per 1% of the bar, and the worker re-reads the row every 2 s during separation to notice a cancel. Trivially
+**Cost:** up to 250 ms of latency, one SELECT per subscriber per tick, and a blocking SQLite read
+from inside the async event loop — about 5 ms each where the data directory is a share of the
+host's disk, as under Docker Desktop, so four ticks a second are 2% of the loop for every open
+processing screen. Measured separation progress adds up to 75 writes per job, one
+per 1% of the bar and never two within 0.25 s: a write the stream won't read before the next one is
+a commit — 13 ms on such a share — on the thread that is feeding the GPU. The worker also re-reads the row every 2 s during separation to notice a cancel. Trivially
 correct and trivially debuggable (`sqlite3` the file and you can see exactly what the UI will
 show), which is worth more here than the efficiency.
 
@@ -283,14 +450,15 @@ which a status check alone would read as "carry on".
 **Choice:** an internal `attempt` column, incremented by `POST /jobs/{id}/resume`. `run_job`
 reads it once at the start; every write it makes is `UPDATE … WHERE id = ? AND attempt = ? AND
 status != 'cancelled'`, and every checkpoint asks `_is_superseded` — row gone, `cancelled`, or a
-different attempt. The resumed run reuses what the cancelled one finished: `original.mp3` for a
+different attempt. The resumed run reuses what the cancelled one finished: `original.flac` for a
 URL job, and `stems/` when all six FLACs are present, which the rename-into-place makes
 trustworthy.
 
 **Cost:** a superseded write is dropped silently — `_update_job` never checks how many rows it
 matched — so anything a later attempt needs and can't produce again has to opt out of the guard.
-The title and uploader a download finds are that case: the resumed run skips the download, so
-`_record_track_identity` writes them by id alone, and they survive a cancel that lands mid-download.
+The title, uploader and source format a download finds are that case: the resumed run skips the
+download, so `_record_track_identity` writes them by id alone, and they survive a cancel that lands
+mid-download.
 Any new write of that kind needs the same deliberate exception. `attempt` isn't in `JobResponse`,
 so only `sqlite3` shows it. Resume accepts only `cancelled` — not `error` — and re-runs tempo and
 chord detection even when the cancelled attempt had finished them. And it enqueues without knowing

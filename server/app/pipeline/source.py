@@ -1,20 +1,46 @@
 import logging
 from pathlib import Path
+from typing import NamedTuple
 
 import yt_dlp
 
-from app.pipeline import thumbnail
+from app.pipeline import metadata, thumbnail
 from app.pipeline.errors import TrackTooLongError, UserFacingError
 
 logger = logging.getLogger(__name__)
+
+# A link's audio is kept as FLAC. ffmpeg writes one about four times as fast as the 192 kbps MP3 this used to make,
+# and separation then hears the source as it decoded, not through a second lossy encoding.
+DOWNLOAD_FILENAME = "original.flac"
+
+# The lossy codecs a link's audio usually arrives in, by yt-dlp's name for them, as the processing screen shows them:
+# the FLAC the audio is converted to says nothing of what it was.
+_SOURCE_CODECS = {"opus": "OPUS", "mp4a": "AAC", "aac": "AAC", "mp3": "MP3", "vorbis": "VORBIS"}
+# A direct link to a file has no codec in its metadata, only an extension, and only some of those name one.
+_SOURCE_EXTENSIONS = {"mp3": "MP3", "m4a": "AAC", "aac": "AAC", "opus": "OPUS"}
 
 
 class SourceDownloadError(UserFacingError):
     """Raised with a message safe to show directly to the user."""
 
 
-def download_audio(url: str, output_dir: Path, max_duration_seconds: float) -> tuple[Path, str, str | None]:
-    """Extract audio from a URL (YouTube, SoundCloud, direct file, etc.) as an MP3.
+class Download(NamedTuple):
+    path: Path
+    title: str
+    author: str | None
+    # A label for the processing screen, as `metadata.read_audio_info` writes them.
+    audio_format: str
+
+
+def _source_codec(info: dict) -> str | None:
+    """The lossy codec the link's audio came in, or None for a lossless or unrecognized one, which the converted
+    file's own format describes."""
+    codec = (info.get("acodec") or "").split(".")[0]
+    return _SOURCE_CODECS.get(codec) or _SOURCE_EXTENSIONS.get(info.get("ext") or "")
+
+
+def download_audio(url: str, output_dir: Path, max_duration_seconds: float) -> Download:
+    """Extract audio from a URL (YouTube, SoundCloud, direct file, etc.) as a FLAC.
 
     A source longer than max_duration_seconds (0 = no limit) is refused from its metadata, before
     any audio is downloaded."""
@@ -32,9 +58,10 @@ def download_audio(url: str, output_dir: Path, max_duration_seconds: float) -> t
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": output_template,
-        "postprocessors": [
-            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
-        ],
+        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "flac"}],
+        # 16-bit, as the stems are. Left to itself ffmpeg writes a lossy codec's decoded samples as 24-bit: a file
+        # twice the size that holds nothing more.
+        "postprocessor_args": {"extractaudio": ["-sample_fmt", "s16"]},
         "writethumbnail": True,
         "quiet": True,
         "no_warnings": True,
@@ -57,13 +84,15 @@ def download_audio(url: str, output_dir: Path, max_duration_seconds: float) -> t
     author = info.get("uploader") or info.get("channel")
     _normalize_downloaded_thumbnail(output_dir)
 
-    return output_dir / "original.mp3", title, author
+    path = output_dir / DOWNLOAD_FILENAME
+    _, audio_format = metadata.read_audio_info(path, _source_codec(info))
+    return Download(path, title, author, audio_format)
 
 
 def _normalize_downloaded_thumbnail(output_dir: Path) -> None:
     """yt-dlp saves the thumbnail as original.<ext> (jpg/webp/png); convert it to a plain JPEG."""
     for candidate in output_dir.glob("original.*"):
-        if candidate.suffix.lower() == ".mp3":
+        if candidate.name == DOWNLOAD_FILENAME:
             continue
         thumbnail.convert_to_jpg(candidate, output_dir / thumbnail.THUMBNAIL_FILENAME)
         candidate.unlink(missing_ok=True)

@@ -93,21 +93,31 @@ def _get_model() -> BagOfModels:
     if _model is None:
         model = get_model(settings.demucs_model)
         bag = model if isinstance(model, BagOfModels) else BagOfModels([model])
+        if resolve_device().type == "cuda":
+            _keep_forward_on_gpu()
+            for member in bag.models:
+                if isinstance(member, HTDemucs):
+                    _accept_half_precision(member)
         _model = bag.to(resolve_device()).eval()
     return _model
 ```
 
 A module-level singleton, moved onto the device once and kept there — Demucs' own `apply_model`
 moves a bag's models onto the device and back off it on every call. A bare model becomes a bag of
-one, so one path weighs every model's sources. It loads before the first job: the worker thread
+one, so one path weighs every model's sources. For a CUDA device, and only then, the load also
+prepares demucs for [how a chunk runs on a GPU](#how-a-chunk-runs-on-a-gpu). It loads before the
+first job: the worker thread
 calls `pipeline.warm_up()` before it takes anything off the queue, which calls `load_model()` here.
 On a GPU `load_model()` also runs the model once, on a second of silence: CUDA loads each kernel the
-first time it runs, which otherwise made the first job after a start the slowest. A job submitted
-during the warm-up waits on *Queued*.
+first time it runs, which otherwise made the first job after a start the slowest. It then settles
+how the model will run for the life of the process — `_settle_precision` and `_settle_recording`,
+both described below — and logs the outcome of each. A job submitted during the warm-up waits on
+*Queued*.
 
 The same lazy-singleton pattern appears in [`chords.py`](../../server/app/pipeline/chords.py)
-for madmom's processors. The unguarded `global` is safe only because the single worker thread is
-the only caller; it would not be if concurrency were introduced.
+for madmom's processors. The unguarded `global`s — the model, and the two flags the load settles —
+are safe only because the single worker thread is the only caller; they would not be if concurrency
+were introduced.
 
 ## Weights cache
 
@@ -159,7 +169,72 @@ the server doesn't hold its largest track's worth of GPU memory between jobs.
 Measured on an RTX 4060 for a minute of audio, warm, against the `Separator` path it replaced:
 2.9 s against 6.1 s from a 44.1 kHz source and 3.5 s against 8.0 s from a 48 kHz one, stems
 written, with peak RAM about 300 MB lower. The stems differ from Demucs' own only by float
-rounding: 69 dB or more below the signal on the quietest stem, about 100 dB on the main ones.
+rounding: 69 dB or more below the signal on the quietest stem, about 100 dB on the main ones. Those
+figures are for the chunk loop alone, in float32; what follows has since made a pass faster again.
+
+### How a chunk runs on a GPU
+
+On a CUDA device three more things change how each chunk gets through the model. None of them
+applies on a CPU, and none changes the loop above.
+
+**The forward pass stays on the GPU.** demucs' `HTDemucs.forward` leaves the GPU three times for
+every chunk: `pad1d` ends in an assert that compares the padded audio with the original on the GPU
+and waits for the answer, `spectro` builds its Hann window on the CPU and copies it across, and
+`create_2d_sin_embedding` computes the transformer's positional embedding on the CPU, though it
+depends on the chunk's shape alone and every chunk has one shape. `_keep_forward_on_gpu` replaces
+the three, by module attribute, with `_pad1d` (the assert dropped), `_spectro` (the window built once
+per device and kept) and an `lru_cache` of the embedding. The arithmetic is unchanged.
+
+**Half precision, where the GPU is faster at it.** `DEMUCS_HALF_PRECISION` (default `true`) lets
+`_settle_precision` time one full-length chunk in float32 and one in half precision when the model
+is loaded, and turn half precision on only if it won: about 100 ms against 135 on an RTX 4060. A
+card without tensor cores computes half precision slower than float32 and stays as it was. A chunk
+then runs under `torch.autocast(dtype=torch.float16)` and comes back as float32, so the overlap-add
+and everything after it are unchanged. HTDemucs reads the network's output as a complex spectrogram,
+which has no half-precision form, so `_accept_half_precision` casts it to float32 first; from there
+on — the inverse STFT, the sum with the waveform branch — it is float32 either way. Models that
+aren't `HTDemucs` always run in float32.
+
+Half-precision stems are not float32's. Against float32 with the same random shift, measured on one
+track: 62 dB below the signal on drums, bass and vocals, 56 dB on guitar, 42–45 dB on the two stems
+that were close to silent there, and at most 41 of 32768 on any one sample (190 on a three-second
+clip, 302 on one driven into clipping). Two float32 runs of the same track differ from *each other*
+by far more, because every run shifts its chunks at random: 0.4–27 dB, and up to 3218 of 32768 on a
+sample. Half precision can also overflow where float32 wouldn't, and some GPUs return NaN from it
+outright, so `_separate` checks every pass with `_finite`. A pass that isn't finite is logged and
+**run again in float32**, and half precision stays off for the rest of the process. `false` keeps
+float32 always — see
+[the decision](../architecture/decisions.md#separation-runs-in-half-precision-where-the-gpu-is-faster-at-it).
+
+**A recorded CUDA graph.** Run directly, a chunk is thousands of GPU operations launched one at a
+time from Python: about 70 ms of the worker thread's time for a chunk the GPU computes in 100, and
+every launch needs the GIL — so the analysis running beside separation, which also needs it, held
+each chunk up. `_RecordedModel` records the model's forward once, with `torch.cuda.graph`, and
+replays it for every chunk: one launch of the same operations. The recording stops short of the
+inverse STFT, because `torch.istft` checks its window on the CPU, which a graph can't hold. For the
+capture `model._ispec` is swapped for a stand-in that keeps the spectrogram it is handed and returns
+zero, which leaves the forward returning its waveform branch alone; each replay then waits for the
+GPU (`_wait_for_gpu` sleeps on a `torch.cuda.Event`, where waiting inside CUDA would spin a core)
+and finishes with the real `_ispec` and the sum, as the forward would have.
+
+A recording is made at the first chunk of a pass and dropped with the pass. It takes about 0.04 s,
+and it holds the model's working memory for as long as it exists, so the server keeps none of it
+between jobs. In float32 a replay equals the model bit for bit, and the stems are byte-identical to
+the ones the code wrote before it. Measured on the RTX 4060: 6 ms of the worker thread's CPU a chunk
+in place of 70; beside a thread busy in Python, 120 ms a chunk where direct chunks took 581; and for
+6:20 of audio with the analysis running beside it, a pass of about 7.0 s in place of 9.1 s.
+
+Nothing replays a recording that hasn't been checked. `_recording` starts `False`, and only
+`_settle_recording` sets it, at load, when `DEMUCS_CUDA_GRAPH` (default `true`) allows: it runs a
+chunk of noise through every `HTDemucs` in the bag directly, then from a recording, and turns
+recording on only if the two agree within `_RECORDING_TOLERANCE`, 0.02 of the peak. They agree
+exactly in float32 and to about 8e-5 in half precision, where cuDNN's choices move them apart. A
+recording that can't be made — then, or at the start of any later pass — is logged with its
+traceback and ends recording for the process. Either way chunks run through the model directly, as
+they do when the warm-up itself failed. The log lines are in
+[troubleshooting](../operations/troubleshooting.md#the-first-job-after-a-start-waits-on-queued), the
+tradeoff in
+[the decision](../architecture/decisions.md#the-separation-model-is-replayed-from-a-recorded-cuda-graph).
 
 ## Output
 
@@ -170,13 +245,26 @@ def separate(input_path, output_dir, on_progress=None) -> list[str]:
         wav, source_rate = _read_audio(input_path, bag, device)            # resampled on the device
         stems = _separate(bag, wav, _storage_device(device, len(bag.sources), wav), on_progress or ...)
         output_rate = source_rate if source_rate in _PRESERVED_SAMPLE_RATES else bag.samplerate
-        with ThreadPoolExecutor(max_workers=min(len(bag.sources), os.cpu_count() or 1)) as encoder:
-            writes = [encoder.submit(sf.write, ..., _to_pcm16(stem, bag.samplerate, output_rate), output_rate,
-                                     subtype="PCM_16", compression_level=_FLAC_COMPRESSION_LEVEL)
-                      for name, stem in zip(bag.sources, stems)]
+        _write_stems(bag, stems, output_rate, partial_dir)
     ...
     shutil.rmtree(output_dir, ignore_errors=True)
     partial_dir.rename(output_dir)
+
+def _write_stems(bag, stems, output_rate, directory):
+    encoders = min(len(bag.sources), (os.cpu_count() or 1) + 1)
+    unwritten = threading.Semaphore(encoders + 1)
+    with ThreadPoolExecutor(max_workers=encoders) as encoder:
+        for name, stem in zip(bag.sources, stems):
+            unwritten.acquire()
+            samples = _to_pcm16(stem, bag.samplerate, output_rate)
+            write = encoder.submit(_write_flac, directory / f"{name}{STEM_SUFFIX}", samples, output_rate)
+            write.add_done_callback(lambda _: unwritten.release())
+        ...
+
+def _write_flac(path, samples, sample_rate):
+    with open(path, "wb", buffering=_WRITE_BUFFER_BYTES) as out:
+        sf.write(out, samples, sample_rate, format="FLAC", subtype="PCM_16",
+                 compression_level=_FLAC_COMPRESSION_LEVEL)
 ```
 
 The track is decoded with `sphn` at its own rate — Demucs' own loader, falling back to ffmpeg for
@@ -191,8 +279,20 @@ the 16-bit samples cross to the CPU.
 libsndfile encodes the FLACs in-process — `save_audio` would start an ffmpeg process per file — at
 level 4 (`_FLAC_COMPRESSION_LEVEL = 0.5` of libsndfile's 0–8 scale): within a fraction of a percent
 of the default level 5's size, and about a third faster. It encodes outside the GIL, so stems encode
-on up to one thread per core while the next is converted; more threads than cores only queue.
-Encoding is the one part of separation still on the CPU, and on a GPU the largest. FLAC is lossless
+side by side while the next is converted: one thread per core, and one more for whichever is waiting
+on the disk. A semaphore lets `_write_stems` convert only as many stems as the encoders can take —
+the one each is writing, and one waiting — because a stem's 16-bit samples are 140 MB for twelve
+minutes, and all six used to be in memory at once.
+
+Each FLAC reaches the job directory through a 4 MiB buffer (`_WRITE_BUFFER_BYTES`). libsndfile
+writes a FLAC frame, a few kilobytes, at a time, and under Docker Desktop the data directory is a
+share of the host's disk (9p or virtiofs) where every write is a round trip. Written that way, the
+six stems of a 6:20 track took 8–14 s; through the buffer, 2.0 s, the files byte for byte the same.
+
+Converting and encoding are the one part of separation still on the CPU, and they run after the
+model's pass, not beside it: 2.2–3.8 s for that 6:20 track on 2 CPUs, after a pass of about 7 s.
+Encoding while the pass runs would hide most of it — see
+[the todo](../todos/encode-stems-during-separation.md). FLAC is lossless
 at about half WAV's bytes: the same stems as WAV are about 10 MB per stem-minute at 44.1 kHz and
 11.5 MB at 48 kHz, roughly 830 MB for a twelve-minute 48 kHz track. The size still drives other
 decisions: the browser must download all six before playback, and discard-on-leave deletes the
@@ -224,9 +324,10 @@ resampled to it going in. `_PRESERVED_SAMPLE_RATES = {44100, 48000}` decides wha
 | anything else (32, 88.2, 96 kHz…) | 44.1 kHz |
 
 The point is the exported files: stems from a 48 kHz source line up sample-for-sample with the
-original in a DAW. Playback doesn't depend on it, because the browser decodes every stem to the
-audio context's rate anyway. The cost is one resampling pass per stem for 48 kHz sources, on the GPU
-when there is one. The landing page advertises the behavior (*44.1 / 48 kHz preserved through
+original in a DAW. Playback takes the stems at whichever rate they were written: the engine opens
+its audio context at it, so nothing is resampled as it decodes
+([audio playback](../architecture/audio-playback.md#the-context-runs-at-the-stems-sample-rate)).
+The cost is one resampling pass per stem for 48 kHz sources, on the GPU when there is one. The landing page advertises the behavior (*44.1 / 48 kHz preserved through
 separation*).
 
 ## Progress
@@ -237,8 +338,12 @@ done — and `_separate` extends it across a bag as `(model index + that) / mode
 
 `_separation_progress` in `pipeline.py` maps that fraction onto `_SEPARATION_PROGRESS = (0.1, 0.85)`
 and writes the row only when progress has moved `_PROGRESS_WRITE_STEP = 0.01` of the bar since the
-last write. That is one write per percentage point of the *overall* bar — at most 75 across
-separation. The bar moves in chunk-sized steps, so a short track moves in fewer, larger ones.
+last write **and** `_PROGRESS_WRITE_SECONDS = 0.25` have passed since it. That is one write per
+percentage point of the *overall* bar — at most 75 across separation — and no more than four a
+second, the rate the [event stream](../architecture/job-lifecycle.md#observation-the-sse-stream)
+reads the row at. On a GPU a pass moves faster than that: a write nobody reads only holds the pass
+up, and on a shared data directory a commit takes about 13 ms. The bar moves in chunk-sized steps,
+so a short track moves in fewer, larger ones.
 
 Separation fills most of the bar because tempo, chord and key detection run beside it, on the job's
 analysis thread, rather than after it. Their steps appear only for a step still running once the
@@ -283,8 +388,9 @@ written atomically, that means the previous attempt finished separating — the 
 tempo or chord results were being waited for. A job directory from before stems were FLAC holds
 `.wav` files, which don't count. A cancel **during** separation leaves no `stems/`, and the resumed attempt
 separates from the start; there is no per-chunk or per-stem resume. Link jobs also skip the download
-when `original.mp3` is already there, and keep the title and author it found, which were written
-outside the attempt guard. The lifecycle is in [job lifecycle](../architecture/job-lifecycle.md).
+when `original.flac` is already there, and keep the title, author and source format it found, which
+were written outside the attempt guard. A job directory from before link audio was kept as FLAC holds
+`original.mp3`, which doesn't count: resuming it downloads again. The lifecycle is in [job lifecycle](../architecture/job-lifecycle.md).
 
 ## Cost and timing
 
@@ -292,15 +398,25 @@ Measured on an RTX 4060 under Docker Desktop with 2 CPUs, warm:
 
 | Device | Separation, stems written |
 | --- | --- |
-| NVIDIA GPU | about 3 s per minute of audio — 12 to 14 s for a four-minute track |
+| NVIDIA GPU | under 2 s per minute of audio — a 6:20 track from a 48 kHz source is a job of 10.6 to 12.6 s, all but a few tenths of it separation |
 | CPU | slower than real time: several minutes for a four-minute track |
 
-Tempo, chord and key detection run at the same time, on their own thread, and since madmom's
-networks run on torch they take a few seconds for a whole track, so on a GPU the job is done soon
-after the stems are. On a CPU they compete with Demucs for the same cores, but briefly.
+That 6:20 track's separation is about 0.8 s decoding it, a model pass of about 7.0 s (half
+precision, replayed from a recording) and 2.2–3.8 s converting and encoding the stems. The spread is
+those 2 CPUs, shared with whatever else Docker is running: those figures are from a run with them
+mostly free, and with another stack holding about one of the two the same job took 14.5 to 16 s
+through the running server, where it had taken 20 to 34 s. A job still has about nine CPU-seconds
+of decoding, analysis and encoding in it, and a busy host stretches exactly those.
 
-The model loads before the first job, during the worker's warm-up, together with the beat tracker's
-numba compile and the chord and key networks; a job submitted during it waits on *Queued*. Each
+Tempo, chord and key detection run at the same time, on their own thread, and since madmom's
+networks run on torch they take a few seconds for a whole track, so on a GPU the job is done as
+soon as the stems are. On a CPU they compete with Demucs for the same cores, but briefly.
+
+The model loads before the first job, during the worker's warm-up, together with tempo detection's
+first run and the chord and key networks; a job submitted during it waits on *Queued*. The warm-up
+is about 6 s in a container built from the current [`Dockerfile`](../../server/Dockerfile), which
+runs tempo detection once at build time so that what numba compiles for it is in the image: every
+new container used to compile it again, most of a 29–40 s warm-up. Each
 step's seconds are logged — see
 [troubleshooting](../operations/troubleshooting.md#where-a-jobs-time-goes).
 
@@ -310,8 +426,16 @@ Separation isn't finished for the user until the stems are in the browser.
 [`ResultsScreen`](../../web/src/screens/results/ResultsScreen.tsx) creates a
 [`PlaybackEngine`](../../web/src/audio/playbackEngine.ts) per job and calls `load()` with one input
 per template stem in `job.stem_names`. `load()` fetches them all in parallel, reads each response
-whole, and decodes each into an `AudioBuffer` at the context's rate; they then play sample-locked
+whole, and decodes each into an `AudioBuffer`. Before the first decode it reads the stems' sample
+rate from the first FLAC to arrive and, if the output device runs at another, reopens its context at
+the stems' — `decodeAudioData` resamples to its context's rate, which for six 48 kHz stems on a
+44.1 kHz device was a quarter of the decode. They then play sample-locked
 off one `AudioContext` clock, as described in [audio playback](../architecture/audio-playback.md).
+
+`ResultsScreen` starts three kinds of request when it mounts, in an order it chooses: the chords,
+then the six stems, then the lyrics. A browser keeps six connections to one server over HTTP/1.1,
+and the lyrics lookup can hold one for seconds; asked for first, as it once was, it left the sixth
+stem waiting for another stem to finish.
 
 ### Loading stems
 

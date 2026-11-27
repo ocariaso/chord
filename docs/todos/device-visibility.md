@@ -10,7 +10,7 @@ Tell the user when separation is running on the CPU, instead of letting it be si
 - That happens after a driver update, without the NVIDIA Container Toolkit, on a driver older than
   the image's torch CUDA runtime, when `start.sh` built the CPU image, and always on macOS under
   Docker.
-- On CPU a four-minute track takes several minutes instead of about fifteen seconds. From the
+- On CPU a four-minute track takes several minutes instead of under ten seconds. From the
   processing screen, that looks like CHORD is hanging.
 - `GET /health` always returns `{"status": "ok"}` ([`main.py`](../../server/app/main.py)), so it
   can't be used to check either.

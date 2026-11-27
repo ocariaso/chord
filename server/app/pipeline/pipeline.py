@@ -19,9 +19,11 @@ logger = logging.getLogger(__name__)
 _SEPARATION_PROGRESS = (0.1, 0.85)
 _TEMPO_PROGRESS = 0.85
 _CHORDS_PROGRESS = 0.9
-# However many chunks Demucs reports: one row write per percentage point of the bar, one
-# cancellation check every two seconds.
+# However many chunks Demucs reports: one row write per percentage point of the bar, and none sooner after the last
+# than the event stream (`job_events`) reads the row again — a write nobody reads only stalls the GPU, and on a shared
+# data directory a commit takes milliseconds. One cancellation check every two seconds.
 _PROGRESS_WRITE_STEP = 0.01
+_PROGRESS_WRITE_SECONDS = 0.25
 _SUPERSEDED_POLL_SECONDS = 2.0
 
 # An unexpected exception reads as internal, so the row carries a sentence about the stage that
@@ -60,13 +62,13 @@ def _update_job(job_id: str, attempt: int, **fields) -> None:
         )
 
 
-def _record_track_identity(job_id: str, title: str, author: str | None) -> None:
-    # Not scoped like _update_job: a resume skips the download that found the title and author, so a
-    # run cancelled mid-download must still keep them. They describe the job however the run ended.
+def _record_track_identity(job_id: str, title: str, author: str | None, audio_format: str) -> None:
+    # Not scoped like _update_job: a resume skips the download that found the title, author and source format, so
+    # a run cancelled mid-download must still keep them. They describe the job however the run ended.
     with db_cursor() as cur:
         cur.execute(
-            "UPDATE jobs SET original_filename = ?, author = ?, updated_at = ? WHERE id = ?",
-            (title, author, now_iso(), job_id),
+            "UPDATE jobs SET original_filename = ?, author = ?, audio_format = ?, updated_at = ? WHERE id = ?",
+            (title, author, audio_format, now_iso(), job_id),
         )
 
 
@@ -102,20 +104,37 @@ def warm_up() -> None:
 def _separation_progress(job_id: str, attempt: int) -> Callable[[float], None]:
     start, end = _SEPARATION_PROGRESS
     last_written = start
-    last_poll = time.monotonic()
+    last_write = last_poll = time.monotonic()
 
     def on_progress(fraction: float) -> None:
-        nonlocal last_written, last_poll
-        if time.monotonic() - last_poll >= _SUPERSEDED_POLL_SECONDS:
-            last_poll = time.monotonic()
+        nonlocal last_written, last_write, last_poll
+        now = time.monotonic()
+        if now - last_poll >= _SUPERSEDED_POLL_SECONDS:
+            last_poll = now
             if _is_superseded(job_id, attempt):
                 raise _Superseded
         progress = start + fraction * (end - start)
-        if progress - last_written >= _PROGRESS_WRITE_STEP:
-            last_written = progress
+        if progress - last_written >= _PROGRESS_WRITE_STEP and now - last_write >= _PROGRESS_WRITE_SECONDS:
+            last_written, last_write = progress, now
             _update_job(job_id, attempt, progress=round(progress, 3))
 
     return on_progress
+
+
+def _read_tags(job_id: str, attempt: int, original_path: Path, is_upload: bool) -> None:
+    """The original's artist tag and embedded cover, for the processing screen. Neither separation nor analysis needs
+    them, so they are read beside both, not ahead of them: two ffmpeg starts were half a second before any work began."""
+    try:
+        # A link's author came with its download.
+        if is_upload:
+            author = metadata.extract_author(original_path)
+            if author:
+                _update_job(job_id, attempt, author=author)
+        thumbnail_path = original_path.parent / thumbnail.THUMBNAIL_FILENAME
+        if not thumbnail_path.exists():
+            thumbnail.extract_embedded_cover(original_path, thumbnail_path)
+    except Exception:  # noqa: BLE001 - a job without its artist or cover is still a job; nothing collects this future
+        logger.exception("Job %s: reading the original's tags failed", job_id)
 
 
 def _start_analysis(
@@ -167,8 +186,11 @@ def run_job(job_id: str) -> None:
     stage = "reading"
 
     try:
-        if row["source_url"]:
-            original_path = directory / "original.mp3"
+        is_upload = not row["source_url"]
+        if is_upload:
+            original_path = next(directory.glob("original.*"))
+        else:
+            original_path = directory / source.DOWNLOAD_FILENAME
             # A resumed job keeps the audio its cancelled attempt already downloaded.
             if not original_path.exists():
                 stage = "downloading"
@@ -176,25 +198,14 @@ def run_job(job_id: str) -> None:
                     job_id, attempt, status=JobStatus.FETCHING.value, progress=0.05, stage_message="Downloading audio"
                 )
                 with _timed(f"Job {job_id}: download"):
-                    downloaded_path, title, author = source.download_audio(
-                        row["source_url"], directory, settings.max_duration_seconds
-                    )
-                if downloaded_path != original_path:
-                    downloaded_path.rename(original_path)
-                _record_track_identity(job_id, title, author)
+                    download = source.download_audio(row["source_url"], directory, settings.max_duration_seconds)
+                if download.path != original_path:
+                    download.path.rename(original_path)
+                _record_track_identity(job_id, download.title, download.author, download.audio_format)
                 stage = "reading"
-        else:
-            original_path = next(directory.glob("original.*"))
-            author = metadata.extract_author(original_path)
-            if author:
-                _update_job(job_id, attempt, author=author)
 
         if _is_superseded(job_id, attempt):
             return
-
-        thumbnail_path = directory / thumbnail.THUMBNAIL_FILENAME
-        if not thumbnail_path.exists():
-            thumbnail.extract_embedded_cover(original_path, thumbnail_path)
 
         duration_seconds, audio_format = metadata.read_audio_info(original_path)
         if settings.max_duration_seconds and duration_seconds > settings.max_duration_seconds:
@@ -203,21 +214,24 @@ def run_job(job_id: str) -> None:
         stage = "separating"
         # Duration and format are written now rather than with the results, so the processing
         # screen can show them while separation runs.
-        _update_job(
-            job_id,
-            attempt,
+        separating = dict(
             status=JobStatus.SEPARATING.value,
             progress=_SEPARATION_PROGRESS[0],
             stage_message="Separating stems",
             duration_seconds=duration_seconds,
-            audio_format=audio_format,
         )
+        # A link's format was written with its title, by the download: it names the codec the audio came in, which
+        # the FLAC it was converted to can't.
+        if is_upload:
+            separating["audio_format"] = audio_format
+        _update_job(job_id, attempt, **separating)
 
         # Tempo, chord and key detection read only the original, never the stems, so they run on a thread of their
         # own while Demucs separates rather than after it — on a GPU they would otherwise be most of the wait.
         # Results are collected and written only here, so an abandoned run's analysis writes nothing.
         analysis = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chord-analysis")
         try:
+            analysis.submit(_read_tags, job_id, attempt, original_path, is_upload)
             tempo_future, chords_future = _start_analysis(job_id, original_path, analysis)
 
             if not _stems_complete(stems_dir):

@@ -40,7 +40,7 @@ normal path operation, not static file serving.
 
 The stem as stored, for playback.
 
-**Response** — `200`, `audio/flac` (`FileResponse`).
+**Response** — `200`, `audio/flac` (`_StemFile`, a `FileResponse` that reads a megabyte at a time).
 
 | Code | When |
 | --- | --- |
@@ -56,9 +56,14 @@ that is one the model never produced — see [contract-sync.md](contract-sync.md
 
 The browser fetches each stem URL (`stemUrl`) **once** per load. `PlaybackEngine.load()` reads the
 body whole and decodes it into an `AudioBuffer` — `decodeAudioData` reads FLAC natively; the
-waveform is traced from that decoded buffer, so nothing requests the file a second time.
+waveform is traced from that decoded buffer, so nothing requests the file a second time. The engine
+also reads the sample rate out of the first stem's FLAC header, to open its audio context at it, so
+this route's body being a FLAC is something the client relies on beyond decoding it.
 
-`FileResponse` implements HTTP range requests, but no client consumer needs them now.
+`FileResponse` implements HTTP range requests, but no client consumer needs them now. `_StemFile`
+changes only its `chunk_size`, from Starlette's 64 KB to 1 MiB: every read is a trip to the thread
+pool and back, and all six stems download at once before playback can start, so the trips set the
+pace of the download more than the disk did.
 
 Files are 16-bit FLAC at the source's sample rate when that is 44.1 or 48 kHz, and at the model's
 44.1 kHz otherwise — about half the ~10 MB per stem-minute the same audio takes as WAV. See
@@ -114,7 +119,8 @@ curl -OJ http://localhost:8080/api/jobs/<job_id>/download
 
 ## Not served
 
-- The original upload (`original.mp3` / `original.flac`) has no endpoint.
+- The original — an upload's `original.mp3` or `original.flac`, a link's `original.flac` — has no
+  endpoint.
 - `analysis/key.json` is written by the pipeline but **never served** — the key reaches clients
   as the flattened `key_estimate` string on the job row. See
   [../features/chords-and-key.md](../features/chords-and-key.md#outputs-and-where-each-one-goes).

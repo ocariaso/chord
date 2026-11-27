@@ -26,8 +26,10 @@ now.
 | 3 | [`index.css`](../../web/src/index.css) | Tailwind, a full-height root, the page ground and button cursors — and no classes |
 
 The `@import` had to go because a bundled `@import` that no longer opens its stylesheet is invalid;
-[`index.html`](../../web/index.html) loads Inter 400/500/600 from Google Fonts instead. Nocturne's
-font stacks fall back to `system-ui, sans-serif` when Inter can't load. The old display fonts are
+[`index.html`](../../web/index.html) loads Inter 400/500/600 from Google Fonts instead — as a
+`media="print"` stylesheet switched to `all` by its own `onload`, so the page's first paint never
+waits on that server. Nocturne's
+font stacks fall back to `system-ui, sans-serif` until Inter is there, and when it can't load. The old display fonts are
 gone with the Studio view.
 
 **The vendored sheets win every conflict with Tailwind, whatever the import order.** Tailwind v4
@@ -146,8 +148,10 @@ to ffmpeg via [`thumbnail.py`](../../server/app/pipeline/thumbnail.py):
   the audio — so it must be renamed before anything globs the directory.
 
 `run_job` only extracts an embedded cover **if `thumbnail.jpg` doesn't already exist**, so the
-yt-dlp artwork wins for URL jobs and the ID3 frame is the upload path. Extraction happens before the
-audio is read and before separation.
+yt-dlp artwork wins for URL jobs and the ID3 frame is the upload path. Extraction happens in
+`_read_tags`, the first thing on the job's analysis thread, as separation starts beside it — not
+before it, where an ffmpeg start for the cover and another for the artist tag were half a second
+of every job in which nothing else happened.
 
 Both helpers funnel through `_run_ffmpeg`, which treats every failure as "no thumbnail":
 
@@ -172,7 +176,7 @@ serialization:
 has_thumbnail = (job_dir(row["id"]) / THUMBNAIL_FILENAME).exists()
 ```
 
-That's one `stat` per response — including every 0.5 s SSE tick. Cheap, and it means the flag
+That's one `stat` per response — including every 0.25 s SSE tick. Cheap, and it means the flag
 can never disagree with the disk.
 
 Served by `GET /jobs/{job_id}/thumbnail.jpg`, a plain `FileResponse` with `media_type="image/jpeg"`,
@@ -196,7 +200,7 @@ empty `alt`, since the track title sits beside it.
 
 Because `has_thumbnail` is recomputed for every job response, the processing screen switches from
 the gradient tile's music-note mark to the artwork as soon as the file exists — after the download
-for a link, before separation for an upload. If the image fails to load, `onError` hides it and the
+for a link, a moment into separation for an upload. If the image fails to load, `onError` hides it and the
 music-note mark returns. The landing screen, the failure panels and the dialogs show no artwork.
 
 ## Known gaps

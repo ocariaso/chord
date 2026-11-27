@@ -125,6 +125,12 @@ Tuning constants, all module-level in `lyrics.py`:
 | `_RMS_ACTIVITY_RATIO` | `0.12` | fraction of peak RMS counted as "singing" |
 | `_MAX_OFFSET_SECONDS` | `30` | search window |
 | `_MIN_SCORE_IMPROVEMENT` | `1.15` | required improvement over no shift |
+| `_RMS_BLOCK_WINDOWS` | `64` | bins of the stem read at a time — memory only, not a tuning |
+
+`_vocal_activity` reads the vocals stem 64 bins — 16 seconds — at a time and keeps only each bin's
+RMS. Decoded whole, as it used to be, the stem was about 300 MB for six minutes, and this request
+arrives while the page is also downloading every stem. The activity array is the same either way:
+measured on one stem, 2.0 s and 24 MiB where it was 5.3 s and 397 MiB.
 
 The asymmetric search range (`-max_lag // 3` to `max_lag`, i.e. −10 s to +30 s) encodes the
 expectation that the uploaded audio usually has *extra* material at the front rather than less.
@@ -166,7 +172,10 @@ which the client can't show, so the dialog reads *Failed to save lyrics (422)*.
 ## Client side
 
 [`useLyrics(jobId)`](../../web/src/hooks/useLyrics.ts) fetches once per job — from the moment
-`ResultsScreen` mounts, in parallel with the stem downloads — and returns `[lyrics, replaceLyrics]`.
+`ResultsScreen` mounts, in parallel with the stem downloads but asked for after them — and returns
+`[lyrics, replaceLyrics]`. The order is `ResultsScreen`'s doing: a browser keeps six connections to
+one server over HTTP/1.1, a first lookup can hold one for seconds, and there are six stems, so the
+request goes out last and takes the first connection a stem frees.
 The value has three states, because the UI shows three different things, and it is keyed by job id
 so a new job reads as loading until its own lookup answers:
 

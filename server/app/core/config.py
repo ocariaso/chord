@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     # How much of each chunk Demucs blends with its neighbours; 0.25 is Demucs' own default. Lower is faster, with more
     # audible seams where chunks meet, so the default keeps separation quality as it was.
     demucs_overlap: float = 0.25
+    # Lets a CUDA GPU run the separation network in half precision when it is faster at it — about a third on a card
+    # with tensor cores. The stems then differ from float32's by 35 to 60 dB less than two float32 runs of one song
+    # differ from each other, since Demucs shifts its chunks at random on every run. False keeps float32 always.
+    demucs_half_precision: bool = True
+    # Lets a CUDA GPU replay the separation network from a recorded CUDA graph, one launch for a chunk in place of
+    # thousands, with the same results. Separation turns it off by itself if a recording fails or doesn't reproduce
+    # the model; False never tries.
+    demucs_cuda_graph: bool = True
 
     enable_chord_detection: bool = True
 

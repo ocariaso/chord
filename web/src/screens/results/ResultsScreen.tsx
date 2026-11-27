@@ -64,7 +64,6 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
   const [loop, setLoop] = useState<LoopState | null>(null);
   const [chordSegments, setChordSegments] = useState<ChordSegment[] | null | undefined>(undefined);
   const [hasVocals, setHasVocals] = useState(true);
-  const [lyrics, setLyrics] = useLyrics(job.id);
   const [exportOpen, setExportOpen] = useState(false);
   const [lyricsDialog, setLyricsDialog] = useState<LyricsDialogMode | null>(null);
   const isPhone = useMediaQuery(PHONE_QUERY);
@@ -104,6 +103,25 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
   // By value: a job update carries a new stem_names array even when it holds the same stems.
   const stemList = templateStems(job.stem_names).join(",");
 
+  // The three effects below each start requests, and a browser keeps six connections to one server over HTTP/1.1, so
+  // their order is the order things arrive in: the chords, which are a few kilobytes; then the six stems, which the
+  // screen waits on; and the lyrics last, because their lookup can hold a connection for seconds.
+  useEffect(() => {
+    let cancelled = false;
+    setChordSegments(undefined);
+    getChords(job.id)
+      .then((segments) => {
+        if (!cancelled) setChordSegments(segments);
+      })
+      .catch(() => {
+        // No chord analysis for this job (detection switched off, or it never ran); the chord bar says so.
+        if (!cancelled) setChordSegments(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [job.id]);
+
   useEffect(() => {
     const engine = new PlaybackEngine();
     engine.setTempoBpm(job.tempo_bpm);
@@ -124,21 +142,7 @@ export function ResultsScreen({ job, onBack, stageSnapshots }: ResultsScreenProp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job.id, stemList]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setChordSegments(undefined);
-    getChords(job.id)
-      .then((segments) => {
-        if (!cancelled) setChordSegments(segments);
-      })
-      .catch(() => {
-        // No chord analysis for this job (detection switched off, or it never ran); the chord bar says so.
-        if (!cancelled) setChordSegments(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [job.id]);
+  const [lyrics, setLyrics] = useLyrics(job.id);
 
   useEffect(() => {
     function tick() {

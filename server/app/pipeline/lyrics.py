@@ -9,6 +9,7 @@ import soundfile as sf
 logger = logging.getLogger(__name__)
 
 _RMS_HOP_SECONDS = 0.25
+_RMS_BLOCK_WINDOWS = 64
 _RMS_ACTIVITY_RATIO = 0.12
 _MAX_OFFSET_SECONDS = 30
 _MIN_SCORE_IMPROVEMENT = 1.15
@@ -67,14 +68,18 @@ def parse_lyrics_text(text: str) -> dict | None:
 
 
 def _vocal_activity(vocals_path: Path) -> np.ndarray | None:
-    data, sr = sf.read(str(vocals_path), always_2d=False)
-    if data.ndim > 1:
-        data = data.mean(axis=1)
-    win = int(sr * _RMS_HOP_SECONDS)
-    n = (len(data) - win) // win if win > 0 else 0
-    if n <= 0:
-        return None
-    rms = np.array([np.sqrt(np.mean(data[i * win:(i + 1) * win] ** 2)) for i in range(n)])
+    with sf.SoundFile(str(vocals_path)) as vocals:
+        win = int(vocals.samplerate * _RMS_HOP_SECONDS)
+        n = (vocals.frames - win) // win if win > 0 else 0
+        if n <= 0:
+            return None
+        # Read a few seconds at a time: the whole stem decoded at once is 300 MB for six minutes, held while the page
+        # that asked for lyrics is also fetching every stem.
+        rms = np.empty(n)
+        for first in range(0, n, _RMS_BLOCK_WINDOWS):
+            count = min(_RMS_BLOCK_WINDOWS, n - first)
+            windows = vocals.read(count * win, always_2d=True).mean(axis=1).reshape(count, win)
+            rms[first : first + count] = np.sqrt(np.mean(windows**2, axis=1))
     if rms.max() <= 0:
         return None
     return (rms > rms.max() * _RMS_ACTIVITY_RATIO).astype(float)

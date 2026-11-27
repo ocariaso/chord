@@ -28,6 +28,8 @@ No `.env` file is read — `Settings` declares no `env_file` — and list values
 | `DEVICE` | `cuda` | `cpu` or `cuda`: where Demucs and the chord and key networks run. Falls back to CPU, with a warning in the log, if torch can't use CUDA; the GPU in use is logged as `Models run on …`. Compose sets `${DEVICE:-cpu}` in the base file and `cuda` in the overlay. |
 | `DEMUCS_MODEL` | `htdemucs_6s` | The Docker image sets it from the build argument of the same name. **See the warning below.** |
 | `DEMUCS_OVERLAP` | `0.25` | How much of each separation chunk is blended with its neighbours, 0…1. The default is Demucs' own. Opt-in: a lower value such as `0.1` separates faster, with more audible seams where chunks meet. |
+| `DEMUCS_HALF_PRECISION` | `true` | On a CUDA GPU, lets separation run the network in half precision if a timing at start-up shows the GPU faster at it — about a third on a card with tensor cores; the log says which was chosen. The stems then differ from float32's, by 35 to 60 dB less than two float32 runs of one song differ from each other. `false` keeps float32 always. Does nothing on a CPU. **See the note below.** |
+| `DEMUCS_CUDA_GRAPH` | `true` | On a CUDA GPU, lets separation replay the network from a recorded CUDA graph — one launch for a chunk in place of thousands, with the same results — once a recording has reproduced the model at start-up. It turns itself off, with a warning in the log, if a recording can't be made or doesn't match. `false` never tries. Does nothing on a CPU. |
 | `ENABLE_CHORD_DETECTION` | `true` | `false` skips the madmom stage entirely — no `analyzing` status, no `chords.json`, no key. |
 | `MAX_DURATION_SECONDS` | `720` | The longest track, in seconds, a job will separate; `0` disables the check. A URL job is refused from yt-dlp's metadata before anything downloads, an upload once the worker reads it and before separation. Both fail with *"This track is M:SS long. CHORD separates tracks up to N minutes."* |
 | `JOB_TTL_HOURS` | `24` | Hours a finished, failed or cancelled job is kept after it last changed and after the last heartbeat from a page that has it open; the reaper then deletes its row and files. Fractions are allowed, but keep it well above the web's 5-minute heartbeat (`HEARTBEAT_INTERVAL_MS`), or an open job can be deleted between two beats. `0` turns the reaper off entirely, including its removal of orphaned directories and partial separations. Compose passes it through. See [../data/retention.md](../data/retention.md#the-reaper). |
@@ -49,6 +51,15 @@ No `.env` file is read — `Settings` declares no `env_file` — and list values
 > job separates again every time. Changing the model means changing `STEM_NAMES` and `STEM_KEYS`
 > together, since the web loads only the stems `STEM_KEYS` names — see
 > [../api/contract-sync.md](../api/contract-sync.md#checklist-for-a-contract-change).
+
+> **`DEMUCS_HALF_PRECISION` is the one default that trades exactness for speed.** With it off,
+> or on a GPU where float32 timed faster, CHORD's stems are Demucs' own to within float rounding.
+> With it on they are 42–62 dB from those, stem by stem, on the track it was measured on — less than
+> the difference Demucs' random chunk shift makes between any two runs, but a difference. Set it to
+> `false` for stems that are float32's; a pass costs about a third more on an RTX 4060. Neither it
+> nor `DEMUCS_CUDA_GRAPH` is passed by Compose — add them to the `server` service's `environment:`,
+> as [Compose variables](#compose-variables) shows. The reasoning is in
+> [decisions](../architecture/decisions.md#separation-runs-in-half-precision-where-the-gpu-is-faster-at-it).
 
 > **`MAX_DURATION_SECONDS` protects the browser more than the server.** A job's six stems are
 > decoded into the tab's memory before playback — 1.5–1.7 GB at twelve minutes — and the zip
@@ -133,7 +144,7 @@ image-build argument rather than a runtime setting.
 ## Hardcoded values worth knowing
 
 Not configuration, but the numbers most likely to be asked about. Most are named module-level
-constants; the timeouts and the SSE interval are literals where they're used.
+constants; the timeouts are literals where they're used.
 
 **Server**
 
@@ -141,11 +152,12 @@ constants; the timeouts and the SSE interval are literals where they're used.
 | --- | --- | --- |
 | `ALLOWED_UPLOAD_EXTENSIONS` | `{".mp3", ".flac"}` | `routes_jobs.py` |
 | `_UPLOAD_COPY_CHUNK_BYTES` | 1 MB | `routes_jobs.py` |
-| SSE poll interval | `0.5` s | `routes_jobs.py` |
+| `_EVENT_POLL_SECONDS` | `0.25` s — how often the event stream re-reads the job row | `routes_jobs.py` |
 | `SaveLyricsRequest.text` `max_length` | `100_000` characters | `schemas.py` |
 | `_SEPARATION_PROGRESS` | `(0.1, 0.85)` — separation's span of the progress bar | `pipeline.py` |
 | `_TEMPO_PROGRESS` / `_CHORDS_PROGRESS` | `0.85` / `0.9` — written only for analysis still running once the stems are | `pipeline.py` |
 | `_PROGRESS_WRITE_STEP` | `0.01` — at most one row write per percentage point | `pipeline.py` |
+| `_PROGRESS_WRITE_SECONDS` | `0.25` s — and none sooner after the last; the event stream's own interval | `pipeline.py` |
 | `_SUPERSEDED_POLL_SECONDS` | `2.0` — how often separation checks for a cancel | `pipeline.py` |
 | `_SWEEP_INTERVAL_SECONDS` | `3600` — the reaper sweeps at startup, then hourly | `reaper.py` |
 | `_GRACE_SECONDS` | `3600` — how long a directory with no row, or a terminal job's `stems.partial/`, must stay unchanged before the reaper deletes it | `reaper.py` |
@@ -153,17 +165,24 @@ constants; the timeouts and the SSE interval are literals where they're used.
 | `STEM_SUFFIX` | `.flac` — stems are stored as 16-bit FLAC | `separation.py` |
 | `_FLAC_COMPRESSION_LEVEL` | `0.5` — FLAC level 4 of 0–8: the default level's size, encoded about a third faster | `separation.py` |
 | `_GPU_MODEL_BYTES` | 0.5 GiB — with twice the separated track, the free GPU memory that keeps the overlap-add on the GPU | `separation.py` |
+| `_WRITE_BUFFER_BYTES` | 4 MiB — the buffer each stem's FLAC is written through, so a shared data directory sees a few large writes | `separation.py` |
+| `_RECORDING_TOLERANCE` | `0.02` of the peak — how far a recorded CUDA graph's output may be from the model's and still be used | `separation.py` |
+| `_GPU_POLL_SECONDS` | `0.001` s — how often a replayed chunk checks whether the GPU has finished it | `separation.py` |
+| stem encoders | one thread per core plus one, at most one per stem; one more stem than that converted and waiting | `separation.py` |
 | `SAMPLE_RATE` | `44100` — the one mono decode tempo, chord and key detection share | `decode.py` |
+| tempo estimation | librosa's defaults: `_N_FFT` 2048, `_HOP_LENGTH` 512, `_AUTOCORRELATION_SECONDS` 8, `_START_BPM` 120; built `_SPECTROGRAM_BLOCK_FRAMES` 2048 and `_TEMPOGRAM_BLOCK_FRAMES` 512 frames at a time | `tempo.py` |
+| playback stem chunk | 1 MiB per read (`_StemFile.chunk_size`) | `routes_stems.py` |
 | `_WAV_BLOCK_FRAMES` | `65536` frames decoded per block when a stem is exported as WAV | `routes_stems.py` |
 | zip compression | `ZIP_DEFLATED`, `compresslevel=1` | `routes_stems.py` |
 | `_RMS_HOP_SECONDS` | `0.25` s | `lyrics.py` |
+| `_RMS_BLOCK_WINDOWS` | `64` — windows of the vocals stem read at a time | `lyrics.py` |
 | `_RMS_ACTIVITY_RATIO` | `0.12` | `lyrics.py` |
 | `_MAX_OFFSET_SECONDS` | `30` | `lyrics.py` |
 | `_MIN_SCORE_IMPROVEMENT` | `1.15` | `lyrics.py` |
 | lrclib timeout | `10.0` s | `lyrics.py` |
 | ffprobe timeout | `15` s | `metadata.py` |
 | ffmpeg timeout | `30` s | `thumbnail.py` |
-| yt-dlp audio quality | `192` kbps mp3 | `source.py` |
+| `DOWNLOAD_FILENAME` | `original.flac` — a link's audio, converted to 16-bit FLAC (`-sample_fmt s16`) | `source.py` |
 
 **Proxy** — [`web/nginx.conf`](../../web/nginx.conf)
 

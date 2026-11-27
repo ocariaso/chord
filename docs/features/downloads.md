@@ -28,7 +28,7 @@ def _wav_stream(stem_path):
 - Declared `def`, not `async def`, so FastAPI iterates the blocking decode in its threadpool.
 
 Playback doesn't use this URL. It fetches `GET /jobs/{job_id}/stems/{stem_name}.flac` — the stored
-file as it is, a `FileResponse` (`audio/flac`) at about half the bytes — through `stemUrl`; see
+file as it is, a `FileResponse` (`audio/flac`, read a megabyte at a time) at about half the bytes — through `stemUrl`; see
 [the playback engine's load](stem-separation.md#client-side) and
 [../api/artifacts.md](../api/artifacts.md).
 

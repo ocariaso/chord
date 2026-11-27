@@ -17,7 +17,7 @@ server/data/                     ← gitignored; bind-mounted into the container
 ├── models_cache/                TORCH_HOME — normally empty; the Demucs weights are in the image
 └── jobs/
     └── <job_id>/                one directory per job, uuid4 hex
-        ├── original.mp3         the source audio (or original.flac for a FLAC upload)
+        ├── original.flac        the source audio (or original.mp3 for an MP3 upload)
         ├── thumbnail.jpg        cover art, if any was found
         ├── stems.partial/       scratch while separation runs; left behind if it's interrupted
         ├── stems/               appears only once every stem is written
@@ -48,7 +48,7 @@ on every read rather than stored:
 | `has_thumbnail` | a `Path.exists()` check per serialization |
 | `stem_names` | **neither** — the constant `STEM_NAMES`, gated on `status == "done"` |
 | whether a resume skips separation | a check that every `STEM_NAMES` FLAC is in `stems/` |
-| whether a resumed URL job downloads again | a check for `original.mp3` |
+| whether a resumed URL job downloads again | a check for `original.flac` |
 | chord segments | `analysis/chords.json` only |
 | lyrics | `analysis/lyrics.json` only |
 | audio | `original.*` and `stems/*.flac` — exported WAVs are converted on request, never stored |
@@ -68,8 +68,8 @@ the material:
 | one stem, per minute of audio | ~5 MB at 44.1 kHz, ~5.5 MB at 48 kHz (WAV: ~10 and ~11 MB) |
 | six stems, four-minute song at 44.1 kHz | ~125 MB (WAV: ~250 MB) |
 | six stems, twelve minutes at 48 kHz — the most the default duration limit allows | ~415 MB (WAV: ~830 MB) |
-| `original.mp3` from a URL (192 kbps), four minutes | ~6 MB |
-| `original.flac` upload | up to the 512 MB nginx accepts |
+| `original.flac` from a URL (16-bit, the downloaded audio decoded), four minutes | ~28 MB |
+| `original.mp3` or `original.flac` upload | up to the 512 MB nginx accepts |
 | `thumbnail.jpg` | tens of KB |
 | `analysis/*.json` | single-digit KB |
 | `models_cache/` | empty unless demucs falls back to its legacy download; the `htdemucs_6s` weights (~53 MB) are in the image |

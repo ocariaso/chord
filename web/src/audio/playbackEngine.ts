@@ -88,6 +88,48 @@ async function fetchStem(url: string): Promise<ArrayBuffer> {
   return response.arrayBuffer();
 }
 
+const FLAC_MARKER = [0x66, 0x4c, 0x61, 0x43]; // "fLaC"
+// The marker, a 4-byte block header, then 10 bytes of block and frame sizes come before the 20-bit sample rate.
+const FLAC_RATE_OFFSET = 18;
+
+/** The sample rate a FLAC file declares in its STREAMINFO block, which always comes first; null for anything else. */
+function flacSampleRate(bytes: ArrayBuffer): number | null {
+  if (bytes.byteLength < FLAC_RATE_OFFSET + 3) return null;
+  const head = new Uint8Array(bytes, 0, FLAC_RATE_OFFSET + 3);
+  if (FLAC_MARKER.some((byte, index) => head[index] !== byte)) return null;
+  const rate = (head[FLAC_RATE_OFFSET] << 12) | (head[FLAC_RATE_OFFSET + 1] << 4) | (head[FLAC_RATE_OFFSET + 2] >> 4);
+  return rate > 0 ? rate : null;
+}
+
+interface Output {
+  context: AudioContext;
+  masterGain: GainNode;
+  masterAnalysers: [AnalyserNode, AnalyserNode];
+  loudnessAnalysers: [AnalyserNode, AnalyserNode];
+  metronomeGain: GainNode;
+}
+
+/** A context — at `sampleRate`, or the output device's own — with everything the stems feed into. */
+function createOutput(sampleRate?: number): Output {
+  const context = new AudioContext(sampleRate ? { sampleRate } : undefined);
+
+  const masterGain = context.createGain();
+  masterGain.connect(context.destination);
+  const masterAnalysers = splitIntoAnalysers(context, masterGain, MASTER_METER_FFT_SIZE);
+
+  const { shelf, highPass } = kWeightingFilters(context.sampleRate);
+  const kShelf = context.createIIRFilter(shelf.feedforward, shelf.feedback);
+  const kHighPass = context.createIIRFilter(highPass.feedforward, highPass.feedback);
+  masterGain.connect(kShelf).connect(kHighPass);
+  const loudnessAnalysers = splitIntoAnalysers(context, kHighPass, LOUDNESS_FFT_SIZE);
+
+  const metronomeGain = context.createGain();
+  metronomeGain.gain.value = 1;
+  metronomeGain.connect(context.destination);
+
+  return { context, masterGain, masterAnalysers, loudnessAnalysers, metronomeGain };
+}
+
 /** Plays multiple decoded stems in sample-accurate lockstep using a single AudioContext clock. */
 export class PlaybackEngine {
   private audioContext: AudioContext;
@@ -100,6 +142,7 @@ export class PlaybackEngine {
 
   private playing = false;
   private disposed = false;
+  private sampleRateSettled = false;
   // Position is derived, never stored: the track time at the anchor, advancing at `rate` from the
   // context time the anchor was heard. While paused, the anchor's track time is the position.
   private anchorTrackTime = 0;
@@ -138,22 +181,36 @@ export class PlaybackEngine {
   private stretchBlockSize = 0;
 
   constructor() {
-    this.audioContext = new AudioContext();
-    const context = this.audioContext;
+    const output = createOutput();
+    this.audioContext = output.context;
+    this.masterGain = output.masterGain;
+    this.masterAnalysers = output.masterAnalysers;
+    this.loudnessAnalysers = output.loudnessAnalysers;
+    this.metronomeGain = output.metronomeGain;
+  }
 
-    this.masterGain = context.createGain();
-    this.masterGain.connect(context.destination);
-    this.masterAnalysers = splitIntoAnalysers(context, this.masterGain, MASTER_METER_FFT_SIZE);
-
-    const { shelf, highPass } = kWeightingFilters(context.sampleRate);
-    const kShelf = context.createIIRFilter(shelf.feedforward, shelf.feedback);
-    const kHighPass = context.createIIRFilter(highPass.feedforward, highPass.feedback);
-    this.masterGain.connect(kShelf).connect(kHighPass);
-    this.loudnessAnalysers = splitIntoAnalysers(context, kHighPass, LOUDNESS_FFT_SIZE);
-
-    this.metronomeGain = context.createGain();
-    this.metronomeGain.gain.value = 1;
-    this.metronomeGain.connect(context.destination);
+  /**
+   * Moves the engine, before anything is decoded, onto a context running at the stems' own sample rate.
+   * decodeAudioData resamples whatever it decodes to its context's rate — a quarter of the decode time for six
+   * 48 kHz stems on a 44.1 kHz device — where the browser converts the one mixed output as it plays for almost nothing.
+   */
+  private adoptSampleRate(sampleRate: number | null): void {
+    if (this.sampleRateSettled) return;
+    this.sampleRateSettled = true;
+    if (sampleRate === null || sampleRate === this.audioContext.sampleRate) return;
+    let output: Output;
+    try {
+      output = createOutput(sampleRate);
+    } catch {
+      // A rate this browser won't open a context at; the stems are resampled to the device's as they decode.
+      return;
+    }
+    void this.audioContext.close();
+    this.audioContext = output.context;
+    this.masterGain = output.masterGain;
+    this.masterAnalysers = output.masterAnalysers;
+    this.loudnessAnalysers = output.loudnessAnalysers;
+    this.metronomeGain = output.metronomeGain;
   }
 
   /** Fetches and decodes stems in parallel. Resolves with the stems that failed, rather than rejecting. */
@@ -164,6 +221,8 @@ export class PlaybackEngine {
         try {
           const bytes = await fetchStem(stem.url);
           if (this.disposed) return;
+          // Every stem of a job has one rate, so the first to arrive speaks for all of them.
+          this.adoptSampleRate(flacSampleRate(bytes));
           const buffer = await this.audioContext.decodeAudioData(bytes);
           // Bail out if disposed while this fetch/decode was still in flight.
           if (this.disposed) return;

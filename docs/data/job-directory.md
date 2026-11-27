@@ -6,7 +6,7 @@ One directory per job at `server/data/jobs/<job_id>/`, where `<job_id>` is the r
 
 ```text
 server/data/jobs/<job_id>/
-├── original.mp3            or original.flac — the source audio
+├── original.flac           or original.mp3 for an MP3 upload — the source audio
 ├── thumbnail.jpg           cover art, if any was found
 ├── stems.partial/          scratch: exists while a separation pass runs, or after one was interrupted
 ├── stems/                  complete or absent
@@ -32,16 +32,20 @@ The source audio, named by *stem* rather than fully, which is load-bearing in tw
 
 - **Uploads** keep their extension — `original.mp3` or `original.flac` — so the pipeline finds
   the file with `next(directory.glob("original.*"))`.
-- **URL jobs** always end up as `original.mp3`, because yt-dlp's `FFmpegExtractAudio`
-  postprocessor is pinned to `preferredcodec: "mp3"` at 192 kbps. That is why `run_job` can
-  hardcode the name for the URL path — and why the file's existence is the test a resumed URL job
-  uses to skip the download.
+- **URL jobs** always end up as `original.flac` (`DOWNLOAD_FILENAME` in
+  [`source.py`](../../server/app/pipeline/source.py)), because yt-dlp's `FFmpegExtractAudio`
+  postprocessor is pinned to `preferredcodec: "flac"`, at 16 bits unless the source was itself a
+  FLAC. That is why `run_job` can name the file for the URL path — and why the file's existence is
+  the test a resumed URL job uses to skip the download. It is larger than the audio that was
+  downloaded — about 42 MB for six minutes — because it holds that audio decoded
+  ([why](../features/ingest.md#the-download)). A directory written before link audio was kept as
+  FLAC holds `original.mp3` for a URL job; nothing reads it, and a resume downloads again.
 
 This naming has one hazard: yt-dlp's `writethumbnail` also writes `original.<ext>` for the
 artwork (`.webp`, `.png`, `.jpg`). `_normalize_downloaded_thumbnail` in
 [`source.py`](../../server/app/pipeline/source.py) exists solely to resolve that collision —
-it globs `original.*`, skips `.mp3`, converts whatever's left to `thumbnail.jpg`, and unlinks
-it. Anything that globs this directory must run *after* that normalization.
+it globs `original.*`, skips `original.flac`, converts whatever's left to `thumbnail.jpg`, and
+unlinks it. Anything that globs this directory must run *after* that normalization.
 
 Before separation, `metadata.read_audio_info` opens this file with libsndfile for its duration
 and format label. A file libsndfile can't read fails the job there.
@@ -57,6 +61,8 @@ rather than re-typed.
 Written by one of two paths — ffmpeg extracting an embedded cover, or ffmpeg converting yt-dlp's
 downloaded artwork. `run_job` only attempts the embedded-cover extraction **if the file doesn't
 already exist**, so for URL jobs the source's artwork wins, and a resumed job keeps what it has.
+The extraction runs on the job's analysis thread as separation starts, so an upload's cover appears
+a moment after its `stems.partial/` does.
 
 Its existence is the entire implementation of `has_thumbnail`: `_row_to_response` does a
 `Path.exists()` check on every serialization rather than storing a flag. Served by

@@ -42,6 +42,8 @@ subclass, so **every field is overridable by an environment variable of the same
 | `demucs_model` | `htdemucs_6s` | the 6-source model; see [../features/stem-separation.md](../features/stem-separation.md). The Docker image sets it from the build argument whose weights it carries. The web's stem copy (*six isolated stems*, the stem list) is hardcoded, not read from this |
 | `device` | `cuda` | `DEVICE=cpu` in the CPU Compose path; every model runs on it — Demucs and the chord and key networks. Falls back to CPU, with a logged warning, if torch can't use CUDA |
 | `demucs_overlap` | `0.25` | how much consecutive separation chunks overlap — Demucs' own default. Opt-in speed: lower values such as `0.1` separate faster, with more audible seams where chunks meet |
+| `demucs_half_precision` | `True` | lets a CUDA GPU run the separation network in half precision when a timing at start-up shows it faster; `False` keeps float32 always. Does nothing off a GPU |
+| `demucs_cuda_graph` | `True` | lets a CUDA GPU replay the separation network from a recorded CUDA graph, once a recording has reproduced the model at start-up; `False` never tries. Does nothing off a GPU |
 | `enable_chord_detection` | `True` | set false to skip the madmom stage entirely |
 | `max_duration_seconds` | `720` | longer tracks are refused before separation — a URL job from yt-dlp's metadata, before downloading; `0` disables. The landing page's *"up to 12 minutes"* is hardcoded against this default |
 | `cors_origins` | `["http://localhost:5173"]` | |
@@ -75,7 +77,7 @@ fields are computed rather than stored:
   directory listing — it's the constant list from `schemas.py`. A job that somehow produced
   fewer stems would still advertise six.
 - `has_thumbnail` is a filesystem `.exists()` check on every serialization, including every
-  0.5s SSE tick.
+  0.25 s SSE tick.
 
 `create_job` accepts `.mp3` and `.flac` by extension only, then copies the upload into
 `original.<ext>` with `shutil.copyfileobj` in 1 MB chunks, through `run_in_threadpool`: the
@@ -106,7 +108,7 @@ job_queue: "queue.Queue[str]" = queue.Queue()
 def enqueue(job_id): job_queue.put(job_id)
 
 def _consume():
-    try: warm_up()                       # models and the beat tracker's compile, before any job
+    try: warm_up()                       # every model, run once, before any job
     except Exception: logger.exception("Model warm-up failed")
     while True:
         job_id = job_queue.get()
@@ -129,8 +131,11 @@ Consequences you need to hold in mind:
   broker. Each job does start one more thread, for the analysis that runs beside its separation —
   see [the pipeline](#the-pipeline).
 - **Warm before the first job.** `_consume` calls `pipeline.warm_up()` on the worker thread before
-  it reads the queue: the Demucs model, moved onto its device and on a GPU run once, `tempo.warm_up()`
-  (about 19 s of numba compiling the beat tracker) and the chord and key processors, run once. A job
+  it reads the queue: the Demucs model, moved onto its device and on a GPU run once, with its
+  precision and whether it replays from a recorded CUDA graph settled then
+  ([how](../features/stem-separation.md#how-a-chunk-runs-on-a-gpu)); `tempo.warm_up()`, which is
+  quick because what numba compiles for it is baked into the image; and the chord and key
+  processors, run once. About 6 s in all on a GPU. A job
   queued during it waits on *Queued*, no longer than it would have loading them itself. A failure is logged and swallowed; the first job then loads what's
   missing and reports its own failure.
 - **Enqueueing isn't idempotent.** `enqueue` doesn't know whether the id is already waiting, so a
@@ -145,7 +150,7 @@ Consequences you need to hold in mind:
 ## The pipeline
 
 [`app/pipeline/pipeline.py`](../../server/app/pipeline/pipeline.py) `run_job(job_id)` is the
-orchestrator (~285 lines). It is the only module that writes job status, and the only one that
+orchestrator (~300 lines). It is the only module that writes job status, and the only one that
 knows the stage order. Every other pipeline module is a leaf: pure-ish function in, artifact or
 value out, no database access. [`errors.py`](../../server/app/pipeline/errors.py) holds the
 exception types that carry a user-facing message across that boundary.
@@ -153,20 +158,20 @@ exception types that carry a user-facing message across that boundary.
 ```text
 run_job
  ├─ row missing, or not queued? → return; attempt = row["attempt"]
- ├─ if source_url:  source.download_audio()             → original.mp3, title, author
- │                  _record_track_identity()            → title, author (unscoped)
- │                  (both skipped when original.mp3 already exists)
- │  else:           metadata.extract_author()            → author from ID3
+ ├─ if source_url:  source.download_audio()             → original.flac, title, author, format
+ │                  _record_track_identity()            → title, author, audio_format (unscoped)
+ │                  (both skipped when original.flac already exists)
  ├─ _is_superseded?                                     ← checkpoint
- ├─ thumbnail.extract_embedded_cover()   (if none yet)
  ├─ metadata.read_audio_info()                          → duration, format label
  │     over max_duration_seconds → raise TrackTooLongError
- ├─ _update_job(status=separating, duration_seconds, audio_format)
- ├─ _start_analysis() on a chord-analysis thread         runs beside everything below:
+ ├─ _update_job(status=separating, duration_seconds, and an upload's audio_format)
+ ├─ on a chord-analysis thread                           runs beside everything below:
+ │     _read_tags()                 → an upload's author from ID3; the embedded cover (if none yet)
+ │     _start_analysis():
  │     decode.decode_mono(original) → tempo.detect_tempo()
  │                                  → chords.analyze_audio()  (if enable_chord_detection)
  ├─ separation.separate(on_progress=…)   (unless stems/ is complete)
- │     on_progress: a progress write per 1%; _is_superseded every ≥ 2 s → raise _Superseded
+ │     on_progress: a progress write per 1% and per 0.25 s; _is_superseded every ≥ 2 s → raise _Superseded
  ├─ _is_superseded?                                     ← checkpoint
  ├─ tempo future: "Detecting tempo" if not done, wait   → tempo_bpm, null for 0 BPM
  ├─ _is_superseded?                                     ← checkpoint
@@ -184,14 +189,16 @@ Details that are easy to misread:
   how many rows matched, so a run that was cancelled, deleted or superseded by a resume writes
   nothing, silently. `_is_superseded(job_id, attempt)` is the matching read: the row is missing,
   `cancelled`, or on a different `attempt`. The exception is `_record_track_identity`, which writes
-  a download's title and author by id alone: a resume skips the download, so a run cancelled
-  mid-download must still leave them on the row. It touches no other column.
+  a download's title, author and source format by id alone: a resume skips the download, so a run
+  cancelled mid-download must still leave them on the row. It touches no other column.
 - **A run starts only on a `queued` row.** A job cancelled while it waited and then resumed is in
   the queue twice; the check keeps the second entry from running it again.
 - **Results are batched into the final write — except duration and format.** `tempo_bpm`,
   `key_estimate` and `key_confidence` accumulate in a local `done_fields` dict and land in the
-  *same* `UPDATE` that sets `status=done`. `duration_seconds` and `audio_format` go out earlier,
-  with `status=separating`, so the processing screen can show them. Either way no client ever
+  *same* `UPDATE` that sets `status=done`. `duration_seconds` and an upload's `audio_format` go out
+  earlier, with `status=separating`, so the processing screen can show them; a link's `audio_format`
+  earlier still, with its title, because it names the codec the audio was downloaded in and the
+  file read here is the FLAC it was converted to. Either way no client ever
   observes `done` without every result field — which is exactly why the SSE stream can stop at the
   first terminal status without missing data.
 - **Analysis runs beside separation.** Tempo, chord and key detection read only the original, so
@@ -205,10 +212,18 @@ Details that are easy to misread:
   writes nothing — but it can't be interrupted either: `shutdown(wait=False, cancel_futures=True)`
   drops only steps that haven't started, and a running one finishes unread, possibly overlapping the
   next job. See [decisions.md](decisions.md#analysis-runs-beside-separation).
+- **The artist tag and the cover are read there too, first.** `_read_tags` is the executor's first
+  task: `metadata.extract_author` for an upload, `thumbnail.extract_embedded_cover` when there is no
+  `thumbnail.jpg`. They used to run before `separating`, where two ffmpeg starts were about half a
+  second in which nothing else happened; nothing waits for them now, and nothing collects their
+  future, so `_read_tags` logs its own failures.
 - **Tempo detection happens under `status=separating`.** When it is still running after
   separation, only `progress` (0.85) and `stage_message` ("Detecting tempo") change. There is no
-  `TEMPO` status. librosa reports 0 BPM when it finds no beat at all, and `run_job` stores that as
-  null (`tempo_future.result() or None`).
+  `TEMPO` status. `tempo.detect_tempo` reports 0 BPM when it finds no onsets at all, and `run_job`
+  stores that as null (`tempo_future.result() or None`). It reports the tempo
+  `librosa.beat.beat_track` would, built in blocks so that it holds about 150 MB at its peak where
+  librosa's own path held over a gigabyte beside the separation —
+  [why](../features/tempo-and-metronome.md#detection).
 - **Every step is timed.** `_timed(step)` logs `"<step> took N.N s"` at `INFO` for the download,
   separation, the analysis decode, tempo, chords and key, and the model warm-up, whether the step
   finished or raised, and `run_job` logs the job's total after its final write.
@@ -217,13 +232,22 @@ Details that are easy to misread:
   ([why](decisions.md#chord-runs-demucs-chunk-loop-itself)) and calls `on_progress` as each chunk
   starts, in order, with the share of the pass already done. An exception raised from it unwinds out
   of the loop and abandons the pass — that is how `_Superseded` interrupts separation.
+- **On a CUDA GPU a chunk isn't a plain call to the model.** It runs in half precision where the
+  GPU is faster at it ([decision](decisions.md#separation-runs-in-half-precision-where-the-gpu-is-faster-at-it)),
+  and is replayed from a CUDA graph recorded at the start of the pass
+  ([decision](decisions.md#the-separation-model-is-replayed-from-a-recorded-cuda-graph)), with three
+  demucs helpers replaced by ones that stay on the GPU. Both are settled when the model loads, both
+  fall back to the plain call on their own, and `DEMUCS_HALF_PRECISION` and `DEMUCS_CUDA_GRAPH` turn
+  either off. See [stem separation](../features/stem-separation.md#how-a-chunk-runs-on-a-gpu).
 - **Stems are all-or-nothing on disk.** `separate()` writes into `stems.partial/`, then removes
   any old `stems/` and renames the scratch directory into place. `_stems_complete` (all six
   `STEM_NAMES` FLACs present) is therefore enough for a resume to skip separation.
 - **Stems are 16-bit FLAC.** Converted to 16-bit on the device they were separated on, with Demucs'
   clip handling and libsndfile's own rounding, then `soundfile.write(..., subtype="PCM_16")` at
-  compression level 4, in-process, on a thread per core; about half WAV's bytes to download before
-  playback.
+  compression level 4, in-process, on a thread per core and one more; about half WAV's bytes to
+  download before playback. Each is written through a 4 MiB buffer, because the data directory can be
+  a share of the host's disk where every small write is a round trip, and no more stems are
+  converted at once than the encoders can take.
   Export converts back to WAV as it streams — see [Long responses and streaming](#long-responses-and-streaming).
 - **Stems keep a 44.1 or 48 kHz source's rate.** Demucs always works at the model's own rate
   (44.1 kHz for `htdemucs_6s`); stems from a 48 kHz source are resampled back with
@@ -305,14 +329,16 @@ Schema and the on-disk layout are documented in [../data/README.md](../data/READ
 ## Long responses and streaming
 
 - **SSE** (`GET /jobs/{id}/events`) is an `async` generator inside a `StreamingResponse` that
-  re-reads the row every 0.5s and yields only when the serialized payload changed, then breaks
+  re-reads the row every 0.25 s and yields only when the serialized payload changed, then breaks
   on a terminal status. It is polling, not push — there is no notification from the worker.
   The handler looks the job up once before building the response, so an unknown id is a plain
   404; a job deleted mid-stream can only end the connection, because the `200` is already out.
   Note the generator calls the synchronous `_get_job_row` (and thus blocking SQLite) from the
   event loop; fine at this scale, a real concern under load.
-- **Stems for playback** (`GET /jobs/{id}/stems/{name}.flac`) are served with `FileResponse`,
-  which sends `Content-Length` and implements HTTP range requests. Nothing in the client uses ranges
+- **Stems for playback** (`GET /jobs/{id}/stems/{name}.flac`) are served with `_StemFile`, a
+  `FileResponse` that reads 1 MiB at a time where Starlette reads 64 KB — each read is a trip to the
+  thread pool, and six stems download at once. It sends `Content-Length` and implements HTTP range
+  requests. Nothing in the client uses ranges
   — `PlaybackEngine` fetches each stem whole — so that support goes unused.
 - **Stems for export** (`GET /jobs/{id}/stems/{name}.wav`) are a `StreamingResponse` over
   `_wav_stream`: a 44-byte WAV header computed from the FLAC's, then the FLAC decoded 65 536 frames

@@ -6,29 +6,59 @@
 
 ```python
 def detect_tempo(samples: np.ndarray, sample_rate: int) -> float:
-    y = np.asarray(samples, dtype=np.float32)
-    if np.issubdtype(samples.dtype, np.integer):
-        y /= np.iinfo(samples.dtype).max
-    tempo, _ = librosa.beat.beat_track(y=y, sr=sample_rate)
+    onset_envelope = _onset_envelope(samples, sample_rate)
+    if not onset_envelope.any():
+        return 0.0
+    tempo = librosa.feature.tempo(
+        tg=_mean_tempogram(onset_envelope, sample_rate),
+        sr=sample_rate, hop_length=_HOP_LENGTH, start_bpm=_START_BPM, aggregate=None,
+    )
     return round(float(np.atleast_1d(tempo)[0]), 1)
 ```
 
+The result is **the tempo `librosa.beat.beat_track` reports**, and it is reached the way
+`beat_track` reaches it — an onset envelope, a tempogram of autocorrelations over it, the tempo
+whose lag scores best under a prior centred on 120 BPM — but `beat_track` itself is never called:
+
+- librosa builds the whole track's spectrogram, and then one eight-second autocorrelation window
+  for every frame of the envelope, all at once. For a 6:20 track that peaked at 1,122 MiB above
+  what the process already held, and it grows with the track's length — about 2 GiB at twelve
+  minutes — while separation runs beside it and needs the memory. In a 4 GiB Docker VM it pushed the
+  whole job into swap.
+- `_onset_envelope` is `librosa.onset.onset_strength(aggregate=np.median)`, what `beat_track`
+  measures tempo from, with the mel spectrogram under it built 2048 frames at a time
+  (`_SPECTROGRAM_BLOCK_FRAMES`). `_window` cuts each block's samples, scales integer PCM to float
+  by its dtype's maximum, and pads the ends with the zeros a centred STFT would. Each frame is the
+  one librosa computes, so the envelope is the same to the bit.
+- `_mean_tempogram` is the mean over time of `librosa.feature.tempogram`, summed 512 frames at a
+  time (`_TEMPOGRAM_BLOCK_FRAMES`); only the last bits of the mean can differ from librosa's.
+  `librosa.feature.tempo` then picks the BPM from it, as it does inside `beat_track`.
+- For that 6:20 track: 154 MiB at the peak and 1.2 s, where `beat_track` took 3.3 s. The BPM is the
+  same, as it was on every case tried: whole tracks and excerpts, a third of a second, one sample,
+  silence, noise, a click train.
+
+The rest is as it was:
+
 - `samples` is the job's one decode of the original — mono, 44.1 kHz, from
   [`decode.decode_mono`](../../server/app/pipeline/decode.py) — which chord and key detection read
-  too. madmom's decoder gives integer PCM, scaled to float here.
-- **The tracker runs at that 44.1 kHz**, not librosa's usual 22 050 Hz. At half the rate the onset
+  too. madmom's decoder gives integer PCM.
+- **It runs at that 44.1 kHz**, not librosa's usual 22 050 Hz. At half the rate the onset
   envelope has half the frames and the estimate coarsens enough to make the metronome drift: a
   120 BPM click read 117.5.
 - Mono — tempo is a global property; no reason to analyze channels separately.
-- The second return value of `beat_track` is the **beat frame positions, and they are
-  discarded**. Only the scalar BPM is kept. This is the direct cause of the phase-alignment
-  limitation below.
+- **No beat positions exist.** `beat_track` goes on from the tempo to place the beats, and CHORD
+  never read them; now the tracker that would place them doesn't run. This is the direct cause of
+  the phase-alignment limitation below.
 - `np.atleast_1d(tempo)[0]` normalizes across librosa versions — newer releases return a
   1-element array where older ones returned a scalar.
 - Rounded to one decimal (e.g. `123.0`, `89.1`).
-- A track with no beat to find — silence, or material without a pulse — comes back as `0.0`.
+- A track with no onsets at all — silence — comes back as `0.0`, as it does from `beat_track`.
   `run_job` stores that as null (`tempo_future.result() or None`), so the API reports no tempo
   rather than 0 BPM.
+
+The constants at the top of the file — the STFT's 2048 and 512, the eight seconds, the 120 BPM —
+are librosa's own defaults, spelled out because the estimate is assembled here. Changing one changes
+the answer away from librosa's.
 
 It runs on the **original mix**, not on the drums stem, on the job's analysis thread, which starts
 with separation. The status stays `separating` either way. If tempo detection is still running once
@@ -39,10 +69,15 @@ There is no `TEMPO` status; the processing screen lists *Detecting tempo* as its
 message. A failure to decode the original surfaces here too, reported as a tempo failure. The result
 lands in the row as `tempo_bpm` in the same final `UPDATE` that sets `status=done`.
 
-numba compiles librosa's beat tracker the first time it runs in a process — about 19 s, longer than
-tracking a whole song — so `tempo.warm_up()` runs it once on two seconds of seeded noise, from the
-worker's warm-up before the first job. Without it the first job after every restart paid those 19 s.
-Noise rather than silence, because silence has no onsets and skips the compiled path.
+librosa imports its submodules the first time each is used, and numba compiles their vectorized
+helpers then, so `tempo.warm_up()` estimates the tempo of two seconds of seeded noise — 16-bit, at
+44.1 kHz, like a real decode — from the worker's warm-up before the first job. Noise rather than
+silence, because silence has no onsets and stops short of the tempogram. numba keeps what it
+compiles in `~/.cache/numba`, and [`server/Dockerfile`](../../server/Dockerfile) runs the same
+`warm_up()` as its last build step, so that cache is in the image: without it every new container
+compiled again, which with the beat tracker's own compile was most of a 29–40 s warm-up. It is now
+about 6 s. numba keys the cache on the CPU it compiled for, so an image started on a different
+processor compiles once more there.
 
 The analysis bar shows it as *Tempo* — an integer, or one decimal when there is one, through
 `formatBpm` in [`utils/tempo.ts`](../../web/src/utils/tempo.ts) — and `—` for a null or zero tempo,
@@ -165,7 +200,7 @@ the UI, so the only control is on/off.
 ## Phase alignment
 
 Beat one is anchored to **time zero of the track**, not to a detected downbeat: clicks fall on
-`k × beat` of track time. Since `beat_track`'s frame positions are thrown away server-side, the
+`k × beat` of track time. The server estimates a tempo and never places a beat, so the
 engine only knows *how fast* the beats are, not *where* they fall.
 
 Practically: the click is at the right tempo, but its phase relative to the music is arbitrary —
@@ -176,9 +211,12 @@ The same grid holds inside a loop. Clicks stay on the track's beat positions rat
 at the loop start, so a loop that isn't a whole number of beats long has an irregular interval at
 its seam — as the music does.
 
-Fixing this means returning the first beat's time from `detect_tempo`, storing it (a new
+Fixing this means placing the beats — `librosa.beat.beat_track(onset_envelope=…, bpm=…)` on the
+envelope and tempo `detect_tempo` already has, which is the tracker without the memory its own
+tempo estimate needs — returning the first beat's time, storing it (a new
 `beat_offset_seconds` column), and counting beats from it in `scheduleClicksAhead`
-(`offset + k × beat`).
+(`offset + k × beat`). The beat tracker is the part numba takes longest to compile, so it would
+belong in `tempo.warm_up()` too.
 
 ## Known gaps
 
