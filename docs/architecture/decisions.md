@@ -50,9 +50,9 @@ it streams — a 44-byte header, then the FLAC decoded a block at a time — and
 converted WAVs, deflated at level 1 and streamed. A lossless 16-bit FLAC decodes to exactly the
 separated samples, so the WAV the user saves is the one Demucs' output would have been.
 
-**Cost:** encoding time after every separation — the one part of it still on the CPU, spread over a
-thread per core and one more, and run after the model's pass when it could run beside it: 2.2–3.8 s
-of a 6:20 track's job on 2 CPUs ([todo](../todos/encode-stems-during-separation.md)) — and a decode
+**Cost:** encoding time for every separation — the one part of it left to the CPU,
+[beside the model's pass](#stems-are-encoded-while-the-model-runs) where a GPU leaves the cores free
+and after it everywhere else, 2.2–3.8 s for a 6:20 track on 2 CPUs — and a decode
 on the server for every export — twice for a stem saved alone and in the zip. Still 16-bit whatever the source's
 depth. A job directory written before the switch holds `.wav` stems, which `_stems_complete` doesn't
 recognise and neither stem route serves, so resuming such a job separates it again. See
@@ -345,6 +345,51 @@ because only its chunks all have one shape. In half precision a replay and a dir
 up to about a thousandth of the peak, so with both on, a job's stems depend on which path ran. And
 a capture that fails inside CUDA leaves an error behind it; separation carried on correctly after
 one in testing, and a later recording worked, but that is one driver on one card.
+
+## Stems are encoded while the model runs
+
+**Constraint:** converting six stems to 16-bit and encoding them was 2.2–3.8 s of a 6:20 track's
+job on 2 CPUs — the largest part that wasn't the model — and it began only when the model's pass
+had ended: a pass that, [replayed from a recording](#the-separation-model-is-replayed-from-a-recorded-cuda-graph),
+asks 6 ms of a core for a chunk and leaves the rest idle. Encoding a stem's first minute doesn't
+depend on its last, with two exceptions: a resampled stem's length, which julius rounds from the
+whole track's, and the clip rescale, which needs the whole stem's peak. And the files had to stay
+the ones the whole-stem path writes.
+
+**Choice:** on a GPU that holds the track, with a bag of one model, `_StemStream` encodes each
+stretch of the track as it settles — once the next chunk starts past it, no later chunk reaches it.
+`_apply_model` divides a stretch by its weights then, in place of one division at the end;
+`feed` takes up to ten seconds of settled audio, undoes the normalization on a copy, resamples it by
+julius' own frames with the kernel's width of real audio either side, converts it to 16-bit and
+hands each stem's block to a thread holding that stem's open file. Those threads run at niceness
+10 and `feed` gives them nothing they have no room for, so on a host with no core to spare the
+audio waits on the GPU and is encoded after the pass, as it always was, not in the pass's way. A
+stem whose running peak fails the clip test is dropped from the stream there and then, and encoded
+whole at the end with `_write_stems`, which is also still the path for a bag of several models, a
+GPU without room for the track, and a CPU. In float32 the files are byte-identical to the
+whole-stem path's on seven inputs, two of them driven into clipping. See
+[../features/stem-separation.md](../features/stem-separation.md#encoded-while-the-model-runs).
+
+**Cost:**
+
+- **What it saves depends on spare cores, and has only been measured without them.** With another
+  stack holding most of one of 2 CPUs: separation alone 12.6–13.1 s for 6:20 where it was
+  15.5–18.3 s, and the whole job, analysis beside it, no faster — 22.8 s against 23.5 s — because
+  there the CPU's total work sets the end, not its order.
+- **A loud master gets less.** The stems that clip — drums and vocals on the test track, three of
+  six on a clip driven into clipping — are still encoded whole after the pass, and whatever of
+  them was encoded before their peak crossed the line was encoded for nothing.
+- **The pass is longer:** about a second for 6:20 on that busy host, 12–14 ms a chunk spent in
+  `feed`.
+- **A second rendering of julius' resampler is CHORD's now:** its frames, its kernel's width, its
+  replicated ends and its float32 output length. A julius that changed any of them would make a
+  streamed 48 kHz stem differ from a whole one, and unlike the recording nothing checks that at
+  start-up. Piecewise and whole resampling matched in every sample on one GPU; with cuDNN off they
+  didn't, so elsewhere the last bit of a sample may differ.
+- **Two paths write stems,** and nothing but a comparison by hand keeps them equal.
+- A cancelled pass leaves six unfinished FLACs in `stems.partial/`, closed, where it left an empty
+  directory. Each job starts six more threads, and a thread's own priority exists only on Linux:
+  elsewhere the encoders compete with the pass as equals.
 
 ## Tempo is librosa's, assembled in blocks
 

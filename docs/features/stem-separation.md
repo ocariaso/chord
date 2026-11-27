@@ -164,7 +164,10 @@ chord and key networks running beside it — plus 0.5 GiB for the model's own wo
 but in one buffer rather than several. The rule is deliberately not "whatever fits": on Windows the
 NVIDIA driver spills an over-full GPU into system memory rather than failing, and everything on it
 then runs several times slower. After every job `torch.cuda.empty_cache()` hands the memory back, so
-the server doesn't hold its largest track's worth of GPU memory between jobs.
+the server doesn't hold its largest track's worth of GPU memory between jobs. It can only hand back
+what nothing refers to, which is why the track and its stems live and die inside `_separate_into`:
+`separate` used to empty the cache with the stems still in scope, and 770 MiB of a 6:20 track
+stayed reserved until the next job.
 
 Measured on an RTX 4060 for a minute of audio, warm, against the `Separator` path it replaced:
 2.9 s against 6.1 s from a 44.1 kHz source and 3.5 s against 8.0 s from a 48 kHz one, stems
@@ -186,8 +189,11 @@ the three, by module attribute, with `_pad1d` (the assert dropped), `_spectro` (
 per device and kept) and an `lru_cache` of the embedding. The arithmetic is unchanged.
 
 **Half precision, where the GPU is faster at it.** `DEMUCS_HALF_PRECISION` (default `true`) lets
-`_settle_precision` time one full-length chunk in float32 and one in half precision when the model
-is loaded, and turn half precision on only if it won: about 100 ms against 135 on an RTX 4060. A
+`_settle_precision` time a full-length chunk in float32 and in half precision when the model is
+loaded — `_PRECISION_TRIES` (3) of each, turn and turn about, keeping the fastest of each — and
+turn half precision on only if it won: about 100 ms against 135 on an RTX 4060. One try each was
+not enough: on a host busy at start-up it once measured half precision the slower and kept float32
+for the life of the process. A
 card without tensor cores computes half precision slower than float32 and stays as it was. A chunk
 then runs under `torch.autocast(dtype=torch.float16)` and comes back as float32, so the overlap-add
 and everything after it are unchanged. HTDemucs reads the network's output as a complex spectrogram,
@@ -198,7 +204,10 @@ aren't `HTDemucs` always run in float32.
 Half-precision stems are not float32's. Against float32 with the same random shift, measured on one
 track: 62 dB below the signal on drums, bass and vocals, 56 dB on guitar, 42–45 dB on the two stems
 that were close to silent there, and at most 41 of 32768 on any one sample (190 on a three-second
-clip, 302 on one driven into clipping). Two float32 runs of the same track differ from *each other*
+clip, 302 on one driven into clipping). Nor are they repeatable: two half-precision runs with the
+same shift differ from each other by up to 37 of 32768, in about one sample in thirty, where two
+float32 runs with the same shift write the same bytes. Two float32 runs of the same track as the
+server makes them differ from *each other*
 by far more, because every run shifts its chunks at random: 0.4–27 dB, and up to 3218 of 32768 on a
 sample. Half precision can also overflow where float32 wouldn't, and some GPUs return NaN from it
 outright, so `_separate` checks every pass with `_finite`. A pass that isn't finite is logged and
@@ -241,58 +250,110 @@ tradeoff in
 ```python
 def separate(input_path, output_dir, on_progress=None) -> list[str]:
     ...
-    with torch.inference_mode():
-        wav, source_rate = _read_audio(input_path, bag, device)            # resampled on the device
-        stems = _separate(bag, wav, _storage_device(device, len(bag.sources), wav), on_progress or ...)
-        output_rate = source_rate if source_rate in _PRESERVED_SAMPLE_RATES else bag.samplerate
-        _write_stems(bag, stems, output_rate, partial_dir)
-    ...
+    try:
+        with torch.inference_mode():
+            _separate_into(partial_dir, input_path, bag, device, on_progress or ...)
+    finally:
+        torch.cuda.empty_cache()                                    # on a GPU
     shutil.rmtree(output_dir, ignore_errors=True)
     partial_dir.rename(output_dir)
 
-def _write_stems(bag, stems, output_rate, directory):
-    encoders = min(len(bag.sources), (os.cpu_count() or 1) + 1)
-    unwritten = threading.Semaphore(encoders + 1)
-    with ThreadPoolExecutor(max_workers=encoders) as encoder:
-        for name, stem in zip(bag.sources, stems):
-            unwritten.acquire()
-            samples = _to_pcm16(stem, bag.samplerate, output_rate)
-            write = encoder.submit(_write_flac, directory / f"{name}{STEM_SUFFIX}", samples, output_rate)
-            write.add_done_callback(lambda _: unwritten.release())
-        ...
-
-def _write_flac(path, samples, sample_rate):
-    with open(path, "wb", buffering=_WRITE_BUFFER_BYTES) as out:
-        sf.write(out, samples, sample_rate, format="FLAC", subtype="PCM_16",
-                 compression_level=_FLAC_COMPRESSION_LEVEL)
+def _separate_into(directory, input_path, bag, device, on_progress):
+    wav, source_rate = _read_audio(input_path, bag, device)         # resampled on the device
+    storage = _storage_device(device, len(bag.sources), wav)
+    output_rate = source_rate if source_rate in _PRESERVED_SAMPLE_RATES else bag.samplerate
+    stream = None
+    if storage.type == "cuda" and len(bag.models) == 1:
+        stream = _StemStream(bag, directory, output_rate, storage)  # encodes while the model runs
+    try:
+        stems = _separate(bag, wav, storage, on_progress, stream)
+        if stream is None:
+            _write_stems(bag.sources, stems, bag.samplerate, output_rate, directory)
+        else:
+            stream.finish(stems)
+    finally:
+        if stream is not None:
+            stream.abandon()
 ```
 
 The track is decoded with `sphn` at its own rate — Demucs' own loader, falling back to ffmpeg for
 what `sphn` can't read — and resampled to the model's rate on the device. One 16-bit FLAC per stem
 lands in `data/jobs/<job_id>/stems/` (`STEM_SUFFIX = ".flac"`), whatever the source's depth.
-`_to_pcm16` converts each stem on the device it was separated on: resampled if need be, then scaled
-down as a whole if it would clip — the arithmetic of Demucs' `prevent_clip(mode="rescale")`, which
-its `save_audio` applies — then rounded to 16 bits with libsndfile's own scale and rounding, so the
-samples are the ones libsndfile would have written from the float stem (checked bit for bit). Only
-the 16-bit samples cross to the CPU.
+
+A stem becomes a file in three steps, whichever path writes it: resampled to the output rate if
+need be, scaled down as a whole if it would clip — the arithmetic of Demucs'
+`prevent_clip(mode="rescale")`, which its `save_audio` applies — and rounded to 16 bits with
+libsndfile's own scale and rounding, so the samples are the ones libsndfile would have written from
+the float stem (checked bit for bit). All of it happens on the device the stem was separated on, and
+only the 16-bit samples cross to the CPU. `_to_pcm16` does this for a whole stem.
 
 libsndfile encodes the FLACs in-process — `save_audio` would start an ffmpeg process per file — at
 level 4 (`_FLAC_COMPRESSION_LEVEL = 0.5` of libsndfile's 0–8 scale): within a fraction of a percent
-of the default level 5's size, and about a third faster. It encodes outside the GIL, so stems encode
-side by side while the next is converted: one thread per core, and one more for whichever is waiting
-on the disk. A semaphore lets `_write_stems` convert only as many stems as the encoders can take —
-the one each is writing, and one waiting — because a stem's 16-bit samples are 140 MB for twelve
-minutes, and all six used to be in memory at once.
+of the default level 5's size, and about a third faster.
 
 Each FLAC reaches the job directory through a 4 MiB buffer (`_WRITE_BUFFER_BYTES`). libsndfile
 writes a FLAC frame, a few kilobytes, at a time, and under Docker Desktop the data directory is a
 share of the host's disk (9p or virtiofs) where every write is a round trip. Written that way, the
 six stems of a 6:20 track took 8–14 s; through the buffer, 2.0 s, the files byte for byte the same.
 
-Converting and encoding are the one part of separation still on the CPU, and they run after the
-model's pass, not beside it: 2.2–3.8 s for that 6:20 track on 2 CPUs, after a pass of about 7 s.
-Encoding while the pass runs would hide most of it — see
-[the todo](../todos/encode-stems-during-separation.md). FLAC is lossless
+### Encoded while the model runs
+
+Converting and encoding are the one part of separation left to the CPU, and done after the model's
+pass they were the largest part of a GPU job that wasn't the model: 2.2–3.8 s for a 6:20 track on 2
+CPUs, after a pass that leaves the cores idle. On a GPU that holds the track, with a bag of one
+model, `_StemStream` does them during the pass instead.
+
+- **A stretch settles when the next chunk starts past it.** `_apply_model` divides each stretch of
+  the overlap-add by its weights as soon as no later chunk can reach it — the same division the
+  whole track used to get at the end, a sample at a time — and calls `on_settled` with the track so
+  far and how much of it is final. `_separate` passes that to `stream.feed`, with a `restore` that
+  undoes the bag's weighing and the normalization for a stretch as it later does for the whole.
+- **`feed` takes what has settled, at most `_STRETCH_SECONDS` (10 s) at a time,** and puts a copy
+  through the three steps above. Resampling goes by julius' own frames: 160 samples out for every
+  147 in at 44.1 → 48 kHz, each made from its 147 samples and the kernel's 26 either side, so a
+  frame is produced once that much has settled, and the track's two ends are replicated as julius
+  replicates them. The stem's length is computed as julius computes it for the whole.
+- **Each stem has a `_StemEncoder`:** a thread with the stem's open `SoundFile` and a queue of up to
+  `_QUEUED_STRETCHES` (4) blocks. libFLAC cuts frames by sample count, not by call, so a file
+  written in blocks is the file one write would have made.
+- **The encoders use only what is spare.** Their threads run at niceness `_ENCODER_NICENESS` (10),
+  so the worker thread and the analysis always go first, and `feed` hands over nothing an encoder
+  has no room for: that audio stays on the GPU and is taken by a later call. `finish` takes
+  whatever is left once the pass is over, waiting for room this time, and closes the files. On a
+  host with no core to spare the encoding therefore ends up after the pass, where all of it used to
+  be, not in the way of it.
+- **A stem that has to be scaled is encoded whole.** Scaling needs the stem's peak, which isn't
+  known until its last sample. `feed` keeps a running peak for every stem and encodes unscaled,
+  which is right for a stem that never needs scaling. The moment a stem's peak fails `_to_pcm16`'s
+  test — `1.01 × peak` over 1, and a peak only grows — the stem is dropped from the stream, and
+  `finish` writes it with `_write_stems`, as every stem used to be. On the 6:20 test track that is
+  drums and vocals; on a clip driven into clipping, three of the six.
+
+`_write_stems` is the whole-stem path, and still the only one for a bag of several models (nothing
+settles until the last model has run), for a GPU without room for the track, and on a CPU, where
+the pass is using the cores. It runs `_to_pcm16` and the encoder on a thread per core, and one more
+for whichever is waiting on the disk. A semaphore lets it convert only as many stems as the encoders
+can take — the one each is writing, and one waiting — because a stem's 16-bit samples are 140 MB for
+twelve minutes, and all six used to be in memory at once.
+
+**The files are the same.** In float32 the stems are byte-identical to the ones written after the
+pass, with the same random shift, on seven inputs: a 6:20 track and two minutes of it from a 48 kHz
+source, 100 s at 44.1 kHz, a 32 kHz source, a three-second clip, and two clips driven into clipping.
+Resampling in pieces matched resampling whole in every one of 219 million samples. That is a
+measurement on one GPU, not a guarantee: the arithmetic per sample is the same, but a convolution
+over a different length needn't round the same way — with cuDNN switched off it didn't — so on
+another setup a 48 kHz stem could differ from the whole-stem resample in the last bit of a sample.
+In half precision two runs differ anyway
+([above](#how-a-chunk-runs-on-a-gpu)), by as much with either path.
+
+**What it saves depends on spare cores.** Measured with another stack holding most of one of the 2
+CPUs: separation alone, 6:20, 12.6–13.1 s where it had been 15.5–18.3 s, the pass itself about a
+second longer (12–14 ms a chunk inside `feed`) and what follows it shorter by four to six. With the
+analysis running beside it on that same starved host, the job came out even — 22.8 s against 23.5 s,
+the mean of four each — because there the CPU's total work sets the end, not its order. What is left
+after the pass on a host with cores to spare is the whole-stem encode of the stems that were scaled.
+
+FLAC is lossless
 at about half WAV's bytes: the same stems as WAV are about 10 MB per stem-minute at 44.1 kHz and
 11.5 MB at 48 kHz, roughly 830 MB for a twelve-minute 48 kHz track. The size still drives other
 decisions: the browser must download all six before playback, and discard-on-leave deletes the
@@ -307,10 +368,11 @@ API reports the constant `STEM_NAMES` instead.
 
 All six files go into `stems.partial/`, which is renamed to `stems/` only after the last one is
 written. So **`stems/` is either complete or absent**, and that guarantee is what lets a resume trust
-it. Each run deletes any leftover `stems.partial/` before starting. Stems are written only after
-the separation pass returns, so a pass abandoned by a cancel leaves an empty `stems.partial/` behind
-(until the job is resumed, discarded or reaped), while a crash in the middle of writing can leave some
-FLACs in it — never in `stems/`.
+it. Each run deletes any leftover `stems.partial/` before starting. A pass abandoned by a cancel
+closes whatever it had open there and leaves it behind — six unfinished FLACs where the stems were
+being encoded during the pass, an empty directory where they weren't — until the job is resumed,
+discarded or reaped; a crash in the middle of writing can leave some FLACs in it too. Never in
+`stems/`.
 
 ### Sample rate
 
@@ -358,7 +420,9 @@ stems are written:
 | 1.00 | *Done* |
 
 The bar holds at 0.10 while the track is decoded, because no chunk has started yet, and near 0.85
-while the stems are encoded after the last one. The processing screen shows the percentage and the
+while whatever wasn't encoded during the pass is: the stems that had to be scaled, every stem where
+the pass doesn't encode them, and on a busy host whatever the encoders hadn't reached. The
+processing screen shows the percentage and the
 bar as they are; it offers no time-remaining estimate.
 
 ## Cancelling during separation
@@ -401,12 +465,17 @@ Measured on an RTX 4060 under Docker Desktop with 2 CPUs, warm:
 | NVIDIA GPU | under 2 s per minute of audio — a 6:20 track from a 48 kHz source is a job of 10.6 to 12.6 s, all but a few tenths of it separation |
 | CPU | slower than real time: several minutes for a four-minute track |
 
-That 6:20 track's separation is about 0.8 s decoding it, a model pass of about 7.0 s (half
+That 6:20 track's separation was about 0.8 s decoding it, a model pass of about 7.0 s (half
 precision, replayed from a recording) and 2.2–3.8 s converting and encoding the stems. The spread is
 those 2 CPUs, shared with whatever else Docker is running: those figures are from a run with them
 mostly free, and with another stack holding about one of the two the same job took 14.5 to 16 s
 through the running server, where it had taken 20 to 34 s. A job still has about nine CPU-seconds
 of decoding, analysis and encoding in it, and a busy host stretches exactly those.
+
+All of that was measured with the stems encoded after the pass. They are now
+[encoded during it](#encoded-while-the-model-runs), which has only been measured on a busier host:
+there it took three to five seconds off separation on its own and left the whole job where it was.
+The table's figure hasn't been taken again with the CPUs free.
 
 Tempo, chord and key detection run at the same time, on their own thread, and since madmom's
 networks run on torch they take a few seconds for a whole track, so on a GPU the job is done as

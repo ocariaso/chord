@@ -123,7 +123,8 @@ def _separation_progress(job_id: str, attempt: int) -> Callable[[float], None]:
 
 def _read_tags(job_id: str, attempt: int, original_path: Path, is_upload: bool) -> None:
     """The original's artist tag and embedded cover, for the processing screen. Neither separation nor analysis needs
-    them, so they are read beside both, not ahead of them: two ffmpeg starts were half a second before any work began."""
+    them, so they are read beside both, not ahead of them: two ffmpeg starts were half a second before any work
+    began."""
     try:
         # A link's author came with its download.
         if is_upload:

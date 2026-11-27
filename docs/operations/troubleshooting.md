@@ -208,7 +208,9 @@ split.
 
 Separation starts the bar at 10% and then follows its chunks, reporting progress as each chunk of
 audio *starts* — so the bar holds at 10% while the track decodes and until the second chunk begins,
-a noticeable while on CPU. It holds near 85% while the six stems are encoded, after the last chunk.
+a noticeable while on CPU. It holds near 85% for whatever is still to be encoded once the last chunk
+is done: all six stems on a CPU; on a GPU, the stems that had to be scaled to keep from clipping,
+and anything a busy host's encoders didn't reach during the pass.
 
 ### The first job after a start waits on *Queued*
 
@@ -238,7 +240,7 @@ On a GPU the log also says how separation will run, in two `INFO` lines from
 
 | Line | Meaning |
 | --- | --- |
-| `A chunk separates in … using half precision` / `… using float32` | the two timings `DEMUCS_HALF_PRECISION` allows, and the one that won. Absent when the setting is `false` |
+| `A chunk separates in … using half precision` / `… using float32` | the two timings `DEMUCS_HALF_PRECISION` allows — the fastest of three tries each, taken turn about — and the one that won. Absent when the setting is `false` |
 | `Separation replays a recorded CUDA graph, X of its peak from the model run directly` | the recording reproduced the model and every pass will replay one. `X` is 0 in float32 and around 1e-4 in half precision. Absent when `DEMUCS_CUDA_GRAPH` is `false` |
 | `WARNING … A recorded CUDA graph is X of its peak from the model; running the model directly` | the recording didn't match — more than 2% out — so it isn't used. Separation is correct, and slower beside analysis. Expect it after a demucs upgrade that changed the model's forward pass |
 | `WARNING … Couldn't record the separation model as a CUDA graph; running it directly`, with a traceback | recording failed outright, at start-up or at the start of a pass. Chunks run through the model from then on, until the server restarts. A driver or torch that can't capture the model is the likely cause; `DEMUCS_CUDA_GRAPH=false` stops it trying |
@@ -267,9 +269,11 @@ docker compose logs -f server
 
 The decode, tempo and chord lines come from the analysis thread, which runs beside separation, so
 they can print before separation's and their seconds overlap it. `separation` is the whole of it:
-decoding the track, the model's pass and writing the stems. For a 6:20 track on an RTX 4060 that is
-about 0.8 s, 7 s and 2–4 s; the last part is the CPU's, and on a machine with few cores, or busy
-ones, it is where the spread comes from. The processing screen's stage times
+decoding the track, the model's pass, and whatever of the stems wasn't encoded during the pass. For a
+6:20 track on an RTX 4060 that is about 0.8 s, 7 s and up to 2–4 s. Encoding is the CPU's: on a GPU
+it is done [during the pass](../features/stem-separation.md#encoded-while-the-model-runs) as far as
+there are cores to spare, so on a machine with few cores, or busy ones, more of it lands after the
+pass, and that is where the spread comes from. The processing screen's stage times
 are no substitute: they measure how long each stage was the one on screen, and a step that finished
 during separation shows done with no time at all. Outside Docker the same lines go to uvicorn's
 stderr.

@@ -20,7 +20,6 @@ makes another easier, the page says so under *Works with*.
 | [restart-recovery.md](restart-recovery.md) | jobs interrupted by a stop or restart continue on the next start |
 | [device-visibility.md](device-visibility.md) | report beyond the server log when separation falls back to the CPU |
 | [apple-silicon.md](apple-silicon.md) | separation on the Apple GPU (`mps`) for Mac users |
-| [encode-stems-during-separation.md](encode-stems-during-separation.md) | write each stem's FLAC during the model's pass, not after it — two to four seconds of a GPU job |
 
 ## Open source
 

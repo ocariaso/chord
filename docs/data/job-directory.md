@@ -90,8 +90,9 @@ it, and only then renames it to `stems/`, replacing any `stems/` already there. 
   rename.
 - A resumed job checks `_stems_complete` — every `STEM_NAMES` FLAC present — and skips separation
   when it holds.
-- A pass abandoned by a cancel, or cut off by a restart, leaves `stems.partial/` behind — empty
-  if the pass was interrupted before its save loop. The job's next separation deletes it; a
+- A pass abandoned by a cancel, or cut off by a restart, leaves `stems.partial/` behind — with
+  unfinished FLACs in it where the stems were being encoded during the pass, empty where the pass
+  was interrupted before anything was saved. The job's next separation deletes it; a
   discard removes it with the rest of the directory; and the reaper removes it from a `done`,
   `error` or `cancelled` job an hour after the job last changed.
 

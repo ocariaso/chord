@@ -442,7 +442,7 @@ or `cpu` when that is a CUDA device torch can't use, logging a **warning** once.
 reaches its device through it, so the TF32 setting is in place before any convolution runs.
 **See:** [../features/stem-separation.md](../features/stem-separation.md#device-selection)
 
-### `app/pipeline/separation.py` — Demucs (473 lines)
+### `app/pipeline/separation.py` — Demucs (723 lines)
 **Exports:** `STEM_SUFFIX`, `load_model`, `separate`
 **Imports from:** `core.config`, `pipeline.device`
 **Used by:** `pipeline.pipeline`, `api.routes_stems` and `api.routes_analysis` (`STEM_SUFFIX`)
@@ -471,7 +471,8 @@ Hann window is cached on the device in `_stft_windows`; demucs builds it on the 
 across per call), and `demucs.transformer.create_2d_sin_embedding` with an `lru_cache` of itself
 (demucs recomputes it on the CPU per chunk; every chunk has one shape).
 (2) **Half precision.** `settings.demucs_half_precision` lets `_settle_precision` time one
-full-length chunk each way (`_chunk_seconds`, the faster of two tries) and set `_half_precision`
+full-length chunk each way (`_chunk_seconds`; `_PRECISION_TRIES`, 3, of each, turn about, keeping the
+fastest of each — one try each was once enough for a busy start-up to pick float32) and set `_half_precision`
 only where half is faster — about 100 ms against 135 on an RTX 4060; a card without tensor cores
 stays float32. `_run_model` then wraps the forward in `torch.autocast(dtype=float16)` and returns
 float32. `_accept_half_precision` patches each `HTDemucs`' `_mask` to cast to float32 first, since
@@ -500,8 +501,9 @@ All of (1)–(3) mirror demucs 4.1.0's internals and nothing pins that version. 
 rate, falling back to demucs' ffmpeg `AudioFile`, and resampled to the model's on the device with
 `demucs.audio.convert_audio`. Stems are written into a sibling `stems.partial/` (cleared first) and
 renamed onto `stems/` only once all are written, so **`stems/` is complete or absent** — which is what
-lets a resume skip separation. An aborted pass leaves an empty `stems.partial/` until the next
-attempt, a discard, or the reaper.
+lets a resume skip separation. An aborted pass leaves `stems.partial/` behind — empty, or holding
+unfinished FLACs where the stems were being encoded during the pass — until the next attempt, a
+discard, or the reaper.
 Demucs works at the model's 44.1 kHz; a 44.1 or 48 kHz source keeps its rate
 (`_PRESERVED_SAMPLE_RATES`, the rate `sphn` reported), 48 kHz stems being resampled back with
 `julius.resample_frac` on the device; any other rate gets the model's. The upload page's
@@ -516,17 +518,43 @@ call (0.5: FLAC level 4, the default level's size, about a third faster), **into
 with a 4 MiB buffer** (`_WRITE_BUFFER_BYTES`): libsndfile writes a FLAC frame — a few kilobytes — at a
 time, and under Docker Desktop the data directory is a share of the host's disk where every write is
 a round trip. Six stems of a 6:20 track took 8–14 s to write that way and 2.0 s buffered, the files
-byte for byte the same. `_write_stems` runs the writes on a `ThreadPoolExecutor` of one thread per
-core plus one for whichever is waiting on the disk, at most one per stem — libsndfile encodes outside
-the GIL — and a semaphore lets it convert no more stems than the encoders can take, one each and one
-waiting, where all six stems' samples used to be in memory at once.
-`torch.cuda.empty_cache()` runs after every pass, in a `finally`.
+byte for byte the same.
+**Two paths write the stems.** `_write_stems(names, stems, model_rate, output_rate, directory)` is the
+whole-stem one, after the pass: `_to_pcm16` and `_write_flac` on a `ThreadPoolExecutor` of one thread
+per core plus one for whichever is waiting on the disk, at most one per stem — libsndfile encodes
+outside the GIL — and a semaphore lets it convert no more stems than the encoders can take, one each
+and one waiting, where all six stems' samples used to be in memory at once. **`_StemStream` encodes
+during the pass**, and `_separate_into` uses it when the track accumulates on a CUDA device and the
+bag has one model (several models settle nothing until the last has run; a CPU's cores are busy with
+the pass). `_apply_model` divides each stretch of the overlap-add by its weights as soon as the next
+chunk starts past it — in place of one division at the end, the same values — and calls
+`on_settled(track, settled)`; `_separate` turns that into `stream.feed(track, settled, restore)`,
+where `restore` undoes the bag's weighing and the normalization on a copy of the stretch, in the
+order `_separate` undoes them for the whole. `feed` takes at most `_STRETCH_SECONDS` (10) at a time
+(`_take`), resamples by **julius' own frames** — `new_sr` out per `old_sr` in, the kernel's `_width`
+of real audio either side, the track's ends replicated, the total length computed as julius does, in
+float32 — converts to 16-bit as `_to_pcm16` does, and hands each stem's block to its `_StemEncoder`:
+a daemon thread (`chord-encode-<stem>`) holding the stem's open `SoundFile` and a queue of
+`_QUEUED_STRETCHES` (4). Those threads run at niceness `_ENCODER_NICENESS` (10, per thread, Linux
+only) and `feed` hands over nothing an encoder has no room for — the audio stays on the GPU for a
+later call — so a host with no spare core encodes after the pass, as before, not in its way.
+`finish(stems)` takes what is left, waiting for room, and closes the files. **A stem whose running
+peak fails `_to_pcm16`'s clip test is dropped from the stream at once and written whole by
+`_write_stems` in `finish`**: scaling needs the whole stem's peak. `restart` begins every file again
+for a pass that half precision made `_separate` run again; `abandon` closes them for a pass that
+won't finish, and an encoder's failure is raised by its `close`. In float32 the streamed files are
+byte-identical to `_write_stems`' on seven inputs; piecewise and whole resampling matched in every
+sample on one GPU, which the arithmetic doesn't guarantee elsewhere.
+`torch.cuda.empty_cache()` runs after every pass, in `separate`'s `finally` — and the track and its
+stems are locals of `_separate_into`, gone by then, because the cache can't hand back what is still
+referred to: with the stems in scope 770 MiB of a 6:20 track stayed reserved until the next job.
 Returns the model's source names, but `run_job` ignores the return value. The unguarded `global`s are
 safe only because a single thread calls this.
 **See:** [../features/stem-separation.md](../features/stem-separation.md),
 [../architecture/decisions.md](../architecture/decisions.md#chord-runs-demucs-chunk-loop-itself) and the
 two records after it, on [half precision](../architecture/decisions.md#separation-runs-in-half-precision-where-the-gpu-is-faster-at-it)
-and the [recorded graph](../architecture/decisions.md#the-separation-model-is-replayed-from-a-recorded-cuda-graph)
+and the [recorded graph](../architecture/decisions.md#the-separation-model-is-replayed-from-a-recorded-cuda-graph),
+and the one on [encoding during the pass](../architecture/decisions.md#stems-are-encoded-while-the-model-runs)
 
 ### `app/pipeline/networks.py` — madmom's networks, run by torch (132 lines)
 **Exports:** `TorchNetwork`, `run_on_torch`

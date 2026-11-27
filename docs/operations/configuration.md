@@ -168,7 +168,10 @@ constants; the timeouts are literals where they're used.
 | `_WRITE_BUFFER_BYTES` | 4 MiB — the buffer each stem's FLAC is written through, so a shared data directory sees a few large writes | `separation.py` |
 | `_RECORDING_TOLERANCE` | `0.02` of the peak — how far a recorded CUDA graph's output may be from the model's and still be used | `separation.py` |
 | `_GPU_POLL_SECONDS` | `0.001` s — how often a replayed chunk checks whether the GPU has finished it | `separation.py` |
-| stem encoders | one thread per core plus one, at most one per stem; one more stem than that converted and waiting | `separation.py` |
+| stem encoders, after the pass | one thread per core plus one, at most one per stem; one more stem than that converted and waiting | `separation.py` |
+| `_STRETCH_SECONDS` / `_QUEUED_STRETCHES` | `10` / `4` — while the model runs on a GPU: the most audio converted for the encoders at once, and how many such stretches may wait for one stem's encoder before the audio is left on the GPU | `separation.py` |
+| `_ENCODER_NICENESS` | `10` — the priority of the threads that encode during the pass, so the model's thread and the analysis go first | `separation.py` |
+| `_PRECISION_TRIES` | `3` — how many times a chunk is timed in each precision before `DEMUCS_HALF_PRECISION` picks one | `separation.py` |
 | `SAMPLE_RATE` | `44100` — the one mono decode tempo, chord and key detection share | `decode.py` |
 | tempo estimation | librosa's defaults: `_N_FFT` 2048, `_HOP_LENGTH` 512, `_AUTOCORRELATION_SECONDS` 8, `_START_BPM` 120; built `_SPECTROGRAM_BLOCK_FRAMES` 2048 and `_TEMPOGRAM_BLOCK_FRAMES` 512 frames at a time | `tempo.py` |
 | playback stem chunk | 1 MiB per read (`_StemFile.chunk_size`) | `routes_stems.py` |

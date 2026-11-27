@@ -235,7 +235,8 @@ Cancellation is **cooperative**. It writes a row and nothing else:
   guard, so the row stays `cancelled`. The one write that isn't guarded — the title, author and
   source format a finished download found — changes only those three columns.
 - Files already written stay on disk: the original, `thumbnail.jpg`, a finished `stems/`. An
-  abandoned separation leaves only an empty `stems.partial/`, which the next separation clears.
+  abandoned separation leaves only `stems.partial/` — empty, or with unfinished FLACs where the stems
+  were being encoded during the pass — which the next separation clears.
   Cancel does not clean up. `discard` does, and so does the
   [reaper](../data/retention.md#the-reaper), `JOB_TTL_HOURS` after the cancel.
 

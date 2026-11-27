@@ -254,7 +254,8 @@ worker, which finds out at its next check:
 | detecting tempo, or chords and key | the run stops at its next checkpoint, but the step can't be stopped: it runs on the job's analysis thread, started with separation, and finishes on its own, unread — possibly while the next job runs. The same happens to analysis still running when separation is interrupted |
 
 Files already written stay on disk, which is what [resume](#post-jobsjob_idresume) builds on. An
-interrupted separation also leaves an empty `stems.partial/` behind. Cancellation is cooperative
+interrupted separation also leaves `stems.partial/` behind, empty or holding unfinished FLACs.
+Cancellation is cooperative
 by design: [../architecture/decisions.md](../architecture/decisions.md#cooperative-cancellation).
 
 ## `POST /jobs/{job_id}/resume`

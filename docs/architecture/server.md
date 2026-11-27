@@ -244,7 +244,8 @@ Details that are easy to misread:
   `STEM_NAMES` FLACs present) is therefore enough for a resume to skip separation.
 - **Stems are 16-bit FLAC.** Converted to 16-bit on the device they were separated on, with Demucs'
   clip handling and libsndfile's own rounding, then `soundfile.write(..., subtype="PCM_16")` at
-  compression level 4, in-process, on a thread per core and one more; about half WAV's bytes to
+  compression level 4, in-process — during the model's pass on a GPU, as far as there are cores to
+  spare, and after it on a thread per core and one more everywhere else; about half WAV's bytes to
   download before playback. Each is written through a 4 MiB buffer, because the data directory can be
   a share of the host's disk where every small write is a round trip, and no more stems are
   converted at once than the encoders can take.

@@ -2,11 +2,12 @@ import functools
 import logging
 import math
 import os
+import queue
 import random
 import shutil
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -29,6 +30,9 @@ from app.pipeline.device import resolve_device
 
 logger = logging.getLogger(__name__)
 
+# Undoes, in place, the normalization a stretch of a model's output is in.
+_Restore = Callable[[torch.Tensor], torch.Tensor]
+
 # Lossless like the WAV Demucs writes by default, at about half the bytes — and every stem is downloaded whole
 # before playback can start. decodeAudioData reads FLAC natively.
 STEM_SUFFIX = ".flac"
@@ -41,6 +45,7 @@ _PRESERVED_SAMPLE_RATES = {44100, 48000}
 # FLAC level 4 of 0-8: within a fraction of a percent of the size of libsndfile's default 5, encoded about a third
 # faster. Encoding is on the critical path; every stem is also on the wire before playback starts, so not lower.
 _FLAC_COMPRESSION_LEVEL = 0.5
+_FLAC_FORMAT = dict(format="FLAC", subtype="PCM_16", compression_level=_FLAC_COMPRESSION_LEVEL)
 
 # A stem reaches the job directory through this much buffer, not a FLAC frame — a few kilobytes — at a time. Under
 # Docker Desktop the data directory is a share of the host's disk where every write is a round trip: unbuffered,
@@ -51,6 +56,17 @@ _WRITE_BUFFER_BYTES = 4 * 2**20
 # again — the padded mix, resampling each stem afterwards, the chord and key networks beside it — plus the model's own
 # working memory, about 0.5 GiB for htdemucs_6s.
 _GPU_MODEL_BYTES = 2**29
+
+# Stems encoded while the model runs go to their encoders a stretch at a time: at most this many seconds of audio in
+# one, at most this many waiting for an encoder. Past that the audio stays where it is, on the GPU, until there is room.
+_STRETCH_SECONDS = 10
+_QUEUED_STRETCHES = 4
+# Those encoders give way to every other thread: they are there to use cores the pass leaves idle, and on a host
+# with none to spare the thread running the model, and the analysis, must not wait behind them.
+_ENCODER_NICENESS = 10
+
+# How many times a chunk is timed in each precision before one is chosen.
+_PRECISION_TRIES = 3
 
 # How often a thread waiting on the GPU looks to see whether it has finished.
 _GPU_POLL_SECONDS = 0.001
@@ -224,17 +240,13 @@ def _record(model: HTDemucs, shape: torch.Size) -> _RecordedModel | None:
 
 
 def _chunk_seconds(bag: BagOfModels, device: torch.device) -> float:
-    """How long the bag's models take over one full-length chunk, as the faster of two tries: the first also loads
-    whatever kernels CUDA hasn't used yet."""
-    fastest = math.inf
-    for _ in range(2):
-        torch.cuda.synchronize(device)
-        started = time.perf_counter()
-        for model in bag.models:
-            _run_model(model, torch.zeros(1, bag.audio_channels, int(model.samplerate * model.segment), device=device))
-        torch.cuda.synchronize(device)
-        fastest = min(fastest, time.perf_counter() - started)
-    return fastest
+    """How long the bag's models take over one full-length chunk."""
+    torch.cuda.synchronize(device)
+    started = time.perf_counter()
+    for model in bag.models:
+        _run_model(model, torch.zeros(1, bag.audio_channels, int(model.samplerate * model.segment), device=device))
+    torch.cuda.synchronize(device)
+    return time.perf_counter() - started
 
 
 def _settle_precision(bag: BagOfModels, device: torch.device) -> None:
@@ -243,9 +255,14 @@ def _settle_precision(bag: BagOfModels, device: torch.device) -> None:
     global _half_precision
     if not settings.demucs_half_precision or not any(isinstance(model, HTDemucs) for model in bag.models):
         return
-    full = _chunk_seconds(bag, device)
-    _half_precision = True
-    half = _chunk_seconds(bag, device)
+    full = half = math.inf
+    # Turn and turn about, so whatever else the machine is doing falls on both, and the fastest try of each: the
+    # first also loads whatever kernels CUDA hasn't used yet, and a busy moment can only make a try slower.
+    for _ in range(_PRECISION_TRIES):
+        _half_precision = False
+        full = min(full, _chunk_seconds(bag, device))
+        _half_precision = True
+        half = min(half, _chunk_seconds(bag, device))
     _half_precision = half < full
     logger.info(
         "A chunk separates in %.0f ms in float32 and %.0f ms in half precision; using %s",
@@ -301,19 +318,27 @@ def _read_window(audio: torch.Tensor, start: int, length: int) -> torch.Tensor:
 
 
 def _apply_model(
-    model: torch.nn.Module, mix: torch.Tensor, storage: torch.device, on_progress: Callable[[float], None]
+    model: torch.nn.Module,
+    mix: torch.Tensor,
+    storage: torch.device,
+    on_progress: Callable[[float], None],
+    on_settled: Callable[[torch.Tensor, int], None] | None = None,
 ) -> torch.Tensor:
     """One Demucs model's (sources, channels, samples) for a normalized (channels, samples) mix on the model's device,
     accumulated on `storage`.
 
     This is Demucs' apply_model with its defaults — one random shift, overlapping chunks blended by a triangle — and
     the same arithmetic in the same order, but the overlap-add is kept where `storage` says and done in place. Demucs
-    keeps it in RAM, copying every chunk back from the GPU and the whole result several times over."""
+    keeps it in RAM, copying every chunk back from the GPU and the whole result several times over.
+
+    A stretch of the result is settled once the next chunk starts past it. `on_settled` is called after every chunk
+    with the result so far and how many of its leading samples that is."""
     channels, length = mix.shape
     # The chunk boundaries move by a random amount every run: the mix is padded with up to half a second of silence
     # and read from a random point, and the result's head is dropped by as much.
     max_shift = int(0.5 * model.samplerate)
     shift = random.randint(0, max_shift)
+    head = max_shift - shift
     padded = F.pad(mix, (max_shift, max_shift))
     shifted_length = length + max_shift - shift
 
@@ -325,6 +350,8 @@ def _apply_model(
 
     out = torch.zeros(len(model.sources), channels, shifted_length, device=storage)
     total_weight = torch.zeros(shifted_length, device=storage)
+    track = out[..., head:]
+    settled = 0
     recorded: _RecordedModel | None = None
     for offset in range(0, shifted_length, stride):
         on_progress(offset / shifted_length)
@@ -340,20 +367,34 @@ def _apply_model(
         chunk_out = center_trim(chunk_out[0], chunk_length).to(storage)
         out[..., offset : offset + chunk_length] += weight[:chunk_length] * chunk_out
         total_weight[offset : offset + chunk_length] += weight[:chunk_length]
-    out /= total_weight
-    return out[..., max_shift - shift :]
+        # No later chunk reaches the samples before the next one's start, so their weights are complete. Dividing
+        # each stretch as it settles gives what dividing the whole track at the end did, a sample at a time.
+        newly_settled = min(offset + stride, shifted_length)
+        out[..., settled:newly_settled] /= total_weight[settled:newly_settled]
+        settled = newly_settled
+        if on_settled is not None and settled > head:
+            on_settled(track, settled - head)
+    return track
 
 
 def _separate(
-    bag: BagOfModels, wav: torch.Tensor, storage: torch.device, on_progress: Callable[[float], None]
+    bag: BagOfModels,
+    wav: torch.Tensor,
+    storage: torch.device,
+    on_progress: Callable[[float], None],
+    stream: "_StemStream | None" = None,
 ) -> torch.Tensor:
     """Every source of a (channels, samples) track at the model's rate, as (sources, channels, samples) on `storage`.
     Demucs' Separator.separate_tensor: the track normalized going in, each model's sources weighed, and the
-    normalization undone. `wav` is normalized in place, which spares a copy of the track."""
+    normalization undone. `wav` is normalized in place, which spares a copy of the track.
+
+    `stream`, which a bag of one model can have, is fed each stretch of the track as it settles, with the weighing
+    and the normalization undone for that stretch as they will be for the whole."""
     global _half_precision
     reference = wav.mean(0)
     mean, std = reference.mean(), reference.std() + 1e-8
     mix = wav.sub_(mean).div_(std)
+    mean, std = mean.item(), std.item()
 
     estimates: torch.Tensor | None = None
     totals = [0.0] * len(bag.sources)
@@ -362,13 +403,23 @@ def _separate(
         def model_progress(fraction: float, index: int = index) -> None:
             on_progress((index + fraction) / len(bag.models))
 
-        out = _apply_model(model, mix, storage, model_progress)
+        def restore(stretch: torch.Tensor, weights: list[float] = weights) -> torch.Tensor:
+            # What the lines after this loop do to the track of a bag of one model, in their order.
+            for source, source_weight in enumerate(weights):
+                stretch[source] *= source_weight
+                stretch[source] /= source_weight
+            return stretch.mul_(std).add_(mean)
+
+        on_settled = None if stream is None else (lambda track, settled: stream.feed(track, settled, restore))
+        out = _apply_model(model, mix, storage, model_progress, on_settled)
         if _half_precision and not _finite(out):
             # Half precision overflows where float32 wouldn't, and some GPUs return NaN from it outright; either would
             # be written out as a stem. The model's pass is run again in float32, and so is every pass after it.
             logger.warning("Half precision returned audio that isn't finite; separating in float32 from here on")
             _half_precision = False
-            out = _apply_model(model, mix, storage, model_progress)
+            if stream is not None:
+                stream.restart()
+            out = _apply_model(model, mix, storage, model_progress, on_settled)
         for source, source_weight in enumerate(weights):
             out[source] *= source_weight
             totals[source] += source_weight
@@ -376,7 +427,7 @@ def _separate(
     assert estimates is not None
     for source, total in enumerate(totals):
         estimates[source] /= total
-    return estimates.mul_(std.item()).add_(mean.item())
+    return estimates.mul_(std).add_(mean)
 
 
 def _read_audio(input_path: Path, bag: BagOfModels, device: torch.device) -> tuple[torch.Tensor, int]:
@@ -421,26 +472,228 @@ def _to_pcm16(stem: torch.Tensor, model_rate: int, output_rate: int) -> np.ndarr
 
 def _write_flac(path: Path, samples: np.ndarray, sample_rate: int) -> None:
     with open(path, "wb", buffering=_WRITE_BUFFER_BYTES) as out:
-        sf.write(out, samples, sample_rate, format="FLAC", subtype="PCM_16", compression_level=_FLAC_COMPRESSION_LEVEL)
+        sf.write(out, samples, sample_rate, **_FLAC_FORMAT)
 
 
-def _write_stems(bag: BagOfModels, stems: torch.Tensor, output_rate: int, directory: Path) -> None:
-    """One 16-bit FLAC per stem in `directory`. libsndfile encodes outside the GIL, so stems encode side by side while
-    the next is converted: a thread per core, and one more for whichever is waiting on the disk."""
-    encoders = min(len(bag.sources), (os.cpu_count() or 1) + 1)
+def _write_stems(
+    names: Sequence[str], stems: Sequence[torch.Tensor], model_rate: int, output_rate: int, directory: Path
+) -> None:
+    """One 16-bit FLAC per stem in `directory`, each from the whole of its stem. libsndfile encodes outside the GIL, so
+    stems encode side by side while the next is converted: a thread per core, and one more for whichever is waiting on
+    the disk."""
+    encoders = min(len(names), (os.cpu_count() or 1) + 1)
     # A stem's samples are 140 MB for twelve minutes, so no more are converted than the encoders can take: the one
     # each is writing, and one waiting.
     unwritten = threading.Semaphore(encoders + 1)
     with ThreadPoolExecutor(max_workers=encoders) as encoder:
         writes = []
-        for name, stem in zip(bag.sources, stems):
+        for name, stem in zip(names, stems):
             unwritten.acquire()
-            samples = _to_pcm16(stem, bag.samplerate, output_rate)
+            samples = _to_pcm16(stem, model_rate, output_rate)
             write = encoder.submit(_write_flac, directory / f"{name}{STEM_SUFFIX}", samples, output_rate)
             write.add_done_callback(lambda _: unwritten.release())
             writes.append(write)
         for write in writes:
             write.result()
+
+
+class _StemEncoder:
+    """One stem's FLAC, encoded on a thread of its own from blocks of (samples, channels) 16-bit PCM handed over in
+    order. libFLAC cuts frames by sample count, not by call, so the file is the one a single write of all the blocks
+    would make."""
+
+    def __init__(self, path: Path, sample_rate: int, channels: int):
+        self._blocks: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=_QUEUED_STRETCHES)
+        self._failure: BaseException | None = None
+        self._thread = threading.Thread(
+            target=self._encode, args=(path, sample_rate, channels), name=f"chord-encode-{path.stem}", daemon=True
+        )
+        self._thread.start()
+
+    def _encode(self, path: Path, sample_rate: int, channels: int) -> None:
+        try:
+            os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), _ENCODER_NICENESS)
+        except (AttributeError, OSError):
+            # Only Linux has a priority for one thread. Elsewhere the encoders compete as any thread does.
+            pass
+        ended = False
+        try:
+            with open(path, "wb", buffering=_WRITE_BUFFER_BYTES) as out:
+                with sf.SoundFile(out, "w", sample_rate, channels, **_FLAC_FORMAT) as flac:
+                    while (block := self._blocks.get()) is not None:
+                        flac.write(block)
+                    ended = True
+        except BaseException as failure:  # noqa: BLE001 - raised by close(), on the thread that can act on it
+            self._failure = failure
+            # write() blocks on a full queue, so the queue is emptied until close() says there is no more.
+            while not ended and self._blocks.get() is not None:
+                pass
+
+    def has_room(self) -> bool:
+        """Whether write() would return at once. Only one thread writes, so the answer holds until it does."""
+        return not self._blocks.full()
+
+    def write(self, block: np.ndarray) -> None:
+        self._blocks.put(block)
+
+    def close(self) -> None:
+        """Ends the file after the blocks already handed over, and raises whatever stopped the encoder, if anything."""
+        self._blocks.put(None)
+        self._thread.join()
+        if self._failure is not None:
+            raise self._failure
+
+
+class _StemStream:
+    """Encodes the stems while the model's pass is still running, a settled stretch at a time.
+
+    Left to the end, converting and encoding six stems was the largest part of a GPU job that wasn't the model, and it
+    waited through a pass that leaves the cores idle. A stretch here goes through what the whole stem went through
+    there (`_to_pcm16`), in its order: resampled to the output rate, converted to 16-bit, encoded. The encoders run
+    when nothing else wants a core, and audio they have no room for yet is left on the GPU for a later call, so a busy
+    host is no slower for this: what isn't encoded by the end of the pass is encoded then, as all of it used to be.
+
+    Two things about a stem depend on all of it. Its length at another rate, which julius rounds from the whole
+    track's: so resampling goes by julius' frames — `new_sr` samples out for every `old_sr` in, each from the
+    kernel's width of audio either side — and only frames whose audio has settled are produced, the track's two ends
+    replicated as julius replicates them. And its peak, which decides whether the stem is scaled down to keep it from
+    clipping: so stretches are encoded unscaled, which is right for a stem that never needs scaling, and a stem whose
+    peak says it does is dropped from here on and encoded by `finish`, whole, as it always was."""
+
+    def __init__(self, bag: BagOfModels, directory: Path, output_rate: int, device: torch.device):
+        self._bag = bag
+        self._directory = directory
+        self._output_rate = output_rate
+        self._limit = _STRETCH_SECONDS * bag.samplerate
+        # None where the stems stay at the model's rate.
+        self._resampler: julius.ResampleFrac | None = None
+        if output_rate != bag.samplerate:
+            self._resampler = julius.ResampleFrac(bag.samplerate, output_rate).to(device)
+        self._encoders: list[_StemEncoder] = []
+        self.restart()
+
+    def _path(self, name: str) -> Path:
+        return self._directory / f"{name}{STEM_SUFFIX}"
+
+    def restart(self) -> None:
+        """Drops whatever has been encoded and starts every file again, for a pass that is being run again."""
+        self.abandon()
+        self._encoders = [
+            _StemEncoder(self._path(name), self._output_rate, self._bag.audio_channels) for name in self._bag.sources
+        ]
+        # In the model's samples without a resampler, in julius' frames with one.
+        self._taken = 0
+        self._written = 0
+        self._peaks: torch.Tensor | None = None
+        # The stems, by index, that have to be scaled, and so encoded whole.
+        self._scaled: set[int] = set()
+
+    def _take(self, track: torch.Tensor, settled: int, restore: _Restore) -> torch.Tensor | None:
+        """The next stretch of settled audio not yet taken, restored and at the output rate; None once it all is."""
+        length = track.shape[-1]
+        if self._resampler is None:
+            first, last = self._taken, min(settled, self._taken + self._limit)
+            if last <= first:
+                return None
+            self._taken = last
+            return restore(track[..., first:last].clone())
+
+        old, new, width = self._resampler.old_sr, self._resampler.new_sr, self._resampler._width
+        # The length julius gives the whole stem, computed as julius computes it — in float32, which above 2**24
+        # samples is not always the exact floor.
+        total = int(torch.floor(torch.as_tensor(new * length / old)))
+        frames = -(-total // new)
+        # A frame is made from its own old_sr samples and the kernel's width either side.
+        ready = frames if settled == length else min(frames, max(0, (settled - width) // old))
+        ready = min(ready, self._taken + self._limit // old)
+        if ready <= self._taken:
+            return None
+        first, last = old * self._taken - width, old * ready + width
+        self._taken = ready
+        stretch = restore(track[..., max(0, first) : min(length, last)].clone())
+        missing = (max(0, -first), max(0, last - length))
+        stretch = F.pad(stretch.reshape(-1, 1, stretch.shape[-1]), missing, mode="replicate")
+        stretch = F.conv1d(stretch, self._resampler.kernel, stride=old).transpose(1, 2)
+        return stretch.reshape(*track.shape[:-1], -1)[..., : total - self._written]
+
+    def _has_room(self) -> bool:
+        return all(encoder.has_room() for index, encoder in enumerate(self._encoders) if index not in self._scaled)
+
+    def feed(self, track: torch.Tensor, settled: int, restore: _Restore, wait: bool = False) -> None:
+        """Encodes what has settled of `track` — (sources, channels, samples) at the model's rate, its first `settled`
+        samples final — and hasn't been taken yet, as far as the encoders have room for it, or all of it if `wait`.
+        `restore` undoes, in place, the normalization the track is still in."""
+        while len(self._scaled) < len(self._encoders) and (wait or self._has_room()):
+            stretch = self._take(track, settled, restore)
+            if stretch is None:
+                return
+            self._written += stretch.shape[-1]
+            peaks = stretch.abs().amax(dim=(1, 2))
+            self._peaks = peaks if self._peaks is None else torch.maximum(self._peaks, peaks)
+            # The test _to_pcm16 makes of a whole stem's peak, in its arithmetic. A peak only grows, so a stem that
+            # fails it now will fail it whole.
+            self._scaled.update(index for index, scale in enumerate((1.01 * self._peaks).tolist()) if scale > 1)
+            # libsndfile's scale, rounding and clamp for float written as 16-bit, as in _to_pcm16.
+            pcm = stretch.mul_(32768).round_().clamp_(-32768, 32767).to(torch.int16)
+            blocks = pcm.permute(0, 2, 1).contiguous().cpu().numpy()
+            for index, encoder in enumerate(self._encoders):
+                if index not in self._scaled:
+                    encoder.write(blocks[index])
+
+    def finish(self, stems: torch.Tensor) -> None:
+        """Completes the files from `stems`, the whole track, restored: whatever of it the encoders haven't been given,
+        and every stem that has to be scaled."""
+        self.feed(stems, stems.shape[-1], lambda stretch: stretch, wait=True)
+        self._close()
+        scaled = sorted(self._scaled)
+        if scaled:
+            names = [self._bag.sources[index] for index in scaled]
+            whole = [stems[index] for index in scaled]
+            _write_stems(names, whole, self._bag.samplerate, self._output_rate, self._directory)
+
+    def _close(self) -> None:
+        encoders, self._encoders = self._encoders, []
+        failures = []
+        for encoder in encoders:
+            try:
+                encoder.close()
+            except BaseException as failure:  # noqa: BLE001 - every file is closed before the first failure is raised
+                failures.append(failure)
+        if failures:
+            raise failures[0]
+
+    def abandon(self) -> None:
+        """Closes whatever files are open, for a pass that won't be finished. What is in them doesn't matter."""
+        try:
+            self._close()
+        except Exception:  # noqa: BLE001 - the pass is already failing or starting over, and says why itself
+            logger.debug("A stem's encoder failed in a pass that was abandoned", exc_info=True)
+
+
+def _separate_into(
+    directory: Path, input_path: Path, bag: BagOfModels, device: torch.device, on_progress: Callable[[float], None]
+) -> None:
+    """One 16-bit FLAC per stem of input_path, in `directory`. The track and its stems are this function's alone, so
+    that they are gone when it returns."""
+    wav, source_rate = _read_audio(input_path, bag, device)
+    storage = _storage_device(device, len(bag.sources), wav)
+    output_rate = source_rate if source_rate in _PRESERVED_SAMPLE_RATES else bag.samplerate
+    # Stems are encoded during the pass where it leaves both the audio and the cores within reach: one model, so a
+    # stretch is final when its chunks are done, and a GPU holding the track. A bag of several models settles nothing
+    # until the last one has run, and on a CPU the pass is using the cores.
+    stream: _StemStream | None = None
+    if storage.type == "cuda" and len(bag.models) == 1:
+        stream = _StemStream(bag, directory, output_rate, storage)
+    try:
+        stems = _separate(bag, wav, storage, on_progress, stream)
+        del wav
+        if stream is None:
+            _write_stems(bag.sources, stems, bag.samplerate, output_rate, directory)
+        else:
+            stream.finish(stems)
+    finally:
+        if stream is not None:
+            stream.abandon()
 
 
 def separate(input_path: Path, output_dir: Path, on_progress: Callable[[float], None] | None = None) -> list[str]:
@@ -457,14 +710,11 @@ def separate(input_path: Path, output_dir: Path, on_progress: Callable[[float], 
 
     try:
         with torch.inference_mode():
-            wav, source_rate = _read_audio(input_path, bag, device)
-            stems = _separate(bag, wav, _storage_device(device, len(bag.sources), wav), on_progress or (lambda _: None))
-            del wav
-            output_rate = source_rate if source_rate in _PRESERVED_SAMPLE_RATES else bag.samplerate
-            _write_stems(bag, stems, output_rate, partial_dir)
+            _separate_into(partial_dir, input_path, bag, device, on_progress or (lambda _: None))
     finally:
         # The allocator would otherwise hold the largest track's memory on the GPU between jobs, away from the desktop
-        # and every other program sharing it.
+        # and every other program sharing it. It can only hand back what nothing refers to any more, which is why the
+        # track lives and dies inside _separate_into: emptied with the stems still in scope here, the cache kept them.
         if device.type == "cuda":
             torch.cuda.empty_cache()
 
