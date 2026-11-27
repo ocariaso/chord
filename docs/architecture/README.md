@@ -32,7 +32,7 @@ directory of job artifacts.
                     │     ├─ soundfile         duration, format label
                     │     ├─ Demucs (torch)    CPU or CUDA
                     │     ├─ librosa           tempo
-                    │     ├─ madmom            chords + key
+                    │     ├─ madmom            chords + key, its networks on torch
                     │     └─ ffmpeg/ffprobe    cover art, artist tag
                     │              │
                     │  data/jobs/<job_id>/     original, stems, analysis, thumbnail
@@ -85,7 +85,7 @@ POST /jobs            (multipart file)          POST /jobs/from-url   ({"url": .
 
 Every write the worker makes is scoped to the job's `attempt`. Between stages it re-reads the
 row and returns if the job was cancelled, deleted, or resumed under a new attempt; separation
-checks too, from Demucs' chunk callback, at most every two seconds. Analysis on its own thread
+checks too, as each chunk starts, at most every two seconds. Analysis on its own thread
 can't be stopped, but writes nothing: the worker writes its results. A resumed job reuses the
 download and the stems its cancelled attempt finished. See [job-lifecycle.md](job-lifecycle.md)
 for each transition in detail.

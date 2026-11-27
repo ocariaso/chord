@@ -73,7 +73,10 @@ The bind mount is the only persistent state.
 **Notes:** overrides the `server` service only: build arg `TORCH_INDEX_URL` → the cu124 wheel
 index, `DEVICE: cuda`, and a `deploy.resources.reservations.devices` entry claiming all NVIDIA
 GPUs. Applied by `start.sh` when `nvidia-smi` both exists and runs. Because the wheel index is a
-**build** argument, switching CPU↔GPU requires a rebuild.
+**build** argument, switching CPU↔GPU requires a rebuild. The Dockerfile passes it as
+`--extra-index-url`, so a newer torch on PyPI wins over the cu124 index: the image holds PyPI's
+newest CUDA build (CUDA 13.0 as of November 2026), whatever this file names — see
+[../operations/docker.md](../operations/docker.md#the-gpu-overlay).
 
 ---
 

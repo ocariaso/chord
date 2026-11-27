@@ -28,8 +28,43 @@ decodes them into temporally smoothed segments. Running the CNN alone would give
 per-frame labels rather than the clean segment boundaries the timeline needs.
 
 All three processors are lazily constructed module-level singletons, the same pattern as the
-Demucs separator — construction loads model data and is not cheap. `load_models()` builds them in
-the worker's warm-up, before the first job.
+Demucs model — construction loads model data and is not cheap. `load_models()` builds them in
+the worker's warm-up, before the first job, and runs them once on three seconds of noise: on a GPU,
+CUDA loads each kernel the first time it runs. The noise is 16-bit integer PCM, the type the decode
+produces, because madmom's STFT processors keep the window of the first signal they see, scaled for
+its type — warmed on float noise, every later job's spectrogram came out 32767 times too loud.
+
+### The networks run on torch
+
+madmom computes each convolution one input/output channel pair at a time, calling scipy for each —
+8,192 calls for the chord network's last layer alone, on one core. That made chord and key detection
+the longest step of a job: about 43 s for two minutes of audio — on an RTX 4060, more than three
+times as long as separating it.
+
+`run_on_torch` in [`networks.py`](../../server/app/pipeline/networks.py) swaps the `NeuralNetwork`
+inside each madmom processor for a `TorchNetwork` that runs the same weights, read from madmom's own
+model files, as whole-tensor torch operations on the job's device (see
+[device selection](stem-separation.md#device-selection)). Everything around the networks stays
+madmom's: the spectrograms, the zero padding and superframe averaging around the chord network,
+the key network's softmax, and the CRF. The two networks use five layer types between them — convolution, batch norm, max-pool,
+padding, averaging — and `TorchNetwork` converts exactly those, refusing any other at load. Two
+details carry the equivalence: madmom applies weights as a true convolution, so the kernels are
+flipped for torch's correlation, and its max-pool reproduces scipy's `maximum_filter` windows, down to
+a last window that would run past the data into zeros.
+
+Measured on two minutes of a live recording:
+
+| | Chord features | Key | Segments and key against madmom |
+| --- | --- | --- | --- |
+| madmom | 39.0 s | 4.4 s | — |
+| torch, CPU (1 thread) | 0.71 s | 0.18 s | identical; features within 3e-7 |
+| torch, RTX 4060 | 0.34 s | 0.11 s | identical; features within 6e-7 |
+
+On the GPU most of what remains is madmom's spectrogram front-end, which stays in numpy. The GPU
+figure is with cuDNN in full float32: in its default TF32 the features moved by 2e-4 — the same
+segments on that recording, but enough to flip a chord that sits near a tie, so
+[`device.py`](../../server/app/pipeline/device.py) turns TF32 off for convolutions (see
+[why](../architecture/decisions.md#madmoms-networks-run-on-torch)).
 
 The `Signal` is the job's one decode of the original mix, from
 [`decode.decode_mono`](../../server/app/pipeline/decode.py): mono at 44.1 kHz, the shape both models

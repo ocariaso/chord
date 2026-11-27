@@ -6,9 +6,9 @@ Let Mac users separate on the Apple GPU (PyTorch's `mps` backend) instead of the
 
 - Docker on macOS runs a Linux VM with no access to the Apple GPU, so `./scripts/start.sh` on a Mac
   always runs separation on the CPU: several minutes per four-minute track.
-- `DEVICE` accepts `cpu` or `cuda`. `_resolve_device()` in
-  [`separation.py`](../../server/app/pipeline/separation.py) only knows how to fall back from `cuda`;
-  `DEVICE=mps` would be passed to Demucs untested, with no fallback.
+- `DEVICE` accepts `cpu` or `cuda`. `resolve_device()` in
+  [`device.py`](../../server/app/pipeline/device.py) only knows how to fall back from `cuda`;
+  `DEVICE=mps` would reach Demucs and the chord and key networks untested, with no fallback.
 - Running without Docker is documented in
   [../operations/local-development.md](../operations/local-development.md), but as a development
   setup, and madmom's build and patch steps haven't been checked on arm64 macOS.
@@ -52,4 +52,4 @@ Independent. Pairs with [device-visibility.md](device-visibility.md) and
 [../operations/local-development.md](../operations/local-development.md),
 [../operations/configuration.md](../operations/configuration.md) (`DEVICE`),
 [../features/stem-separation.md](../features/stem-separation.md), the project README, and the map
-entries for `separation.py`, `config.py` and any new script.
+entries for `device.py`, `config.py` and any new script.

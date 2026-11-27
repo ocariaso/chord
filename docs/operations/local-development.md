@@ -159,7 +159,7 @@ Needed on the host as well as in the image:
 | --- | --- |
 | `ffmpeg` | yt-dlp's audio extraction, cover-art extraction, thumbnail conversion, librosa decoding |
 | `ffprobe` | ID3 artist tag reading ([`metadata.py`](../../server/app/pipeline/metadata.py)) |
-| libsndfile | duration and format (`read_audio_info`), the source sample rate in `separation.py`, reading the vocals stem for the lyrics offset — shipped inside the `soundfile` wheel |
+| libsndfile | duration and format (`read_audio_info`), encoding the stems in `separation.py`, reading the vocals stem for the lyrics offset — shipped inside the `soundfile` wheel |
 | a C toolchain | madmom's Cython extensions |
 
 The ffmpeg and ffprobe paths degrade rather than crash — a missing `ffprobe` means no `author`.

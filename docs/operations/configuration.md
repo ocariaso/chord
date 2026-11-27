@@ -11,7 +11,8 @@ Two distinct layers, frequently confused: **build arguments** (baked into an ima
 | `DEMUCS_MODEL` | [`server/Dockerfile`](../../server/Dockerfile) | `htdemucs_6s` | which Demucs model's weights are baked into the image; the image also sets it as the runtime `DEMUCS_MODEL` |
 
 `TORCH_INDEX_URL` is set by Compose — the base file passes `${TORCH_INDEX_URL:-…/cpu}`, the GPU
-overlay hardcodes `…/cu124`. **Changing it requires a rebuild.** Switching between CPU and GPU is
+overlay hardcodes `…/cu124`, though a newer torch on PyPI wins over it
+([docker.md](docker.md#the-gpu-overlay)). **Changing it requires a rebuild.** Switching between CPU and GPU is
 therefore not a restart; it's `--build`. Compose doesn't pass `DEMUCS_MODEL`, so the image gets
 the Dockerfile default unless the build is given `--build-arg DEMUCS_MODEL=…`.
 
@@ -24,9 +25,9 @@ No `.env` file is read — `Settings` declares no `env_file` — and list values
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `DEVICE` | `cuda` | `cpu` or `cuda`. Falls back to CPU if CUDA is unavailable. Compose sets `${DEVICE:-cpu}` in the base file and `cuda` in the overlay. |
+| `DEVICE` | `cuda` | `cpu` or `cuda`: where Demucs and the chord and key networks run. Falls back to CPU, with a warning in the log, if torch can't use CUDA; the GPU in use is logged as `Models run on …`. Compose sets `${DEVICE:-cpu}` in the base file and `cuda` in the overlay. |
 | `DEMUCS_MODEL` | `htdemucs_6s` | The Docker image sets it from the build argument of the same name. **See the warning below.** |
-| `DEMUCS_OVERLAP` | `0.25` | How much of each chunk Demucs blends with its neighbours, 0…1. The default is Demucs' own. Opt-in: a lower value such as `0.1` separates faster, with more audible seams where chunks meet. |
+| `DEMUCS_OVERLAP` | `0.25` | How much of each separation chunk is blended with its neighbours, 0…1. The default is Demucs' own. Opt-in: a lower value such as `0.1` separates faster, with more audible seams where chunks meet. |
 | `ENABLE_CHORD_DETECTION` | `true` | `false` skips the madmom stage entirely — no `analyzing` status, no `chords.json`, no key. |
 | `MAX_DURATION_SECONDS` | `720` | The longest track, in seconds, a job will separate; `0` disables the check. A URL job is refused from yt-dlp's metadata before anything downloads, an upload once the worker reads it and before separation. Both fail with *"This track is M:SS long. CHORD separates tracks up to N minutes."* |
 | `JOB_TTL_HOURS` | `24` | Hours a finished, failed or cancelled job is kept after it last changed and after the last heartbeat from a page that has it open; the reaper then deletes its row and files. Fractions are allowed, but keep it well above the web's 5-minute heartbeat (`HEARTBEAT_INTERVAL_MS`), or an open job can be deleted between two beats. `0` turns the reaper off entirely, including its removal of orphaned directories and partial separations. Compose passes it through. See [../data/retention.md](../data/retention.md#the-reaper). |
@@ -150,6 +151,8 @@ constants; the timeouts and the SSE interval are literals where they're used.
 | `_GRACE_SECONDS` | `3600` — how long a directory with no row, or a terminal job's `stems.partial/`, must stay unchanged before the reaper deletes it | `reaper.py` |
 | `_PRESERVED_SAMPLE_RATES` | `{44100, 48000}` | `separation.py` |
 | `STEM_SUFFIX` | `.flac` — stems are stored as 16-bit FLAC | `separation.py` |
+| `_FLAC_COMPRESSION_LEVEL` | `0.5` — FLAC level 4 of 0–8: the default level's size, encoded about a third faster | `separation.py` |
+| `_GPU_MODEL_BYTES` | 0.5 GiB — with twice the separated track, the free GPU memory that keeps the overlap-add on the GPU | `separation.py` |
 | `SAMPLE_RATE` | `44100` — the one mono decode tempo, chord and key detection share | `decode.py` |
 | `_WAV_BLOCK_FRAMES` | `65536` frames decoded per block when a stem is exported as WAV | `routes_stems.py` |
 | zip compression | `ZIP_DEFLATED`, `compresslevel=1` | `routes_stems.py` |

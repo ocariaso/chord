@@ -40,8 +40,8 @@ subclass, so **every field is overridable by an environment variable of the same
 | `jobs_dir` | `<server>/data/jobs` | same caveat |
 | `models_cache_dir` | `<server>/data/models_cache` | becomes `TORCH_HOME`, demucs' fallback download cache |
 | `demucs_model` | `htdemucs_6s` | the 6-source model; see [../features/stem-separation.md](../features/stem-separation.md). The Docker image sets it from the build argument whose weights it carries. The web's stem copy (*six isolated stems*, the stem list) is hardcoded, not read from this |
-| `device` | `cuda` | `DEVICE=cpu` in the CPU Compose path; falls back to CPU if CUDA is absent |
-| `demucs_overlap` | `0.25` | chunk overlap passed to the `Separator` — Demucs' own default. Opt-in speed: lower values such as `0.1` separate faster, with more audible seams where chunks meet |
+| `device` | `cuda` | `DEVICE=cpu` in the CPU Compose path; every model runs on it — Demucs and the chord and key networks. Falls back to CPU, with a logged warning, if torch can't use CUDA |
+| `demucs_overlap` | `0.25` | how much consecutive separation chunks overlap — Demucs' own default. Opt-in speed: lower values such as `0.1` separate faster, with more audible seams where chunks meet |
 | `enable_chord_detection` | `True` | set false to skip the madmom stage entirely |
 | `max_duration_seconds` | `720` | longer tracks are refused before separation — a URL job from yt-dlp's metadata, before downloading; `0` disables. The landing page's *"up to 12 minutes"* is hardcoded against this default |
 | `cors_origins` | `["http://localhost:5173"]` | |
@@ -129,9 +129,9 @@ Consequences you need to hold in mind:
   broker. Each job does start one more thread, for the analysis that runs beside its separation —
   see [the pipeline](#the-pipeline).
 - **Warm before the first job.** `_consume` calls `pipeline.warm_up()` on the worker thread before
-  it reads the queue: the Demucs separator, `tempo.warm_up()` (about 19 s of numba compiling the beat
-  tracker) and the madmom processors. A job queued during it waits on *Queued*, no longer than it
-  would have loading them itself. A failure is logged and swallowed; the first job then loads what's
+  it reads the queue: the Demucs model, moved onto its device and on a GPU run once, `tempo.warm_up()`
+  (about 19 s of numba compiling the beat tracker) and the chord and key processors, run once. A job
+  queued during it waits on *Queued*, no longer than it would have loading them itself. A failure is logged and swallowed; the first job then loads what's
   missing and reports its own failure.
 - **Enqueueing isn't idempotent.** `enqueue` doesn't know whether the id is already waiting, so a
   job resumed while its first entry still waits is in the queue twice. `run_job` makes that
@@ -212,22 +212,24 @@ Details that are easy to misread:
 - **Every step is timed.** `_timed(step)` logs `"<step> took N.N s"` at `INFO` for the download,
   separation, the analysis decode, tempo, chords and key, and the model warm-up, whether the step
   finished or raised, and `run_job` logs the job's total after its final write.
-- **The Demucs `Separator` is a process-wide singleton**, built on first use.
-  [`separation.py`](../../server/app/pipeline/separation.py) swaps its `callback` per job with
-  `update_parameter` rather than fixing it at construction. The callback fires as each chunk
-  starts; with Demucs' default `jobs=0` chunks run in order, so the starting chunk's offset is the
-  share of the pass already done. An exception raised from the callback unwinds out of Demucs and
-  abandons the pass — that is how `_Superseded` interrupts separation.
+- **The Demucs model is a process-wide singleton**, built on first use and kept on its device.
+  [`separation.py`](../../server/app/pipeline/separation.py) runs Demucs' chunk loop itself
+  ([why](decisions.md#chord-runs-demucs-chunk-loop-itself)) and calls `on_progress` as each chunk
+  starts, in order, with the share of the pass already done. An exception raised from it unwinds out
+  of the loop and abandons the pass — that is how `_Superseded` interrupts separation.
 - **Stems are all-or-nothing on disk.** `separate()` writes into `stems.partial/`, then removes
   any old `stems/` and renames the scratch directory into place. `_stems_complete` (all six
   `STEM_NAMES` FLACs present) is therefore enough for a resume to skip separation.
-- **Stems are 16-bit FLAC.** `soundfile.write(..., subtype="PCM_16")` after Demucs'
-  `prevent_clip(mode="rescale")`, in-process; about half WAV's bytes to download before playback.
+- **Stems are 16-bit FLAC.** Converted to 16-bit on the device they were separated on, with Demucs'
+  clip handling and libsndfile's own rounding, then `soundfile.write(..., subtype="PCM_16")` at
+  compression level 4, in-process, on a thread per core; about half WAV's bytes to download before
+  playback.
   Export converts back to WAV as it streams — see [Long responses and streaming](#long-responses-and-streaming).
 - **Stems keep a 44.1 or 48 kHz source's rate.** Demucs always works at the model's own rate
   (44.1 kHz for `htdemucs_6s`); stems from a 48 kHz source are resampled back with
-  `julius.resample_frac`, and any other source rate keeps the model's. `julius` is imported
-  directly, so `requirements.txt` lists it, although Demucs would install it anyway.
+  `julius.resample_frac`, on the GPU when there is one, and any other source rate keeps the model's.
+  `julius` and `sphn` (the decoder) are imported directly, so `requirements.txt` lists them,
+  although Demucs would install them anyway.
 
 `_update_job` builds its `SET` clause by interpolating the **keys** of `fields` into SQL. Values
 are bound parameters, so this is safe as written — every call site passes literal keyword names —

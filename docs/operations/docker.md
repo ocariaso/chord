@@ -81,11 +81,19 @@ services:
 
 It changes two things at once, and the distinction matters:
 
-- **`TORCH_INDEX_URL` is a build argument** — it selects the CUDA 12.4 torch wheel instead of
-  the CPU one. Changing it requires a **rebuild**; a restart isn't enough.
-- **`DEVICE` is runtime** — it tells [`separation.py`](../../server/app/pipeline/separation.py)
-  to ask for CUDA. That module falls back to CPU if `torch.cuda.is_available()` is false, so a
-  CUDA-built image on a machine with no visible GPU degrades rather than crashing.
+- **`TORCH_INDEX_URL` is a build argument** — it points pip at the CUDA 12.4 wheel index instead of
+  the CPU one. Changing it requires a **rebuild**; a restart isn't enough. The Dockerfile passes it as
+  `--extra-index-url`, so PyPI stays in the running and pip takes the newest torch on either: for
+  the CPU index that is still the CPU build (its `+cpu` version sorts above PyPI's), but for this
+  overlay it is PyPI's own, built for a newer CUDA — torch 2.14 for CUDA 13.0 as of November 2026,
+  which needs a driver that supports CUDA 13. On an older driver the image builds and starts, and
+  torch can't use the GPU.
+- **`DEVICE` is runtime** — it tells `resolve_device()` in
+  [`device.py`](../../server/app/pipeline/device.py) to ask for CUDA, for Demucs and for the chord
+  and key networks. It falls back to CPU if `torch.cuda.is_available()` is false, so a CUDA-built
+  image on a machine with no visible GPU, or too old a driver, degrades rather than crashing — and
+  logs a warning saying so, once, at startup. When the GPU is used, the log names it:
+  `Models run on NVIDIA GeForce …`.
 
 ## `start.sh`
 

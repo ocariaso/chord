@@ -16,7 +16,8 @@ server/
     ├── db/         database.py
     ├── models/     schemas.py
     └── pipeline/   pipeline.py  worker.py  reaper.py  errors.py  source.py  separation.py
-                    decode.py  chords.py  tempo.py  lyrics.py  metadata.py  thumbnail.py
+                    device.py  networks.py  decode.py  chords.py  tempo.py  lyrics.py
+                    metadata.py  thumbnail.py
 ```
 
 Dependency direction is strictly downward: `api → pipeline, db, models`;
@@ -40,12 +41,12 @@ and switches to a non-root `chord` user (uid/gid 1000) — **the host's `server/
 writable by uid 1000**. `CMD uvicorn app.main:app --host 0.0.0.0 --port 8000`.
 
 ### `requirements.txt`
-**Notes:** `demucs`, `julius`, `librosa`, `soundfile`, `fastapi`, `uvicorn[standard]`,
+**Notes:** `demucs`, `julius`, `sphn`, `librosa`, `soundfile`, `fastapi`, `uvicorn[standard]`,
 `python-multipart`, `pydantic-settings`, `yt-dlp`, `httpx`. **torch and madmom are deliberately
 absent** — torch because the right wheel depends on the CUDA driver, madmom because it needs
 `--no-build-isolation` plus patches. Both omissions are explained in comments in the file.
-`julius` is listed although `demucs` installs it, because `app/pipeline/separation.py` imports it
-directly. Nothing is pinned, while `separation.py` relies on demucs behavior checked only against
+`julius` and `sphn` are listed although `demucs` installs them, because `app/pipeline/separation.py`
+imports them directly. Nothing is pinned, while `separation.py` relies on demucs behavior checked only against
 4.1.0 (see its entry).
 
 ### `scripts/patch_madmom.sh` — make madmom importable (22 lines)
@@ -81,7 +82,8 @@ runs `init_db()`, then `start_worker()`, then `start_reaper()`. Adds CORS from `
 ### `app/core/config.py` — settings and paths (35 lines)
 **Exports:** `SERVER_DIR`, `Settings`, `settings`
 **Imports from:** —
-**Used by:** `db.database`, `pipeline.pipeline`, `pipeline.reaper`, `pipeline.separation`, `main`
+**Used by:** `db.database`, `pipeline.pipeline`, `pipeline.reaper`, `pipeline.separation`,
+`pipeline.device`, `main`
 **Notes:** `pydantic_settings.BaseSettings`, so **every field is an environment variable of the
 same name**. Fields: `data_dir`, `db_path`, `jobs_dir`, `models_cache_dir`, `demucs_model`
 (`htdemucs_6s`), `device` (`cuda`), `demucs_overlap` (`0.25`, Demucs' own default; lower is an
@@ -309,17 +311,18 @@ interrupted: an abandoned run's decode, tempo or chord step finishes unread on i
 possibly overlapping the next job. `_timed(step)` logs `"<step> took N.N s"` at `INFO`, raised or
 not, for `Job <id>: download`, `: separation`, `: analysis decode`, `: tempo detection`, `: chord
 and key detection` and `Model warm-up`, plus `"Job <id>: finished in N.N s"` after the done write.
-`warm_up()` loads the Demucs separator, compiles librosa's beat tracker (`tempo.warm_up`), and, if
-chord detection is on, builds the madmom processors — without it the first job after every restart
-paid about 19 s of numba compilation alone. `run_job` reads
+`warm_up()` loads the Demucs model onto its device (on a GPU, running it once), compiles librosa's
+beat tracker (`tempo.warm_up`), and, if chord detection is on, builds the chord and key processors and
+runs them once — without it the first job after every restart paid about 19 s of numba compilation
+alone, and on a GPU CUDA's first-use kernel loading. `run_job` reads
 `attempt` once at start, and every status, progress and result write goes through
 `_update_job(job_id, attempt, **fields)`, scoped
 `WHERE id = ? AND attempt = ? AND status != 'cancelled'` — neither a cancelled job nor a run
 retired by resume can be overwritten. The one exception is `_record_track_identity`, which saves
 yt-dlp's title and author **unscoped**: a resume skips the download when `original.mp3` exists,
 so a run cancelled mid-download must still keep them. `_is_superseded` is true when the row is
-gone, `cancelled`, or on another attempt. Inside separation, `_separation_progress` maps Demucs'
-fraction onto `_SEPARATION_PROGRESS` (0.1–0.85), writes the row only once progress has moved
+gone, `cancelled`, or on another attempt. Inside separation, `_separation_progress` maps the
+pass's fraction onto `_SEPARATION_PROGRESS` (0.1–0.85), writes the row only once progress has moved
 `_PROGRESS_WRITE_STEP` (0.01 of the whole bar — up to 75 writes), and polls `_is_superseded` at
 most every `_SUPERSEDED_POLL_SECONDS` (2 s), raising `_Superseded` — so a cancel or resume
 **aborts the Demucs pass at the next chunk boundary**; a download still runs to completion, and
@@ -389,42 +392,96 @@ serves chords, key and tempo in place of three. The whole track sits in memory a
 as long as analysis runs, which is why `tempo.detect_tempo` scales integer samples itself.
 **See:** [../features/chords-and-key.md](../features/chords-and-key.md)
 
-### `app/pipeline/separation.py` — Demucs (87 lines)
-**Exports:** `STEM_SUFFIX`, `load_model`, `separate`
+### `app/pipeline/device.py` — where the models run (26 lines)
+**Exports:** `resolve_device`
 **Imports from:** `core.config`
-**Used by:** `pipeline.pipeline`, `api.routes_stems` and `api.routes_analysis` (`STEM_SUFFIX`)
-**Notes:** lazy module-level `Separator` singleton (loading the weights onto the device takes seconds; loaded once per
-process), built with `overlap=settings.demucs_overlap`; `load_model()` builds it ahead of the first
-job, for `pipeline.warm_up`. `_resolve_device()` falls back to `cpu` when `device == "cuda"` but
-`torch.cuda.is_available()` is false. Because the singleton outlives jobs, `separate()` swaps the
-progress callback in with `update_parameter` on every call. `_chunk_callback` counts only
-chunk-`start` events, as `(model_idx_in_bag + segment_offset / audio_length) / models` — valid
-because the default `jobs=0` runs chunks in order. demucs 4.1.0 calls the callback unguarded, so
-an exception from `on_progress` aborts the pass; that is how `run_job` cancels mid-separation.
-Stems are written into a sibling `stems.partial/` (cleared first) and renamed onto `stems/` only
-once all are written, so **`stems/` is complete or absent** — which is what lets a resume skip
-separation. An aborted pass leaves an empty `stems.partial/` until the next attempt, a discard, or
-the reaper.
-Demucs works at the model's 44.1 kHz; a 44.1 or 48 kHz source keeps its rate
-(`_PRESERVED_SAMPLE_RATES`, read from the file again with `soundfile`), 48 kHz stems being
-resampled back with `julius.resample_frac`; any other rate gets the model's. The upload page's
-*"44.1 / 48 kHz preserved"* copy depends on that set.
-Every stem is a **16-bit FLAC** (`STEM_SUFFIX = ".flac"`) whatever the source depth, written
-in-process by `soundfile.write(..., subtype="PCM_16")` after `demucs.audio.prevent_clip(waveform,
-mode="rescale")`, which scales down, on its own, any stem that would clip — the same clip handling
-Demucs' `save_audio` applies, without the ffmpeg process per file it would start for FLAC. Lossless,
-at about half the bytes of WAV, at the cost of encode time. Returns the names it wrote, but `run_job`
-ignores the return value. The unguarded `global` is safe only because a single thread calls this.
-**See:** [../features/stem-separation.md](../features/stem-separation.md)
+**Used by:** `pipeline.separation`, `pipeline.networks`
+**Notes:** `resolve_device()` is under `functools.cache`, so its first call settles the process:
+it sets `torch.backends.cudnn.allow_tf32 = False` — full float32 convolutions, which keeps madmom's
+networks matching madmom and measured no slower for Demucs — and returns `torch.device(settings.device)`,
+or `cpu` when that is a CUDA device torch can't use, logging a **warning** once. Otherwise it logs
+`Models run on <GPU name>` at `INFO`, the line that says whether a GPU build got its GPU. Every model
+reaches its device through it, so the TF32 setting is in place before any convolution runs.
+**See:** [../features/stem-separation.md](../features/stem-separation.md#device-selection)
 
-### `app/pipeline/chords.py` — chord and key detection (100 lines)
+### `app/pipeline/separation.py` — Demucs (218 lines)
+**Exports:** `STEM_SUFFIX`, `load_model`, `separate`
+**Imports from:** `core.config`, `pipeline.device`
+**Used by:** `pipeline.pipeline`, `api.routes_stems` and `api.routes_analysis` (`STEM_SUFFIX`)
+**Notes:** lazy module-level `BagOfModels` singleton from `demucs.pretrained.get_model` (a bare model
+becomes a bag of one), moved onto `resolve_device()` once and kept there; `load_model()` builds it
+ahead of the first job, for `pipeline.warm_up`, and on a GPU runs it once on a second of silence, so
+CUDA loading its kernels isn't the first job's wait. **It runs Demucs' inference itself**, not
+through `demucs.api.Separator`: `_separate` is `Separator.separate_tensor` (normalize by the mono
+mix's mean and std — **in place, on the tensor passed in** — weigh a bag's models per source,
+denormalize) and `_apply_model` is `apply_model` with demucs 4.1.0's defaults — one random shift
+drawn from Python's `random`, chunks at the model's training length `settings.demucs_overlap` apart,
+a triangle-weighted overlap-add — the same arithmetic in the same order, checked against Demucs' own
+stems: they differ by float rounding only, 69 dB or more below the signal. What differs is where it adds up: `_storage_device` keeps the
+overlap-add on the GPU, in one buffer, in place, when `torch.cuda.mem_get_info` (plus the allocator's
+cache) has room for twice the separated track plus `_GPU_MODEL_BYTES` (0.5 GiB), and in RAM
+otherwise — not "whatever fits", because the Windows driver spills an over-full GPU into system memory
+and runs several times slower rather than failing. `on_progress(fraction)` is called as each chunk
+starts, `(model index + offset / shifted length) / models`; an exception raised from it abandons the
+pass — that is how `run_job` cancels mid-separation. The track is decoded by `sphn.read` at its own
+rate, falling back to demucs' ffmpeg `AudioFile`, and resampled to the model's on the device with
+`demucs.audio.convert_audio`. Stems are written into a sibling `stems.partial/` (cleared first) and
+renamed onto `stems/` only once all are written, so **`stems/` is complete or absent** — which is what
+lets a resume skip separation. An aborted pass leaves an empty `stems.partial/` until the next
+attempt, a discard, or the reaper.
+Demucs works at the model's 44.1 kHz; a 44.1 or 48 kHz source keeps its rate
+(`_PRESERVED_SAMPLE_RATES`, the rate `sphn` reported), 48 kHz stems being resampled back with
+`julius.resample_frac` on the device; any other rate gets the model's. The upload page's
+*"44.1 / 48 kHz preserved"* copy depends on that set.
+Every stem is a **16-bit FLAC** (`STEM_SUFFIX = ".flac"`) whatever the source depth. `_to_pcm16`
+converts it where it was separated: it scales a stem that would clip down as a whole — the arithmetic
+of Demucs' `prevent_clip(mode="rescale")`, in place — then rounds with libsndfile's own scale (×32768,
+round half to even, clamp), so the samples are bit for bit those `soundfile` would write from the
+float stem; only the int16 array crosses to the CPU. `soundfile.write(..., subtype="PCM_16",
+compression_level=_FLAC_COMPRESSION_LEVEL)` (0.5: FLAC level 4, the default level's size, about a
+third faster) runs on a `ThreadPoolExecutor` of one thread per core, at most one per stem —
+libsndfile encodes outside the GIL; `_write_flac` holds the one `soundfile.write` call.
+`torch.cuda.empty_cache()` runs after every pass, in a `finally`.
+Returns the model's source names, but `run_job` ignores the return value. The unguarded `global` is
+safe only because a single thread calls this.
+**See:** [../features/stem-separation.md](../features/stem-separation.md),
+[../architecture/decisions.md](../architecture/decisions.md#chord-runs-demucs-chunk-loop-itself)
+
+### `app/pipeline/networks.py` — madmom's networks, run by torch (132 lines)
+**Exports:** `TorchNetwork`, `run_on_torch`
+**Imports from:** `pipeline.device`
+**Used by:** `pipeline.chords`
+**Notes:** `run_on_torch(processor)` walks a madmom processor chain in place — recursing into every
+`SequentialProcessor`, which ensembles and `ParallelProcessor`s are — swaps each `NeuralNetwork` for a
+`TorchNetwork` on `resolve_device()`, and returns the chain. `TorchNetwork` converts the five layer
+types the chord and key networks use (`ConvolutionalLayer`, `BatchNormLayer`, `MaxPoolLayer`,
+`PadLayer`, `AverageLayer`) to `torch.nn.functional` calls and **raises `NotImplementedError` at
+construction for any other**, so an unexpected model fails in the warm-up rather than computing
+something else. Layout: madmom's `(frames, bins, channels)` against torch's `(1, channels, frames,
+bins)`; a 2-D input is one channel. Kernels are transposed and **flipped**, because madmom convolves
+and `conv2d` correlates; max-pool pads the far edge with zeros to reproduce scipy `maximum_filter`'s
+windows, kept from `size // 2` every `stride`. The output is made contiguous because madmom's
+`segment_axis` assumes it. Checked against madmom 0.16.1, layer by layer and end to end: features
+within 6e-7, identical chords and key, at 0.9 s on the CPU and 0.45 s on an RTX 4060 for two minutes
+of audio where madmom took 43 s. Only the networks move; the spectrograms and the CRF stay madmom's.
+**See:** [../features/chords-and-key.md](../features/chords-and-key.md#the-networks-run-on-torch),
+[../architecture/decisions.md](../architecture/decisions.md#madmoms-networks-run-on-torch)
+
+### `app/pipeline/chords.py` — chord and key detection (109 lines)
 **Exports:** `NOTE_NAMES`, `load_models`, `analyze_audio`
-**Imports from:** `models.schemas`
+**Imports from:** `models.schemas`, `pipeline.networks`
 **Used by:** `pipeline.pipeline`
 **Notes:** three lazy madmom singletons — `CNNChordFeatureProcessor` +
 `CRFChordRecognitionProcessor` (a CNN for frame features, a CRF for temporal smoothing) and
-`CNNKeyRecognitionProcessor`; `load_models()` builds them ahead of the first job, for
-`pipeline.warm_up`. `analyze_audio(signal)` takes the decoded `Signal` from `decode.decode_mono`,
+`CNNKeyRecognitionProcessor`. The two CNN processors are built through `networks.run_on_torch`, so
+their networks run on torch, on the job's device, while madmom keeps the spectrograms and the CRF.
+`load_models()` builds them ahead of the first job, for `pipeline.warm_up`, and runs `analyze_audio`
+once on three seconds of seeded noise at `_WARM_UP_RATE` (44.1 kHz), so a GPU's kernels are loaded.
+The noise is **int16, like `decode.decode_mono`'s output, and must stay so**: madmom's STFT
+processors keep the FFT window of the first signal they see, scaled by its dtype's range, for every
+later one — float noise there made every job's spectrogram 32767 times too loud and its chords and
+key wrong.
+`analyze_audio(signal)` takes the decoded `Signal` from `decode.decode_mono`,
 not a path, and hands it to both models as it is. It runs on a run's `chord-analysis` thread; the
 unguarded singletons are normally built first by the worker's warm-up, but if that failed, an
 abandoned run's analysis thread and the next job's could both build them. Normalizes labels on the way in: `_FLAT_TO_SHARP` (madmom's key

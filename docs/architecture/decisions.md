@@ -28,16 +28,18 @@ stem-minute at 44.1 kHz as WAV, six at a time — while export promises *Uncompr
 separated*, and no feature may be removed to save bytes.
 
 **Choice:** `separate()` writes each stem as a 16-bit FLAC in-process with libsndfile
-(`soundfile.write(..., subtype="PCM_16")`), after Demucs' own `prevent_clip(mode="rescale")` — the
-clip handling `save_audio` applied, without the ffmpeg process `save_audio` would start per FLAC
-file. Lossless, at about half WAV's bytes. Playback fetches `stems/<name>.flac` as stored, and
+(`soundfile.write(..., subtype="PCM_16")`), at compression level 4. The 16-bit samples are computed
+where the stem was separated, with the arithmetic of Demucs' own `prevent_clip(mode="rescale")` — the
+clip handling `save_audio` applied — and libsndfile's own scale and rounding, so they are bit for bit
+what libsndfile would have written from the float stem; `save_audio` would also have started an
+ffmpeg process per FLAC file. Lossless, at about half WAV's bytes. Playback fetches `stems/<name>.flac` as stored, and
 `decodeAudioData` reads it natively. Export fetches `stems/<name>.wav`, which the server converts as
 it streams — a 44-byte header, then the FLAC decoded a block at a time — and the zip carries the same
 converted WAVs, deflated at level 1 and streamed. A lossless 16-bit FLAC decodes to exactly the
 separated samples, so the WAV the user saves is the one Demucs' output would have been.
 
-**Cost:** encoding time on the worker thread after every separation, and a decode on the server for
-every export — twice for a stem saved alone and in the zip. Still 16-bit whatever the source's
+**Cost:** encoding time after every separation — the one part of it still on the CPU, spread over a
+thread per core — and a decode on the server for every export — twice for a stem saved alone and in the zip. Still 16-bit whatever the source's
 depth. A job directory written before the switch holds `.wav` stems, which `_stems_complete` doesn't
 recognise and neither stem route serves, so resuming such a job separates it again. See
 [../features/downloads.md](../features/downloads.md).
@@ -158,9 +160,11 @@ thread a job gets is its [analysis thread](#analysis-runs-beside-separation).
 
 ## Analysis runs beside separation
 
-**Constraint:** tempo, chord and key detection read only the original mix, never the stems, and are
-CPU work (librosa, madmom). On a GPU, separation of a four-minute track takes tens of seconds, so
-analysis run after it was most of the wait. And the first job after a start paid for loading every
+**Constraint:** tempo, chord and key detection read only the original mix, never the stems, and
+were CPU work (librosa, madmom). On a GPU, separation of a four-minute track took tens of seconds, so
+analysis run after it was most of the wait. (madmom's networks have since moved to torch — see
+[the next record](#madmoms-networks-run-on-torch) — which shrank analysis to a few seconds; running it
+beside separation still hides those.) And the first job after a start paid for loading every
 model, including about 19 s of numba compiling librosa's beat tracker.
 
 **Choice:** when a job enters `separating`, `run_job` starts one `chord-analysis` thread
@@ -188,6 +192,54 @@ the madmom networks. See [job-lifecycle.md](job-lifecycle.md#progress-values).
   reporting `analyzing`.
 - The whole decoded track sits in memory while Demucs holds its own copy, and the warm-up delays a
   job submitted right after a start, which waits on *Queued*.
+
+## madmom's networks run on torch
+
+**Constraint:** madmom 0.16.1 — unmaintained since 2018, and the source of CHORD's chord and key
+models — evaluates a convolution one input/output channel pair at a time with scipy. Chord and key
+detection took about 43 s for two minutes of audio on one core: on an RTX 4060, more than three times
+as long as separating it. The results had to stay madmom's.
+
+**Choice:** `networks.run_on_torch` replaces only the `NeuralNetwork` steps inside madmom's processor
+chains with `TorchNetwork`s — the same weights, from madmom's own model files, converted layer by
+layer to `torch.nn.functional` calls on the job's device. madmom still computes the spectrograms and
+runs the CRF. Checked layer by layer on random input and end to end on a real recording: identical
+segments and key, features within 6e-7 of madmom's. To hold that on a GPU, `resolve_device()` turns
+cuDNN's TF32 off for convolutions, process-wide: TF32 moved the chord features by 2e-4, enough to flip
+a chord near a tie, and Demucs measured no slower without it. Two minutes of audio now take 0.9 s on
+the CPU and 0.45 s on an RTX 4060. See
+[../features/chords-and-key.md](../features/chords-and-key.md#the-networks-run-on-torch).
+
+**Cost:** CHORD owns a reimplementation of five madmom layer types, and of madmom's max-pool edge
+behavior, checked against madmom 0.16.1 only; a layer type it doesn't know raises at load, in the
+warm-up, rather than computing something else. TF32 is off for every convolution in the process,
+Demucs' included, which would cost speed on a GPU where TF32 convolutions are much faster than float32
+ones. The networks share the GPU with Demucs, for well under a second a job.
+
+## CHORD runs Demucs' chunk loop itself
+
+**Constraint:** demucs' `Separator.separate_tensor` and `apply_model` keep the whole track in RAM.
+Each chunk's output is copied back from the GPU and added up by the CPU — one torch thread, here — and
+the finished track is copied whole several times over (overlap-add, shift trim, bag weighting,
+denormalization) before the stems are resampled and converted on the CPU. With the stem encoding, that
+was about half of separation's time on a GPU, and it holds several full copies of six stems in RAM.
+
+**Choice:** `separation._separate` and `_apply_model` reimplement `separate_tensor` and `apply_model`
+for Demucs' defaults — one random shift, overlapping chunks blended by a triangle, bags of models —
+with the same arithmetic in the same order, but keep the overlap-add beside the model, in one buffer,
+in place, when the GPU has room for twice the track plus 0.5 GiB; otherwise in RAM, still in one
+buffer. Decoding, resampling and the 16-bit conversion run on the device too, and the stems leave it as
+16-bit PCM. A minute of audio separates in 2.9 s instead of 6.1 s from a 44.1 kHz source, and 3.5 s
+instead of 8.0 s from a 48 kHz one, with stems that differ from Demucs' only by float rounding — 69 dB
+or more below the signal. See
+[../features/stem-separation.md](../features/stem-separation.md#the-separation-pass).
+
+**Cost:** CHORD owns about sixty lines that mirror demucs 4.1.0's inference. A demucs upgrade that
+changes it — a new default, another shift policy — doesn't reach CHORD until it is copied across, and
+only the defaults exist here: one shift, chunked, linear blend. The GPU holds the whole separated track
+for the length of the pass, where Demucs held a chunk — about 3.5 GiB of headroom for twelve minutes.
+On a GPU without that room the model still runs there, but chunks are copied back and added up in RAM,
+and the stems resampled and converted on the CPU: closer to the old speed.
 
 ## The database row is the only progress channel
 

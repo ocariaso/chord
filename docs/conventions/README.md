@@ -17,8 +17,7 @@ This is the single most consistent habit in the repo, and the most important one
 Comments are reserved for the non-obvious: a workaround, a constraint, a deliberate omission.
 
 ```python
-# The separator is a process-wide singleton, so the callback is swapped per job rather than
-# fixed at construction.
+# Kept on the device for good: Demucs' own apply_model moves a bag's models there and back on every job.
 ```
 
 ```ts

@@ -123,24 +123,30 @@ running it again once the first has.
 Model loading is deferred and cached at module level, guarded by a `None` check:
 
 ```python
-_separator: Separator | None = None
+_model: BagOfModels | None = None
 
-def _get_separator() -> Separator:
-    global _separator
-    if _separator is None:
-        _separator = Separator(model=settings.demucs_model, device=_resolve_device(), overlap=settings.demucs_overlap)
-    return _separator
+def _get_model() -> BagOfModels:
+    global _model
+    if _model is None:
+        model = get_model(settings.demucs_model)
+        bag = model if isinstance(model, BagOfModels) else BagOfModels([model])
+        _model = bag.to(resolve_device()).eval()
+    return _model
 ```
 
 Used in [`separation.py`](../../server/app/pipeline/separation.py) and for the three madmom
 processors in [`chords.py`](../../server/app/pipeline/chords.py), each with a public loader
 (`load_model`, `load_models`) that `pipeline.warm_up()` calls on the worker thread before its first
-job, so no job pays for loading. The unguarded `global` is safe **only because one thread calls each
-of these at a time**: the separator runs on the worker thread, and the madmom processors on a job's
-analysis thread — built first by the warm-up, so two analysis threads (an abandoned run's and the
-next job's) don't race to build them unless the warm-up failed. The separator also carries per-job
-state: `separate()` swaps its progress callback in with `update_parameter(callback=…)` on every call.
-More concurrency than that means adding a lock — or a separator per job.
+job, so no job pays for loading — and on a GPU runs the model once, so none pays for CUDA loading its
+kernels either. The unguarded `global` is safe **only because one thread calls each of these at a
+time**: the Demucs model runs on the worker thread, and the madmom processors on a job's analysis
+thread — built first by the warm-up, so two analysis threads (an abandoned run's and the next job's)
+don't race to build them unless the warm-up failed. Neither carries per-job state: progress is passed
+to `separate()` on every call. More concurrency than that means adding a lock.
+
+A value that must also be settled exactly once, with side effects — `resolve_device()` in
+[`device.py`](../../server/app/pipeline/device.py) logs the device and sets process-wide torch state —
+is a function under `functools.cache` instead.
 
 ## Error handling
 

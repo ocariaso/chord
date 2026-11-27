@@ -12,14 +12,21 @@ cause is a known gap rather than a mistake, it links to the page that explains i
 non-functional falls back to CPU silently, printing *"No NVIDIA GPU detected"*. Check:
 
 ```bash
-nvidia-smi                                   # does it run?
+nvidia-smi                                   # does it run, and up to which CUDA version?
 docker info | grep -i runtime                # is the NVIDIA Container Toolkit installed?
-docker compose logs server | grep -i cuda
+docker compose logs server | grep -E "Models run on|can't use CUDA"
 ```
 
-Also note the GPU overlay changes a **build argument** (`TORCH_INDEX_URL`), so switching to GPU
-needs `--build`, which `start.sh` always passes. See
+The server says which device it got, once, at startup. `Models run on NVIDIA GeForce …` means the
+GPU is in use. *DEVICE is cuda, but torch … can't use CUDA here; running on the CPU* means the image
+is a GPU build whose torch can't reach the GPU — every job then runs on the CPU, tens of times slower.
+The usual cause is a driver older than torch's CUDA runtime: the image holds PyPI's newest torch
+whatever the overlay's index says (torch 2.14 for CUDA 13.0 as of November 2026), and `nvidia-smi`'s
+header names the newest CUDA the driver supports. Update the driver, or see
 [docker.md](docker.md#the-gpu-overlay).
+
+Also note the GPU overlay changes a **build argument** (`TORCH_INDEX_URL`), so switching to GPU
+needs `--build`, which `start.sh` always passes.
 
 ### Permission denied writing to `/app/data`
 
@@ -199,17 +206,18 @@ split.
 
 ### The progress bar sits at 10%
 
-Separation starts the bar at 10% and then follows Demucs, which reports progress as each chunk of
-audio *starts* — so the bar holds at 10% until the second chunk begins, a noticeable while on CPU.
-On a server's first job it holds a little longer, while the separator loads its weights onto the
-device.
+Separation starts the bar at 10% and then follows its chunks, reporting progress as each chunk of
+audio *starts* — so the bar holds at 10% while the track decodes and until the second chunk begins,
+a noticeable while on CPU. It holds near 85% while the six stems are encoded, after the last chunk.
 
 ### The first job after a start waits on *Queued*
 
-Before it takes its first job, the worker thread warms up: it loads the Demucs weights onto the
-device, runs librosa's beat tracker once so numba compiles it (about 19 s on its own), and builds the
-madmom networks. A job submitted meanwhile shows *Queued* at 0% until that finishes; the server log
-reports `Model warm-up took N.N s`. Nothing downloads: the weights are in the image. If the warm-up
+Before it takes its first job, the worker thread warms up: it loads the Demucs model onto the
+device and, on a GPU, runs it once so CUDA loads its kernels; runs librosa's beat tracker once so
+numba compiles it (about 19 s on its own); and builds the chord and key networks and runs them once.
+A job submitted meanwhile shows *Queued* at 0% until that finishes; the server log reports
+`Model warm-up took N.N s`, and before it `Models run on <GPU name>` — or a warning that `DEVICE` asked
+for CUDA and torch can't use it (see [the GPU entry](#docker-compose-says-the-gpu-overlay-is-invalid-or-no-gpu-is-used)). Nothing downloads: the weights are in the image. If the warm-up
 fails, the failure is logged and the first job loads what's missing itself. A first job that sits
 at 10% for much longer is downloading a model the image wasn't built with; see the next entry.
 
@@ -225,9 +233,9 @@ docker compose logs -f server
 … INFO app.pipeline.pipeline: Job 3f2a…: download took 6.1 s
 … INFO app.pipeline.pipeline: Job 3f2a…: analysis decode took 1.2 s
 … INFO app.pipeline.pipeline: Job 3f2a…: tempo detection took 3.4 s
-… INFO app.pipeline.pipeline: Job 3f2a…: chord and key detection took 9.8 s
-… INFO app.pipeline.pipeline: Job 3f2a…: separation took 41.0 s
-… INFO app.pipeline.pipeline: Job 3f2a…: finished in 49.5 s
+… INFO app.pipeline.pipeline: Job 3f2a…: chord and key detection took 1.1 s
+… INFO app.pipeline.pipeline: Job 3f2a…: separation took 14.2 s
+… INFO app.pipeline.pipeline: Job 3f2a…: finished in 20.6 s
 ```
 
 The decode, tempo and chord lines come from the analysis thread, which runs beside separation, so

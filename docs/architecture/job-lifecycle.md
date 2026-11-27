@@ -136,16 +136,15 @@ are conditional: tempo, chord and key detection start with separation on a threa
 (`_start_analysis`), and once the stems are written `run_job` collects them in stage order, writing
 *Detecting tempo* only if the tempo future isn't done yet and `status=analyzing`, *Detecting chords
 and key*, only if the chords future isn't. A step that finished during separation never becomes the
-current stage — the processing screen shows it as done, with no time — so on a fast GPU a job often
-goes from separation straight to 1.0, and on a CPU-only host, where analysis finishes first, it
-nearly always does.
+current stage — the processing screen shows it as done, with no time — and since madmom's networks
+run on torch, analysis takes a few seconds and finishes first on a GPU host as on a CPU-only one, so
+a job nearly always goes from separation straight to 1.0.
 
-Separation fills 0.10 to 0.85 from Demucs' own chunk progress.
-`separation.separate()` installs a callback on the Demucs `Separator` for each job, and Demucs
-calls it as each chunk starts, with the chunk's offset, the audio's length and the model's index
-in its bag. [`separation.py`](../../server/app/pipeline/separation.py) turns that into a 0–1
-fraction, `(model_idx_in_bag + segment_offset / audio_length) / models` — chunks run in order, so
-the starting chunk's offset is the share already done — and `_separation_progress` in
+Separation fills 0.10 to 0.85 from its own chunk progress. `separation.separate()` takes an
+`on_progress` callback for each job, and its chunk loop calls it as each chunk starts — in
+[`separation.py`](../../server/app/pipeline/separation.py), a 0–1 fraction,
+`(model index + chunk offset / shifted length) / models`; chunks run in order, so the starting
+chunk's offset is the share already done — and `_separation_progress` in
 [`pipeline.py`](../../server/app/pipeline/pipeline.py) maps it onto the span, writing the row only
 when progress has moved at least 1% — up to 75 writes. The last chunk runs with the bar short of
 0.85; the tempo update sets it, when there is one.
